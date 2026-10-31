@@ -43,7 +43,7 @@ type WorkflowNodeInput struct {
 func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, deadline time.Time, inputs []WorkflowNodeInput) (Workflow, string, error) {
 	purpose = strings.TrimSpace(purpose)
 	now := s.now()
-	if purpose == "" || len([]rune(purpose)) > 200 || len(inputs) == 0 || len(inputs) > 10 || !deadline.After(now) || deadline.After(now.AddDate(1, 0, 0)) {
+	if purpose == "" || len([]rune(purpose)) > 200 || len(inputs) == 0 || len(inputs) > 10 || !deadline.After(now) || liquidityHorizonDaysBetween(now, deadline) > maxLiquidityHorizonDays {
 		return Workflow{}, "", ErrInvalidArgument
 	}
 	seen := make(map[string]bool, len(inputs))
@@ -113,11 +113,9 @@ func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, de
 		}
 		workflow.Nodes = append(workflow.Nodes, WorkflowNode{ID: input.ID, Kind: input.Kind, DependsOn: input.DependsOn, Status: status, AmountMinor: input.AmountMinor, Merchant: input.Merchant, DueAt: dueAt})
 	}
-	if err := s.repo.CreateWorkflow(ctx, workflow); err != nil {
-		return Workflow{}, "", err
-	}
 	trace := NewID("tr")
-	if err := s.audit(ctx, trace, "", "", "workflow_created", "succeeded", "user", map[string]any{"workflow_id": workflow.ID, "node_count": len(workflow.Nodes)}, workflow.CreatedAt); err != nil {
+	event := newAuditEvent(trace, "", "", "workflow_created", "succeeded", "user", map[string]any{"workflow_id": workflow.ID, "node_count": len(workflow.Nodes)}, workflow.CreatedAt)
+	if err := s.repo.CreateWorkflow(ctx, workflow, event); err != nil {
 		return Workflow{}, "", err
 	}
 	return workflow, trace, nil
@@ -280,11 +278,11 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string, virtua
 		"workflow_id": workflow.ID, "node_id": node.ID, "amount_minor": node.AmountMinor,
 		"merchant": node.Merchant, "purpose": workflow.Purpose, "currency": "CNY", "due_at": node.DueAt,
 	}
-	action, err := s.createWorkflowActionRecord(ctx, workflow.UserID, kind, risk, status, snapshot)
+	action, err := s.buildWorkflowActionRecord(workflow.UserID, kind, risk, status, snapshot)
 	if err != nil {
 		return WorkflowAdvanceResult{}, trace, err
 	}
-	if err := s.repo.SetWorkflowNodeAction(ctx, workflow.ID, node.ID, action.ID, "awaiting_authorization", virtualNow); err != nil {
+	if err := s.repo.CreateWorkflowAction(ctx, action, workflow.ID, node.ID, "awaiting_authorization", virtualNow); err != nil {
 		return WorkflowAdvanceResult{}, trace, err
 	}
 	updated, err := s.repo.Workflow(ctx, workflow.ID, userID)
@@ -294,7 +292,7 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string, virtua
 	return WorkflowAdvanceResult{Workflow: updated, Action: ptr(action.Public()), Liquidity: liquidity}, trace, nil
 }
 
-func (s *Service) createWorkflowActionRecord(ctx context.Context, userID, kind, risk, status string, snapshot map[string]any) (Action, error) {
+func (s *Service) buildWorkflowActionRecord(userID, kind, risk, status string, snapshot map[string]any) (Action, error) {
 	now := s.now()
 	trace := NewID("tr")
 	encoded, err := json.Marshal(snapshot)
@@ -302,9 +300,6 @@ func (s *Service) createWorkflowActionRecord(ctx context.Context, userID, kind, 
 		return Action{}, err
 	}
 	action := Action{ID: NewID("act"), TraceID: trace, UserID: userID, Kind: kind, RiskLevel: risk, Status: status, SnapshotJSON: string(encoded), Snapshot: snapshot, SnapshotHash: snapshotHash(string(encoded)), ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
-	if err := s.repo.CreateAction(ctx, action); err != nil {
-		return Action{}, err
-	}
 	return action, nil
 }
 

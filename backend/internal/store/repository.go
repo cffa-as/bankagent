@@ -13,10 +13,14 @@ import (
 
 type Repository struct{ db *sql.DB }
 
+type sqlExecutor interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
 func NewRepository(db *sql.DB) *Repository { return &Repository{db: db} }
 
 func (r *Repository) Seed(ctx context.Context, now time.Time) error {
-	_, err := r.db.ExecContext(ctx, `INSERT OR IGNORE INTO accounts(id,user_id,currency,balance_minor) VALUES(?,?,?,?)`, "acct_demo", domain.DemoUserID, "CNY", 1000000)
+	_, err := r.db.ExecContext(ctx, `INSERT OR IGNORE INTO accounts(id,user_id,currency,balance_minor) VALUES(?,?,?,?)`, "acct_demo", domain.DemoUserID, "CNY", domain.DemoStartingBalanceMinor)
 	if err != nil {
 		return fmt.Errorf("seed account: %w", err)
 	}
@@ -96,9 +100,19 @@ func (r *Repository) Seed(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-func (r *Repository) CreateConversation(ctx context.Context, c domain.Conversation) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO conversations(id,user_id,created_at) VALUES(?,?,?)`, c.ID, c.UserID, c.CreatedAt.Format(time.RFC3339Nano))
-	return err
+func (r *Repository) CreateConversation(ctx context.Context, c domain.Conversation, audit domain.AuditEvent) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO conversations(id,user_id,created_at) VALUES(?,?,?)`, c.ID, c.UserID, c.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if err := insertAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) ConversationOwner(ctx context.Context, id string) (string, error) {
@@ -374,13 +388,23 @@ func (r *Repository) HistoricalSpending(ctx context.Context, userID string, star
 	return domain.HistoricalSpending{AverageDailyMinor: average, ConservativeDailyMinor: maximum}, nil
 }
 
-func (r *Repository) CreateLiquiditySimulation(ctx context.Context, simulation domain.LiquiditySimulation) error {
+func (r *Repository) CreateLiquiditySimulation(ctx context.Context, simulation domain.LiquiditySimulation, audit domain.AuditEvent) error {
 	result, err := json.Marshal(simulation)
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT INTO liquidity_simulations(id,user_id,account_id,trace_id,result_json,created_at) VALUES(?,?,?,?,?,?)`, simulation.ID, simulation.UserID, simulation.AccountID, simulation.TraceID, string(result), simulation.CreatedAt.Format(time.RFC3339Nano))
-	return err
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO liquidity_simulations(id,user_id,account_id,trace_id,result_json,created_at) VALUES(?,?,?,?,?,?)`, simulation.ID, simulation.UserID, simulation.AccountID, simulation.TraceID, string(result), simulation.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if err := insertAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) LiquiditySimulation(ctx context.Context, userID, id string) (domain.LiquiditySimulation, error) {
@@ -481,7 +505,11 @@ func (r *Repository) BeneficiaryByPhone(ctx context.Context, userID, phone strin
 }
 
 func (r *Repository) CreateAction(ctx context.Context, a domain.Action) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO actions(id,trace_id,conversation_id,user_id,kind,risk_level,status,snapshot_json,snapshot_hash,result_json,expires_at,created_at,updated_at,mfa_attempts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.TraceID, a.ConversationID, a.UserID, a.Kind, a.RiskLevel, a.Status, a.SnapshotJSON, a.SnapshotHash, a.ResultJSON, a.ExpiresAt.Format(time.RFC3339Nano), a.CreatedAt.Format(time.RFC3339Nano), a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts)
+	return insertAction(ctx, r.db, a)
+}
+
+func insertAction(ctx context.Context, executor sqlExecutor, a domain.Action) error {
+	_, err := executor.ExecContext(ctx, `INSERT INTO actions(id,trace_id,conversation_id,user_id,kind,risk_level,status,snapshot_json,snapshot_hash,result_json,expires_at,created_at,updated_at,mfa_attempts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.TraceID, a.ConversationID, a.UserID, a.Kind, a.RiskLevel, a.Status, a.SnapshotJSON, a.SnapshotHash, a.ResultJSON, a.ExpiresAt.Format(time.RFC3339Nano), a.CreatedAt.Format(time.RFC3339Nano), a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts)
 	return err
 }
 
@@ -665,13 +693,21 @@ func (r *Repository) ExecuteInvestmentRedemption(ctx context.Context, a domain.A
 	} else if affected != 1 {
 		return domain.RedemptionResult{}, domain.ErrActionStateConflict
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+	redemptionResult := domain.RedemptionResult{HoldingID: holdingID, Principal: principal, ProfitMinor: profit, TotalMinor: total, DaysHeld: daysHeld, AnnualRateBPS: annualRateBPS}
+	receipt, err := json.Marshal(map[string]any{
+		"holding_id": holdingID, "principal_minor": principal, "profit_minor": profit,
+		"total_minor": total, "days_held": daysHeld, "annual_rate_bps": annualRateBPS,
+	})
+	if err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',result_json=?,updated_at=? WHERE id=?`, string(receipt), now.Format(time.RFC3339Nano), a.ID); err != nil {
 		return domain.RedemptionResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return domain.RedemptionResult{}, err
 	}
-	return domain.RedemptionResult{HoldingID: holdingID, Principal: principal, ProfitMinor: profit, TotalMinor: total, DaysHeld: daysHeld, AnnualRateBPS: annualRateBPS}, nil
+	return redemptionResult, nil
 }
 
 func (r *Repository) ExecuteCardApplication(ctx context.Context, a domain.Action, cardType string, now time.Time) (domain.Card, error) {
@@ -694,7 +730,11 @@ func (r *Repository) ExecuteCardApplication(ctx context.Context, a domain.Action
 	if _, err := tx.ExecContext(ctx, `INSERT INTO cards(id,user_id,masked_number,status,limit_minor,restrictions_json) VALUES(?,?,?,?,?,?)`, cardID, a.UserID, masked, "active", 500000, `[]`); err != nil {
 		return domain.Card{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+	receipt, err := json.Marshal(map[string]any{"card_id": cardID, "masked_number": masked, "status": "active", "card_type": cardType})
+	if err != nil {
+		return domain.Card{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',result_json=?,updated_at=? WHERE id=?`, string(receipt), now.Format(time.RFC3339Nano), a.ID); err != nil {
 		return domain.Card{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -917,11 +957,15 @@ func (r *Repository) SecurityLocked(ctx context.Context, userID string, now time
 }
 
 func (r *Repository) AddAudit(ctx context.Context, event domain.AuditEvent) error {
+	return insertAudit(ctx, r.db, event)
+}
+
+func insertAudit(ctx context.Context, executor sqlExecutor, event domain.AuditEvent) error {
 	detail, err := json.Marshal(event.Detail)
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT INTO audit_events(id,trace_id,run_id,conversation_id,action_id,event_type,outcome,actor,policy_version,detail_json,occurred_at,sequence)
+	_, err = executor.ExecContext(ctx, `INSERT INTO audit_events(id,trace_id,run_id,conversation_id,action_id,event_type,outcome,actor,policy_version,detail_json,occurred_at,sequence)
 		SELECT ?,?,?,?,?,?,?,?,?,?, ?, COALESCE(MAX(sequence),0)+1 FROM audit_events WHERE trace_id=?`,
 		event.ID, event.TraceID, event.RunID, event.ConversationID, event.ActionID, event.EventType, event.Outcome, event.Actor, event.PolicyVersion, string(detail), event.OccurredAt.Format(time.RFC3339Nano), event.TraceID)
 	return err
@@ -997,7 +1041,7 @@ func (r *Repository) DeleteIdempotency(ctx context.Context, userID, method, path
 	return err
 }
 
-func (r *Repository) CreateWorkflow(ctx context.Context, workflow domain.Workflow) error {
+func (r *Repository) CreateWorkflow(ctx context.Context, workflow domain.Workflow, audit domain.AuditEvent) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -1014,6 +1058,9 @@ func (r *Repository) CreateWorkflow(ctx context.Context, workflow domain.Workflo
 		if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_nodes(workflow_id,node_id,kind,depends_on_json,status,action_id,amount_minor,merchant,due_at) VALUES(?,?,?,?,?,?,?,?,?)`, workflow.ID, node.ID, node.Kind, string(depends), node.Status, node.ActionID, node.AmountMinor, node.Merchant, node.DueAt.Format(time.RFC3339Nano)); err != nil {
 			return err
 		}
+	}
+	if err := insertAudit(ctx, tx, audit); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -1146,13 +1193,16 @@ func (r *Repository) terminateWorkflow(ctx context.Context, id, userID, status s
 	return tx.Commit()
 }
 
-func (r *Repository) SetWorkflowNodeAction(ctx context.Context, workflowID, nodeID, actionID, status string, now time.Time) error {
+func (r *Repository) CreateWorkflowAction(ctx context.Context, action domain.Action, workflowID, nodeID, status string, now time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status=?,action_id=? WHERE workflow_id=? AND node_id=? AND status='ready'`, status, actionID, workflowID, nodeID)
+	if err := insertAction(ctx, tx, action); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status=?,action_id=? WHERE workflow_id=? AND node_id=? AND status='ready'`, status, action.ID, workflowID, nodeID)
 	if err != nil {
 		return err
 	}
@@ -1228,10 +1278,20 @@ func (r *Repository) CompleteWorkflowNode(ctx context.Context, workflowID, nodeI
 	}
 	workflowStatus := "partially_completed"
 	if allSucceeded {
-		if err := releaseWorkflowBudget(ctx, tx, workflowID); err != nil {
+		var remainingBudget int64
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(remaining_minor),0) FROM workflow_budget_locks WHERE workflow_id=? AND status='locked'`, workflowID).Scan(&remainingBudget); err != nil {
 			return err
 		}
-		workflowStatus = "completed"
+		var externalOrders int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM workflow_nodes WHERE workflow_id=? AND kind='external_order'`, workflowID).Scan(&externalOrders); err != nil {
+			return err
+		}
+		if remainingBudget == 0 || externalOrders > 0 {
+			if err := releaseWorkflowBudget(ctx, tx, workflowID); err != nil {
+				return err
+			}
+			workflowStatus = "completed"
+		}
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE workflows SET status=?,updated_at=? WHERE id=? AND status IN ('pending','running','partially_completed')`, workflowStatus, now.Format(time.RFC3339Nano), workflowID)
 	if err != nil {
@@ -1275,7 +1335,11 @@ func (r *Repository) ExecuteWorkflowBudgetLock(ctx context.Context, a domain.Act
 	if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_budget_locks(id,workflow_id,node_id,user_id,amount_minor,remaining_minor,status,created_at) VALUES(?,?,?,?,?,?,?,?)`, domain.NewID("lock"), workflowID, nodeID, a.UserID, amount, amount, "locked", now.Format(time.RFC3339Nano)); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+	receipt, err := json.Marshal(map[string]any{"workflow_id": workflowID, "node_id": nodeID, "amount_minor": amount, "status": "locked"})
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',result_json=?,updated_at=? WHERE id=?`, string(receipt), now.Format(time.RFC3339Nano), a.ID); err != nil {
 		return err
 	}
 	return tx.Commit()

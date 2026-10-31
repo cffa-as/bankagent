@@ -129,12 +129,12 @@ func (h *Handler) serveIdempotent(w http.ResponseWriter, r *http.Request, userID
 		saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := h.service.SaveIdempotency(saveCtx, userID, r.Method, path, key, fp, status, recorder.body.Bytes()); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "IDEMPOTENCY_UNAVAILABLE", "业务已受理，但幂等回执暂不可用，请勿重复提交", "tr_idempotency")
-			return
+			w.Header().Set("X-Idempotency-Status", "degraded")
+		} else {
+			w.Header().Set("X-Idempotency-Status", "stored")
 		}
 	} else if err := h.service.DeleteIdempotency(context.WithoutCancel(r.Context()), userID, r.Method, path, key); err != nil {
-		writeError(w, http.StatusServiceUnavailable, "IDEMPOTENCY_UNAVAILABLE", "幂等状态暂不可用，请稍后重试", "tr_idempotency")
-		return
+		recorder.header.Set("X-Idempotency-Status", "degraded")
 	}
 	recorder.flush(w)
 }
@@ -149,10 +149,12 @@ func (h *Handler) replayIdempotency(w http.ResponseWriter, r *http.Request, user
 		return false
 	}
 	if status == 0 {
+		w.Header().Set("X-Idempotency-Status", "pending")
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "相同幂等键的请求正在处理中", "tr_idempotency")
 		return true
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Idempotency-Status", "replayed")
 	w.WriteHeader(status)
 	_, _ = w.Write(response)
 	return true

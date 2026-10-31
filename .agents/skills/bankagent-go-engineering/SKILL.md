@@ -26,7 +26,7 @@ metadata:
 
 - 对外 API 统一使用 `/v1` 前缀；资源路径使用小写复数名和明确的资源 ID，不使用无资源语义的 chat 单体入口。
 - `GET` 只读，`POST` 创建资源或触发明确的状态迁移，`PATCH` 做资源局部更新；确认、MFA、取消使用动作子资源。
-- 副作用请求读取 `Idempotency-Key`，执行前原子预留，成功后再固化响应；键复用但请求体变化时返回冲突，未完成请求返回 `IDEMPOTENCY_IN_PROGRESS`。
+- 副作用请求读取 `Idempotency-Key`，执行前原子预留，成功后再固化响应；键复用但请求体变化时返回冲突，未完成请求返回 `IDEMPOTENCY_IN_PROGRESS`。最终响应落库失败时保留 pending 记录并返回原业务结果，响应头标记 `X-Idempotency-Status: degraded`。
 - 响应统一携带 `trace_id`；错误使用稳定错误码，不把业务失败编码成 HTTP 成功或伪造结果。
 - Handler 负责认证、参数解析、会话/资源归属和响应映射；领域层不依赖 HTTP 类型。
 

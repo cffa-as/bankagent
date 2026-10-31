@@ -17,6 +17,7 @@ import (
 )
 
 const DemoUserID = "user_demo"
+const DemoStartingBalanceMinor int64 = 1_500_000
 
 var (
 	ErrNotFound            = errors.New("not found")
@@ -241,34 +242,40 @@ type LiquidityAlternative struct {
 	ExpectedMinimumDate           string                   `json:"expected_minimum_date"`
 	ConservativeMinimumAvailable  int64                    `json:"conservative_minimum_available_minor"`
 	ConservativeMinimumDate       string                   `json:"conservative_minimum_date"`
+	IncomeStressMinimumAvailable  int64                    `json:"income_stress_minimum_available_minor"`
+	IncomeStressMinimumDate       string                   `json:"income_stress_minimum_date"`
 	ExpectedPoints                []LiquidityTimelinePoint `json:"expected_points"`
 	Recommended                   bool                     `json:"recommended"`
 	Tradeoff                      string                   `json:"tradeoff"`
 }
 
 type LiquiditySimulation struct {
-	ID                        string                 `json:"simulation_id"`
-	UserID                    string                 `json:"-"`
-	AccountID                 string                 `json:"account_id"`
-	TraceID                   string                 `json:"trace_id"`
-	Currency                  string                 `json:"currency"`
-	StartAt                   time.Time              `json:"start_at"`
-	HorizonDays               int                    `json:"horizon_days"`
-	StartingAvailableMinor    int64                  `json:"starting_available_minor"`
-	ProposedBudgetMinor       int64                  `json:"proposed_budget_minor"`
-	EssentialBufferMinor      int64                  `json:"essential_buffer_minor"`
-	HistoricalAverageDaily    int64                  `json:"historical_average_daily_minor"`
-	HistoricalConservativeDay int64                  `json:"historical_conservative_daily_minor"`
-	MaximumSafeBudgetMinor    int64                  `json:"maximum_safe_budget_minor"`
-	Verdict                   string                 `json:"verdict"`
-	RiskReason                string                 `json:"risk_reason"`
-	Recommendation            string                 `json:"recommendation"`
-	Assumptions               []string               `json:"assumptions"`
-	Events                    []LiquidityEvent       `json:"events"`
-	Scenarios                 []LiquidityScenario    `json:"scenarios"`
-	Alternatives              []LiquidityAlternative `json:"alternatives"`
-	RecommendedAlternativeID  string                 `json:"recommended_alternative_id"`
-	CreatedAt                 time.Time              `json:"created_at"`
+	ID                         string                 `json:"simulation_id"`
+	UserID                     string                 `json:"-"`
+	AccountID                  string                 `json:"account_id"`
+	TraceID                    string                 `json:"trace_id"`
+	Currency                   string                 `json:"currency"`
+	StartAt                    time.Time              `json:"start_at"`
+	HorizonDays                int                    `json:"horizon_days"`
+	StartingAvailableMinor     int64                  `json:"starting_available_minor"`
+	ProposedBudgetMinor        int64                  `json:"proposed_budget_minor"`
+	EssentialBufferMinor       int64                  `json:"essential_buffer_minor"`
+	HistoricalAverageDaily     int64                  `json:"historical_average_daily_minor"`
+	HistoricalConservativeDay  int64                  `json:"historical_conservative_daily_minor"`
+	MaximumSafeBudgetMinor     int64                  `json:"maximum_safe_budget_minor"`
+	IncomeStressMinimumMinor   int64                  `json:"income_stress_minimum_available_minor"`
+	IncomeStressMinimumDate    string                 `json:"income_stress_minimum_date"`
+	IncomeStressStatus         string                 `json:"income_stress_status"`
+	DependsOnUnconfirmedIncome bool                   `json:"depends_on_unconfirmed_income"`
+	Verdict                    string                 `json:"verdict"`
+	RiskReason                 string                 `json:"risk_reason"`
+	Recommendation             string                 `json:"recommendation"`
+	Assumptions                []string               `json:"assumptions"`
+	Events                     []LiquidityEvent       `json:"events"`
+	Scenarios                  []LiquidityScenario    `json:"scenarios"`
+	Alternatives               []LiquidityAlternative `json:"alternatives"`
+	RecommendedAlternativeID   string                 `json:"recommended_alternative_id"`
+	CreatedAt                  time.Time              `json:"created_at"`
 }
 
 type SplitParticipant struct {
@@ -359,7 +366,7 @@ type Service struct {
 // Repository is the small persistence boundary used by the domain service.
 type Repository interface {
 	Seed(context.Context, time.Time) error
-	CreateConversation(context.Context, Conversation) error
+	CreateConversation(context.Context, Conversation, AuditEvent) error
 	ConversationOwner(context.Context, string) (string, error)
 	ConversationMessages(context.Context, string, string, int) ([]ConversationMessage, error)
 	AddConversationMessage(context.Context, ConversationMessage) error
@@ -374,7 +381,7 @@ type Repository interface {
 	CashflowEvents(context.Context, string) ([]CashflowEvent, error)
 	ScheduledCashflows(context.Context, string, time.Time) ([]ScheduledCashflow, error)
 	HistoricalSpending(context.Context, string, time.Time, time.Time) (HistoricalSpending, error)
-	CreateLiquiditySimulation(context.Context, LiquiditySimulation) error
+	CreateLiquiditySimulation(context.Context, LiquiditySimulation, AuditEvent) error
 	LiquiditySimulation(context.Context, string, string) (LiquiditySimulation, error)
 	BillSummary(context.Context, string, time.Time) (BillSummary, error)
 	BillSummaryRange(context.Context, string, time.Time, time.Time, string) (BillSummary, error)
@@ -404,7 +411,7 @@ type Repository interface {
 	ReserveIdempotency(context.Context, string, string, string, string, string, time.Time) (bool, error)
 	SaveIdempotency(context.Context, string, string, string, string, string, int, []byte, time.Time) error
 	DeleteIdempotency(context.Context, string, string, string, string) error
-	CreateWorkflow(context.Context, Workflow) error
+	CreateWorkflow(context.Context, Workflow, AuditEvent) error
 	Workflows(context.Context, string) ([]Workflow, error)
 	Workflow(context.Context, string, string) (Workflow, error)
 	WorkflowOwner(context.Context, string) (string, error)
@@ -413,7 +420,7 @@ type Repository interface {
 	CompleteWorkflowNode(context.Context, string, string, time.Time) error
 	FailWorkflowNode(context.Context, string, string, time.Time) error
 	CancelWorkflowNode(context.Context, string, string, time.Time) error
-	SetWorkflowNodeAction(context.Context, string, string, string, string, time.Time) error
+	CreateWorkflowAction(context.Context, Action, string, string, string, time.Time) error
 	ExecuteWorkflowBudgetLock(context.Context, Action, string, string, int64, time.Time) error
 	ExecuteWorkflowOrder(context.Context, Action, string, string, int64, string, time.Time) error
 }

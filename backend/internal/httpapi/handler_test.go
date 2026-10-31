@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,12 +52,19 @@ func newServer(t *testing.T) (*httptest.Server, func()) {
 
 func newServerWithClock(t *testing.T, now func() time.Time) (*httptest.Server, func()) {
 	t.Helper()
-	application, err := app.New(app.Config{Database: filepath.Join(t.TempDir(), "bankagent.db"), Now: now})
+	server, _, cleanup := newServerWithClockAndPath(t, now)
+	return server, cleanup
+}
+
+func newServerWithClockAndPath(t *testing.T, now func() time.Time) (*httptest.Server, string, func()) {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "bankagent.db")
+	application, err := app.New(app.Config{Database: dbPath, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(application.Handler())
-	return server, func() { server.Close(); _ = application.Close() }
+	return server, dbPath, func() { server.Close(); _ = application.Close() }
 }
 
 func request(t *testing.T, client *http.Client, method, url, body, idem string) (*http.Response, []byte) {
@@ -121,8 +129,8 @@ func TestYellowTransferAndIdempotency(t *testing.T) {
 	}
 	confirmBody := `{}`
 	resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", confirmBody, "confirm-1")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"transaction_id":"txn_`)) || !bytes.Contains(body, []byte(`"result":{`)) {
-		t.Fatalf("confirm: status=%d body=%s", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("X-Idempotency-Status") != "stored" || !bytes.Contains(body, []byte(`"transaction_id":"txn_`)) || !bytes.Contains(body, []byte(`"result":{`)) {
+		t.Fatalf("confirm: status=%d headers=%v body=%s", resp.StatusCode, resp.Header, body)
 	}
 	var first envelope
 	if err := json.Unmarshal(body, &first); err != nil {
@@ -137,8 +145,8 @@ func TestYellowTransferAndIdempotency(t *testing.T) {
 	}
 
 	resp, secondBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", confirmBody, "confirm-1")
-	if resp.StatusCode != http.StatusOK || !bytes.Equal(bytes.TrimSpace(secondBody), bytes.TrimSpace(body)) {
-		t.Fatalf("idempotent replay: status=%d first=%s second=%s", resp.StatusCode, body, secondBody)
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("X-Idempotency-Status") != "replayed" || !bytes.Equal(bytes.TrimSpace(secondBody), bytes.TrimSpace(body)) {
+		t.Fatalf("idempotent replay: status=%d headers=%v first=%s second=%s", resp.StatusCode, resp.Header, body, secondBody)
 	}
 	if !bytes.Contains(body, []byte(`"snapshot_hash":"`)) || !bytes.Contains(body, []byte(`"trace_id":"tr_`)) {
 		t.Fatalf("action is missing lifecycle evidence: %s", body)
@@ -187,7 +195,7 @@ func TestPendingYellowTransfersCannotExceedDailyLimitAtExecution(t *testing.T) {
 		t.Fatalf("confirm second transfer: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":940000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1440000`)) {
 		t.Fatalf("daily limit bypass changed balance: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
@@ -317,7 +325,7 @@ func TestAccountBalanceAndTransactions(t *testing.T) {
 	if err := json.Unmarshal(balanceResult.Data, &balance); err != nil {
 		t.Fatal(err)
 	}
-	if balance.AccountID != "acct_demo" || balance.BalanceMinor != 1000000 || balanceResult.TraceID == "" {
+	if balance.AccountID != "acct_demo" || balance.BalanceMinor != 1500000 || balanceResult.TraceID == "" {
 		t.Fatalf("unexpected balance: %+v trace=%q", balance, balanceResult.TraceID)
 	}
 
@@ -523,7 +531,7 @@ func TestConcurrentConfirmationExecutesOnce(t *testing.T) {
 		t.Fatalf("execution gate winners: success=%d conflict=%d", successes, conflicts)
 	}
 	resp, raw := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":970000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1470000`)) {
 		t.Fatalf("concurrent confirmation debited more than once: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
@@ -850,10 +858,18 @@ func TestInvestmentRedemptionRequiresMFAAndCreditsPrincipal(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("redemption mfa: status=%d body=%s", resp.StatusCode, body)
 	}
+	var redemptionVerified envelope
+	if err := json.Unmarshal(body, &redemptionVerified); err != nil {
+		t.Fatal(err)
+	}
 
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/actions/"+redemption.Action.ID, "", "")
 	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"total_minor":10000`)) || !bytes.Contains(body, []byte(`"profit_minor":0`)) {
 		t.Fatalf("redemption result: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/audit-traces/"+redemptionVerified.TraceID, "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"event_type":"action_succeeded"`)) || !bytes.Contains(body, []byte(`"total_minor":10000`)) {
+		t.Fatalf("redemption audit receipt: status=%d body=%s", resp.StatusCode, body)
 	}
 
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/investments/holdings", "", "")
@@ -861,7 +877,7 @@ func TestInvestmentRedemptionRequiresMFAAndCreditsPrincipal(t *testing.T) {
 		t.Fatalf("redeemed holdings: status=%d body=%s", resp.StatusCode, body)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"balance_minor":1000000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"balance_minor":1500000`)) {
 		t.Fatalf("redeemed balance: status=%d body=%s", resp.StatusCode, body)
 	}
 }
@@ -983,6 +999,80 @@ func TestWorkflowLifecycleAndCycleValidation(t *testing.T) {
 	}
 }
 
+func TestIdempotencyFinalizationFailureReturnsOriginalSuccess(t *testing.T) {
+	server, dbPath, cleanup := newServerWithClockAndPath(t, nil)
+	defer cleanup()
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`CREATE TRIGGER fail_idempotency_finalize BEFORE UPDATE ON idempotency_records
+		WHEN OLD.idem_key='review-idem-degraded-1'
+		BEGIN SELECT RAISE(ABORT, 'forced idempotency failure'); END;`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/conversations", `{}`, "review-idem-degraded-1")
+	if resp.StatusCode != http.StatusCreated || resp.Header.Get("X-Idempotency-Status") != "degraded" {
+		t.Fatalf("first request: status=%d headers=%v body=%s", resp.StatusCode, resp.Header, raw)
+	}
+	var status int
+	var response string
+	if err := db.QueryRow(`SELECT status_code,response_json FROM idempotency_records WHERE idem_key='review-idem-degraded-1'`).Scan(&status, &response); err != nil {
+		t.Fatal(err)
+	}
+	if status != 0 || response != "" {
+		t.Fatalf("idempotency record status=%d response=%q", status, response)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/conversations", `{}`, "review-idem-degraded-1")
+	if resp.StatusCode != http.StatusConflict || !bytes.Contains(raw, []byte("IDEMPOTENCY_IN_PROGRESS")) || resp.Header.Get("X-Idempotency-Status") != "pending" {
+		t.Fatalf("pending replay: status=%d headers=%v body=%s", resp.StatusCode, resp.Header, raw)
+	}
+}
+
+func TestWorkflowAuditFailureRollsBackResourceCreation(t *testing.T) {
+	server, dbPath, cleanup := newServerWithClockAndPath(t, nil)
+	defer cleanup()
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`CREATE TRIGGER fail_workflow_audit BEFORE INSERT ON audit_events
+		WHEN NEW.event_type='workflow_created'
+		BEGIN SELECT RAISE(ABORT, 'forced workflow audit failure'); END;`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	body := `{"purpose":"audit rollback","deadline":"` + deadline + `","nodes":[{"node_id":"reminder","kind":"reminder"}]}`
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "workflow-audit-rollback-1")
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("audit failure response: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM workflows WHERE purpose='audit rollback'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("workflow persisted without audit: %d", count)
+	}
+	if _, err := db.Exec(`DROP TRIGGER fail_workflow_audit`); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "workflow-audit-rollback-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("retry workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM workflows WHERE purpose='audit rollback'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("workflow count=%d", count)
+	}
+}
+
 func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()
@@ -1033,7 +1123,7 @@ func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
 		t.Fatalf("verify budget lock: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"reserved_minor":100000`)) || !bytes.Contains(raw, []byte(`"available_minor":900000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"reserved_minor":100000`)) || !bytes.Contains(raw, []byte(`"available_minor":1400000`)) {
 		t.Fatalf("locked balance: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "workflow-advance-3")
@@ -1071,8 +1161,67 @@ func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
 		t.Fatalf("workflow not completed: %+v", final)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":950000`)) || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) || !bytes.Contains(raw, []byte(`"available_minor":950000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1450000`)) || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) || !bytes.Contains(raw, []byte(`"available_minor":1450000`)) {
 		t.Fatalf("consumed balance: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestSingleBudgetLockRemainsReservedUntilDeadline(t *testing.T) {
+	base := time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	server, cleanup := newServerWithClock(t, func() time.Time { return base })
+	defer cleanup()
+	deadline := base.Add(24 * time.Hour)
+	body := `{"purpose":"预算持有","deadline":"` + deadline.Format(time.RFC3339) + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":10000}]}`
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "single-lock-create-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created envelope
+	var workflow struct {
+		ID string `json:"workflow_id"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(created.Data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "single-lock-advance-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("advance workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var advanced envelope
+	var pending struct {
+		Action struct {
+			ID string `json:"action_id"`
+		} `json:"action"`
+	}
+	if err := json.Unmarshal(raw, &advanced); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(advanced.Data, &pending); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/mfa/verify", `{"code":"000000"}`, "single-lock-mfa-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("verify lock: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/workflows/"+workflow.ID, "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"partially_completed"`)) {
+		t.Fatalf("budget-only workflow completed too early: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"reserved_minor":10000`)) || !bytes.Contains(raw, []byte(`"available_minor":1490000`)) {
+		t.Fatalf("budget was released early: status=%d body=%s", resp.StatusCode, raw)
+	}
+	expireBody := `{"virtual_now":"` + deadline.Format(time.RFC3339) + `"}`
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", expireBody, "single-lock-expire-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"failed"`)) {
+		t.Fatalf("expire workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) {
+		t.Fatalf("expired workflow did not release budget: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
 
@@ -1177,7 +1326,7 @@ func TestPromptInjectionCannotAutoExecuteTransfer(t *testing.T) {
 		t.Fatalf("prompt injection response: status=%d result=%+v body=%s", status, result, raw)
 	}
 	resp, raw := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1500000`)) {
 		t.Fatalf("prompt injection changed balance: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
@@ -1230,6 +1379,8 @@ func TestLiquiditySimulationPersistsProjectionAndAudit(t *testing.T) {
 		ID                     string `json:"simulation_id"`
 		Verdict                string `json:"verdict"`
 		MaximumSafeBudgetMinor int64  `json:"maximum_safe_budget_minor"`
+		IncomeStressStatus     string `json:"income_stress_status"`
+		DependsOnIncome        bool   `json:"depends_on_unconfirmed_income"`
 		Scenarios              []struct {
 			Name   string `json:"name"`
 			Points []any  `json:"points"`
@@ -1248,16 +1399,16 @@ func TestLiquiditySimulationPersistsProjectionAndAudit(t *testing.T) {
 	if err := json.Unmarshal(result.Data, &simulation); err != nil {
 		t.Fatal(err)
 	}
-	if simulation.ID == "" || simulation.Verdict != "unsafe" || simulation.MaximumSafeBudgetMinor != 0 {
+	if simulation.ID == "" || simulation.Verdict != "safe" || simulation.MaximumSafeBudgetMinor != 107001 || simulation.IncomeStressStatus != "safe" || simulation.DependsOnIncome {
 		t.Fatalf("unexpected simulation: %+v", simulation)
 	}
-	if len(simulation.Scenarios) != 3 || len(simulation.Scenarios[1].Points) != 31 {
+	if len(simulation.Scenarios) != 4 || len(simulation.Scenarios[1].Points) != 31 {
 		t.Fatalf("unexpected scenarios: %+v", simulation.Scenarios)
 	}
 	if !bytes.Contains(raw, []byte(`"description":"房租"`)) || !bytes.Contains(raw, []byte(`"kind":"subscription"`)) {
 		t.Fatalf("missing cashflow events: %s", raw)
 	}
-	if len(simulation.Alternatives) != 4 || simulation.RecommendedAlternativeID != "buffer_preserving" {
+	if len(simulation.Alternatives) != 4 || simulation.RecommendedAlternativeID != "current" {
 		t.Fatalf("unexpected alternatives: %+v", simulation.Alternatives)
 	}
 	recommended, split, conditional := 0, 0, 0
@@ -1294,13 +1445,17 @@ func TestLiquiditySimulationFromConversation(t *testing.T) {
 	server, cleanup := newServerWithClock(t, func() time.Time { return base })
 	defer cleanup()
 	conversationID := createConversation(t, server.URL)
-	status, result, raw := sendMessage(t, server.URL, conversationID, "锁定1000元会影响房租吗", "liquidity-message-1")
-	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"liquidity"`)) || !bytes.Contains(raw, []byte(`"verdict":"unsafe"`)) {
+	status, result, raw := sendMessage(t, server.URL, conversationID, "锁定5000元会影响房租吗", "liquidity-message-1")
+	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"liquidity"`)) || !bytes.Contains(raw, []byte(`"verdict":"unsafe"`)) || !bytes.Contains(raw, []byte(`"income_stress_status":"unsafe"`)) || !bytes.Contains(raw, []byte(`"depends_on_unconfirmed_income":true`)) {
 		t.Fatalf("liquidity message: status=%d result=%+v body=%s", status, result, raw)
 	}
 	status, result, raw = sendMessage(t, server.URL, conversationID, "锁定100元，不保留缓冲，会影响未来30天房租吗", "liquidity-message-safe-1")
 	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"verdict":"safe"`)) || !bytes.Contains(raw, []byte(`"essential_buffer_minor":0`)) {
 		t.Fatalf("safe liquidity message: status=%d result=%+v body=%s", status, result, raw)
+	}
+	status, result, raw = sendMessage(t, server.URL, conversationID, "锁定100元会影响未来999天房租吗", "liquidity-message-invalid-horizon-1")
+	if status != http.StatusOK || result.ReplyType != "question" || bytes.Contains(raw, []byte(`"liquidity"`)) {
+		t.Fatalf("invalid horizon must be rejected: status=%d result=%+v body=%s", status, result, raw)
 	}
 }
 
@@ -1415,7 +1570,7 @@ func TestScheduledTransferWaitsForDueTimeAndTriggersOnce(t *testing.T) {
 		t.Fatalf("schedule authorized transfer: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1500000`)) {
 		t.Fatalf("scheduled transfer must not debit early: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.ID+"/trigger", `{}`, "scheduled-transfer-early-1")
@@ -1436,7 +1591,7 @@ func TestScheduledTransferWaitsForDueTimeAndTriggersOnce(t *testing.T) {
 		t.Fatalf("second trigger must conflict: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":970000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1470000`)) {
 		t.Fatalf("scheduled transfer debited once: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
@@ -1479,7 +1634,7 @@ func TestScheduledRedTransferRequiresFreshMFAAtExecution(t *testing.T) {
 		t.Fatalf("trigger must require fresh MFA: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1500000`)) {
 		t.Fatalf("scheduled action executed before fresh MFA: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+action.ID+"/mfa/verify", `{"code":"000000"}`, "red-scheduled-auth-2")
@@ -1487,7 +1642,7 @@ func TestScheduledRedTransferRequiresFreshMFAAtExecution(t *testing.T) {
 		t.Fatalf("fresh scheduled MFA: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":500000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
 		t.Fatalf("scheduled transfer did not execute once: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
@@ -1583,7 +1738,7 @@ func TestPendingActionExpiresWithoutSideEffectAndWritesAudit(t *testing.T) {
 		t.Fatalf("confirm expired action: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1500000`)) {
 		t.Fatalf("expired action changed balance: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
@@ -1623,7 +1778,7 @@ func TestScheduledTransferCanBeCancelledBeforeDue(t *testing.T) {
 		t.Fatalf("cancel scheduled transfer: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1500000`)) {
 		t.Fatalf("cancelled scheduled transfer changed balance: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
@@ -1670,7 +1825,7 @@ func TestTransferSplitCreatesConfirmedCollectionRequest(t *testing.T) {
 		t.Fatalf("confirm transfer split: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1500000`)) {
 		t.Fatalf("split request must not move account funds: status=%d body=%s", resp.StatusCode, raw)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfer-splits", `{"conversation_id":"`+conversationID+`","total_amount_minor":10000,"participants":[{"name":"张三"}]}`, "transfer-split-invalid-1")
@@ -1684,7 +1839,7 @@ func TestWorkflowBudgetLockFailuresAndCancellationReleaseReservation(t *testing.
 		server, cleanup := newServer(t)
 		defer cleanup()
 		deadline := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
-		body := `{"purpose":"超额锁定","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":1000001}]}`
+		body := `{"purpose":"超额锁定","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":1600000}]}`
 		resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "insufficient-lock-create-1")
 		if resp.StatusCode != http.StatusCreated {
 			t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
@@ -1756,7 +1911,7 @@ func TestWorkflowBudgetLockFailuresAndCancellationReleaseReservation(t *testing.
 			t.Fatalf("cancel workflow: status=%d body=%s", resp.StatusCode, raw)
 		}
 		resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
-		if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) {
+		if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1500000`)) || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) {
 			t.Fatalf("cancelled workflow did not release reservation: status=%d body=%s", resp.StatusCode, raw)
 		}
 	})
@@ -1818,7 +1973,7 @@ func TestWorkflowBudgetLockRechecksLiquidityBeforeExecution(t *testing.T) {
 	defer cleanup()
 	conversationID := createConversation(t, server.URL)
 	deadline := base.Add(2 * time.Hour).Format(time.RFC3339)
-	body := `{"purpose":"大额预算","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":500000}]}`
+	body := `{"purpose":"大额预算","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":100000}]}`
 	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "liquidity-recheck-workflow-1")
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
@@ -1851,7 +2006,7 @@ func TestWorkflowBudgetLockRechecksLiquidityBeforeExecution(t *testing.T) {
 	}
 
 	scheduledAt := base.Add(30 * time.Minute).Format(time.RFC3339)
-	transferBody := `{"conversation_id":"` + conversationID + `","beneficiary_name":"张三","amount_minor":500000,"scheduled_at":"` + scheduledAt + `"}`
+	transferBody := `{"conversation_id":"` + conversationID + `","beneficiary_name":"张三","amount_minor":1450000,"scheduled_at":"` + scheduledAt + `"}`
 	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfers", transferBody, "liquidity-transfer-create-1")
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create scheduled transfer: status=%d body=%s", resp.StatusCode, raw)

@@ -56,8 +56,11 @@ func TestParseLiquidityBudgetUsesLatestAmount(t *testing.T) {
 }
 
 func TestParseLiquidityHorizonAndZeroBuffer(t *testing.T) {
-	if got := parseLiquidityHorizon("锁定100元，会影响未来45天房租吗"); got != 45 {
+	if got, ok := parseLiquidityHorizon("锁定100元，会影响未来45天房租吗"); !ok || got != 45 {
 		t.Fatalf("horizon=%d", got)
+	}
+	if _, ok := parseLiquidityHorizon("锁定100元，会影响未来999天房租吗"); ok {
+		t.Fatal("out-of-range horizon must be rejected")
 	}
 	buffer := parseLiquidityBuffer("锁定100元，不保留缓冲，会影响未来30天房租吗")
 	if buffer == nil || *buffer != 0 {
@@ -78,5 +81,17 @@ func TestLiquidityEventsIncludeConfirmedScheduledTransfer(t *testing.T) {
 	}})
 	if len(events) != 1 || events[0].Kind != "scheduled_transfer" || events[0].Direction != "out" || events[0].AmountMinor != 30000 {
 		t.Fatalf("events=%+v", events)
+	}
+}
+
+func TestLeapYearWorkflowHorizonExceedsFixedLimit(t *testing.T) {
+	loc := time.FixedZone("CST", 8*60*60)
+	start := time.Date(2027, 3, 1, 9, 0, 0, 0, loc)
+	deadline := start.AddDate(1, 0, 0)
+	if got := liquidityHorizonDaysBetween(start, deadline); got != maxLiquidityHorizonDays+1 {
+		t.Fatalf("raw horizon=%d", got)
+	}
+	if got := liquidityHorizonDays(start, deadline); got != maxLiquidityHorizonDays {
+		t.Fatalf("capped horizon=%d", got)
 	}
 }

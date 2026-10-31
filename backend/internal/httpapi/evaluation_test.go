@@ -105,7 +105,7 @@ func TestExecutableEvaluationReport(t *testing.T) {
 		bytes.Contains(transferAudit, []byte(`"event_type":"authorization_gate_passed"`)) &&
 		bytes.Contains(transferAudit, []byte(`"event_type":"action_succeeded"`))
 
-	simulationBody := `{"account_id":"acct_demo","horizon_days":30,"proposed_budget_minor":100000,"essential_buffer_minor":100000}`
+	simulationBody := `{"account_id":"acct_demo","horizon_days":30,"proposed_budget_minor":500000,"essential_buffer_minor":100000}`
 	resp, simulationRaw := request(t, http.DefaultClient, http.MethodPost, liquidityServer.URL+"/v1/liquidity-simulations", simulationBody, "eval-liquidity-golden-1")
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("liquidity simulation: status=%d body=%s", resp.StatusCode, simulationRaw)
@@ -131,7 +131,7 @@ func TestExecutableEvaluationReport(t *testing.T) {
 	if err := json.Unmarshal(simulationEnvelope.Data, &simulation); err != nil {
 		t.Fatal(err)
 	}
-	goldenError := absInt64(simulation.MaximumSafeBudgetMinor)
+	goldenError := absInt64(simulation.MaximumSafeBudgetMinor - 107001)
 	addCheck("liquidity_golden_case", simulation.Verdict == "unsafe" && goldenError == 0, fmt.Sprintf("verdict=%s max_safe_error=%d", simulation.Verdict, goldenError))
 	recommendationCount := 0
 	recommendationSafe := false

@@ -20,11 +20,9 @@ var suspiciousInputPattern = regexp.MustCompile(`忽略.{0,8}(?:系统|权限|�
 func (s *Service) CreateConversation(ctx context.Context, userID string) (Conversation, string, error) {
 	now := s.now()
 	conversation := Conversation{ID: NewID("conv"), UserID: userID, CreatedAt: now}
-	if err := s.repo.CreateConversation(ctx, conversation); err != nil {
-		return Conversation{}, "", err
-	}
 	trace := NewID("tr")
-	if err := s.audit(ctx, trace, conversation.ID, "", "conversation_created", "succeeded", "user", nil, now); err != nil {
+	event := newAuditEvent(trace, conversation.ID, "", "conversation_created", "succeeded", "user", nil, now)
+	if err := s.repo.CreateConversation(ctx, conversation, event); err != nil {
 		return Conversation{}, "", err
 	}
 	return conversation, trace, nil
@@ -514,7 +512,11 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		if err != nil {
 			return MessageResult{}, trace, err
 		}
-		simulation, simulationTrace, err := s.CreateLiquiditySimulation(ctx, userID, account.ID, parseLiquidityHorizon(continuation), budget, parseLiquidityBuffer(continuation))
+		horizonDays, horizonOK := parseLiquidityHorizon(continuation)
+		if !horizonOK {
+			return MessageResult{RunID: runID, ReplyType: "question", Text: "预测周期需在 1 到 366 天之间。"}, trace, nil
+		}
+		simulation, simulationTrace, err := s.CreateLiquiditySimulation(ctx, userID, account.ID, horizonDays, budget, parseLiquidityBuffer(continuation))
 		if err != nil {
 			return MessageResult{}, trace, err
 		}
@@ -1399,14 +1401,6 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
 		action.Result = map[string]any{"holding_id": result.HoldingID, "principal_minor": result.Principal, "profit_minor": result.ProfitMinor, "total_minor": result.TotalMinor, "days_held": result.DaysHeld, "annual_rate_bps": result.AnnualRateBPS}
-		resultJSON, err := json.Marshal(action.Result)
-		if err != nil {
-			return err
-		}
-		action.ResultJSON = string(resultJSON)
-		if err := s.repo.UpdateAction(ctx, *action); err != nil {
-			return err
-		}
 		return nil
 	case "investment_purchase":
 		var snapshot struct {
@@ -1436,14 +1430,6 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
 		action.Result = map[string]any{"card_id": card.ID, "masked_number": card.MaskedNumber, "status": card.Status, "card_type": snapshot.CardType}
-		resultJSON, err := json.Marshal(action.Result)
-		if err != nil {
-			return err
-		}
-		action.ResultJSON = string(resultJSON)
-		if err := s.repo.UpdateAction(ctx, *action); err != nil {
-			return err
-		}
 		return nil
 	case "card_limit_change":
 		var snapshot struct {
@@ -1498,14 +1484,6 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
 		action.Result = map[string]any{"workflow_id": snapshot.WorkflowID, "node_id": snapshot.NodeID, "amount_minor": snapshot.AmountMinor, "status": "locked"}
-		resultJSON, err := json.Marshal(action.Result)
-		if err != nil {
-			return err
-		}
-		action.ResultJSON = string(resultJSON)
-		if err := s.repo.UpdateAction(ctx, *action); err != nil {
-			return err
-		}
 		return nil
 	case "workflow_external_order":
 		var snapshot struct {
@@ -1539,7 +1517,11 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 func (s *Service) audit(ctx context.Context, trace, conversation, action, event, outcome, actor string, detail map[string]any, now time.Time) error {
 	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	return s.repo.AddAudit(auditCtx, AuditEvent{ID: NewID("evt"), TraceID: trace, ConversationID: conversation, ActionID: action, EventType: event, Outcome: outcome, Actor: actor, PolicyVersion: "bankagent-policy-v1", Detail: detail, OccurredAt: now, Sequence: 1})
+	return s.repo.AddAudit(auditCtx, newAuditEvent(trace, conversation, action, event, outcome, actor, detail, now))
+}
+
+func newAuditEvent(trace, conversation, action, event, outcome, actor string, detail map[string]any, now time.Time) AuditEvent {
+	return AuditEvent{ID: NewID("evt"), TraceID: trace, ConversationID: conversation, ActionID: action, EventType: event, Outcome: outcome, Actor: actor, PolicyVersion: "bankagent-policy-v1", Detail: detail, OccurredAt: now, Sequence: 1}
 }
 
 func parseHoldingID(text string) string {

@@ -81,7 +81,8 @@ func (s *Service) createLiquiditySimulationAt(ctx context.Context, userID, accou
 
 	expectedBase := projectLiquidityScenario("expected", profile.AverageDailyMinor, account.AvailableMinor, startAt, horizonDays, buffer, baseEvents)
 	conservativeBase := projectLiquidityScenario("conservative", profile.ConservativeDailyMinor, account.AvailableMinor, startAt, horizonDays, buffer, baseEvents)
-	baseMinimum := min(expectedBase.MinimumAvailableMinor, conservativeBase.MinimumAvailableMinor)
+	incomeStressBase := projectLiquidityScenario("income_stress", profile.ConservativeDailyMinor, account.AvailableMinor, startAt, horizonDays, buffer, withoutInflows(baseEvents))
+	baseMinimum := min(expectedBase.MinimumAvailableMinor, conservativeBase.MinimumAvailableMinor, incomeStressBase.MinimumAvailableMinor)
 	maxSafeBudget := baseMinimum - buffer
 	if maxSafeBudget < 0 {
 		maxSafeBudget = 0
@@ -93,9 +94,10 @@ func (s *Service) createLiquiditySimulationAt(ctx context.Context, userID, accou
 		projectLiquidityScenario("essential_only", 0, account.AvailableMinor, startAt, horizonDays, buffer, withProposal),
 		projectLiquidityScenario("expected", profile.AverageDailyMinor, account.AvailableMinor, startAt, horizonDays, buffer, withProposal),
 		projectLiquidityScenario("conservative", profile.ConservativeDailyMinor, account.AvailableMinor, startAt, horizonDays, buffer, withProposal),
+		projectLiquidityScenario("income_stress", profile.ConservativeDailyMinor, account.AvailableMinor, startAt, horizonDays, buffer, withoutInflows(withProposal)),
 	}
-	expected, conservative := scenarios[1], scenarios[2]
-	verdict := combineLiquidityStatus(expected.Status, conservative.Status)
+	expected, conservative, incomeStress := scenarios[1], scenarios[2], scenarios[3]
+	verdict := combineLiquidityStatus(expected.Status, conservative.Status, incomeStress.Status)
 	alternatives := buildLiquidityAlternatives(startAt, horizonDays, profile, account.AvailableMinor, proposedBudgetMinor, maxSafeBudget, buffer, baseEvents)
 	recommendedAlternativeID := ""
 	if len(alternatives) > 0 {
@@ -120,34 +122,35 @@ func (s *Service) createLiquiditySimulationAt(ctx context.Context, userID, accou
 			recommendedAlternativeID = alternatives[best].ID
 		}
 	}
-	riskReason := liquidityRiskReason(verdict, expected, conservative, withProposal)
+	riskReason := liquidityRiskReason(verdict, expected, conservative, incomeStress, withProposal)
+	trace := NewID("tr")
 	simulation := LiquiditySimulation{
 		ID: NewID("liq"), UserID: userID, AccountID: account.ID, Currency: account.Currency,
 		StartAt: startAt, HorizonDays: horizonDays, StartingAvailableMinor: account.AvailableMinor,
 		ProposedBudgetMinor: proposedBudgetMinor, EssentialBufferMinor: buffer,
 		HistoricalAverageDaily: profile.AverageDailyMinor, HistoricalConservativeDay: profile.ConservativeDailyMinor,
 		MaximumSafeBudgetMinor: maxSafeBudget, Verdict: verdict, RiskReason: riskReason,
+		IncomeStressMinimumMinor: incomeStress.MinimumAvailableMinor, IncomeStressMinimumDate: incomeStress.MinimumDate,
+		IncomeStressStatus: incomeStress.Status, DependsOnUnconfirmedIncome: expected.Status != "unsafe" && incomeStress.Status == "unsafe",
 		Recommendation: liquidityRecommendation(verdict, maxSafeBudget, buffer, account.Currency),
 		Assumptions: []string{
-			"已确认工资、房租、还款和保险按本地现金流计划展开。",
+			"工资、房租、还款和保险按预置现金流计划展开。",
 			"活跃订阅和已确认的预约转账计入预测。",
+			"收入压力情景假设预测期内的收入均未按时到账。",
 			fmt.Sprintf("预期情景按过去30天可支配消费日均 %s %s 计算。", yuan(profile.AverageDailyMinor), account.Currency),
 			fmt.Sprintf("保守情景按过去30天最高单日可支配消费 %s %s 计算。", yuan(profile.ConservativeDailyMinor), account.Currency),
 			"计划预算在预测起点即从可用余额中占用。",
 		},
 		Events: withProposal, Scenarios: scenarios, Alternatives: alternatives,
-		RecommendedAlternativeID: recommendedAlternativeID, CreatedAt: s.now(),
+		RecommendedAlternativeID: recommendedAlternativeID, TraceID: trace, CreatedAt: s.now(),
 	}
-	trace := NewID("tr")
-	simulation.TraceID = trace
-	if err := s.repo.CreateLiquiditySimulation(ctx, simulation); err != nil {
-		return LiquiditySimulation{}, trace, err
-	}
-	if err := s.audit(ctx, trace, "", "", "liquidity_simulation_completed", "succeeded", "tool", map[string]any{
+	event := newAuditEvent(trace, "", "", "liquidity_simulation_completed", "succeeded", "tool", map[string]any{
 		"simulation_id": simulation.ID, "account_id": account.ID, "horizon_days": horizonDays,
 		"proposed_budget_minor": proposedBudgetMinor, "verdict": verdict,
-		"minimum_expected_minor": expected.MinimumAvailableMinor, "maximum_safe_budget_minor": maxSafeBudget,
-	}, simulation.CreatedAt); err != nil {
+		"minimum_expected_minor": expected.MinimumAvailableMinor, "minimum_income_stress_minor": incomeStress.MinimumAvailableMinor,
+		"maximum_safe_budget_minor": maxSafeBudget,
+	}, simulation.CreatedAt)
+	if err := s.repo.CreateLiquiditySimulation(ctx, simulation, event); err != nil {
 		return LiquiditySimulation{}, trace, err
 	}
 	return simulation, trace, nil
@@ -326,9 +329,12 @@ func liquidityEventDelta(event LiquidityEvent) int64 {
 	return -event.AmountMinor
 }
 
-func liquidityRiskReason(verdict string, expected, conservative LiquidityScenario, events []LiquidityEvent) string {
+func liquidityRiskReason(verdict string, expected, conservative, incomeStress LiquidityScenario, events []LiquidityEvent) string {
 	if verdict == "safe" {
-		return "预期和保守消费情景均保持在安全缓冲之上。"
+		return "预期、保守消费和收入未到账情景均保持在安全缓冲之上。"
+	}
+	if expected.Status != "unsafe" && conservative.Status != "unsafe" && incomeStress.Status == "unsafe" {
+		return fmt.Sprintf("在预计收入按时到账时风险可控，但收入未到账时将在 %s 出现资金不足。", incomeStress.MinimumDate)
 	}
 	if expected.Status != "unsafe" && conservative.Status != "safe" {
 		if conservative.Status == "unsafe" {
@@ -372,13 +378,15 @@ func buildLiquidityAlternatives(startAt time.Time, horizonDays int, profile Hist
 		sortLiquidityEvents(events)
 		expected := projectLiquidityScenario("expected", profile.AverageDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
 		conservative := projectLiquidityScenario("conservative", profile.ConservativeDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
-		status := combineLiquidityStatus(expected.Status, conservative.Status)
+		incomeStress := projectLiquidityScenario("income_stress", profile.ConservativeDailyMinor, startingAvailable, startAt, horizonDays, buffer, withoutInflows(events))
+		status := combineLiquidityStatus(expected.Status, conservative.Status, incomeStress.Status)
 		alternatives = append(alternatives, LiquidityAlternative{
 			ID: id, Label: label, Description: description, TotalBudgetMinor: total,
 			Conditional: conditional, Condition: condition,
 			Reservations: reservations, Status: status,
 			ExpectedMinimumAvailableMinor: expected.MinimumAvailableMinor, ExpectedMinimumDate: expected.MinimumDate,
 			ConservativeMinimumAvailable: conservative.MinimumAvailableMinor, ConservativeMinimumDate: conservative.MinimumDate,
+			IncomeStressMinimumAvailable: incomeStress.MinimumAvailableMinor, IncomeStressMinimumDate: incomeStress.MinimumDate,
 			ExpectedPoints: expected.Points, Tradeoff: tradeoff,
 		})
 	}
@@ -412,14 +420,27 @@ func buildLiquidityAlternatives(startAt time.Time, horizonDays int, profile Hist
 	return alternatives
 }
 
-func combineLiquidityStatus(expected, conservative string) string {
-	if expected == "unsafe" || conservative == "unsafe" {
-		return "unsafe"
+func combineLiquidityStatus(statuses ...string) string {
+	status := "safe"
+	for _, current := range statuses {
+		if current == "unsafe" {
+			return "unsafe"
+		}
+		if current == "tight" {
+			status = "tight"
+		}
 	}
-	if expected == "tight" || conservative == "tight" {
-		return "tight"
+	return status
+}
+
+func withoutInflows(events []LiquidityEvent) []LiquidityEvent {
+	result := make([]LiquidityEvent, 0, len(events))
+	for _, event := range events {
+		if event.Direction != "in" {
+			result = append(result, event)
+		}
 	}
-	return "safe"
+	return result
 }
 
 func alternativeRiskRank(status string) int {
@@ -457,16 +478,16 @@ func parseLiquidityBudget(text string) (int64, bool) {
 	return int64(amount*100 + 0.5), true
 }
 
-func parseLiquidityHorizon(text string) int {
+func parseLiquidityHorizon(text string) (int, bool) {
 	match := regexp.MustCompile(`未来\s*([0-9]{1,3})\s*天`).FindStringSubmatch(text)
 	if len(match) != 2 {
-		return defaultLiquidityHorizonDays
+		return defaultLiquidityHorizonDays, true
 	}
 	days, err := strconv.Atoi(match[1])
 	if err != nil || days < 1 || days > maxLiquidityHorizonDays {
-		return defaultLiquidityHorizonDays
+		return 0, false
 	}
-	return days
+	return days, true
 }
 
 func parseLiquidityBuffer(text string) *int64 {
@@ -489,21 +510,31 @@ func parseLiquidityBuffer(text string) *int64 {
 func liquiditySummary(simulation LiquiditySimulation) string {
 	expected := simulation.Scenarios[1]
 	verdict := map[string]string{"safe": "安全", "tight": "偏紧", "unsafe": "不足"}[simulation.Verdict]
-	return fmt.Sprintf("未来 %d 天流动性%s：预期最低可用 %s %s，建议预留不超过 %s %s。",
+	condition := ""
+	if simulation.DependsOnUnconfirmedIncome {
+		condition = "；当前结果依赖预计收入到账"
+	}
+	return fmt.Sprintf("未来 %d 天流动性%s：预期最低可用 %s %s，收入未到账时最低 %s %s，建议预留不超过 %s %s%s。",
 		simulation.HorizonDays, verdict, yuan(expected.MinimumAvailableMinor), simulation.Currency,
-		yuan(simulation.MaximumSafeBudgetMinor), simulation.Currency)
+		yuan(simulation.IncomeStressMinimumMinor), simulation.Currency,
+		yuan(simulation.MaximumSafeBudgetMinor), simulation.Currency, condition)
 }
 
 func liquidityHorizonDays(start, deadline time.Time) int {
+	days := liquidityHorizonDaysBetween(start, deadline)
+	if days > maxLiquidityHorizonDays {
+		days = maxLiquidityHorizonDays
+	}
+	return days
+}
+
+func liquidityHorizonDaysBetween(start, deadline time.Time) int {
 	loc := start.Location()
 	startLocal := start.In(loc)
 	startAt := time.Date(startLocal.Year(), startLocal.Month(), startLocal.Day(), 0, 0, 0, 0, loc)
 	days := int(math.Ceil(deadline.In(loc).Sub(startAt).Hours() / 24))
 	if days < 1 {
 		days = 1
-	}
-	if days > maxLiquidityHorizonDays {
-		days = maxLiquidityHorizonDays
 	}
 	return days
 }
