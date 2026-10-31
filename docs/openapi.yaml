@@ -720,6 +720,7 @@ components:
             - RATE_LIMITED
             - INTERNAL
             - SERVICE_UNAVAILABLE
+            - EXECUTION_UNKNOWN
         message: { type: string }
         details: { type: object, additionalProperties: true }
     CreateConversationRequest:
@@ -776,7 +777,7 @@ components:
           enum: [green, yellow, red]
         status:
           type: string
-          enum: [awaiting_confirmation, awaiting_mfa, executing, processing, succeeded, failed, cancelled, expired]
+          enum: [awaiting_confirmation, awaiting_mfa, executing, processing, reconciliation_required, succeeded, failed, cancelled, expired]
         snapshot_hash: { type: string }
         summary: { type: object, additionalProperties: true }
         authorization: { $ref: '#/components/schemas/Authorization' }
@@ -797,7 +798,7 @@ components:
       required: [tool_name, status]
       properties:
         tool_name: { type: string }
-        status: { type: string, enum: [succeeded, rejected, failed, processing] }
+        status: { type: string, enum: [succeeded, rejected, failed, processing, unknown] }
         reference: { type: string }
         result: { type: object, additionalProperties: true }
         occurred_at: { type: string, format: date-time }
@@ -921,7 +922,7 @@ components:
         action_id: { type: string }
     AuditEvent:
       type: object
-      required: [event_id, trace_id, event_type, outcome, occurred_at]
+      required: [event_id, trace_id, event_type, outcome, occurred_at, sequence]
       properties:
         event_id: { type: string }
         trace_id: { type: string }
@@ -931,8 +932,9 @@ components:
         outcome: { type: string }
         actor: { type: string, enum: [user, system, model, tool] }
         policy_version: { type: string }
-        detail: { type: object, additionalProperties: true, description: 已脱敏的摘要，不包含验证码、Token 或完整账户号 }
+        detail: { type: object, additionalProperties: true, description: 已脱敏的摘要，不包含验证码、Token 或完整账户号；按 sequence 排序 }
         occurred_at: { type: string, format: date-time }
+        sequence: { type: integer, format: int64, minimum: 1 }
     AuditTrace:
       type: object
       required: [trace_id, events]
