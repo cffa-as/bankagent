@@ -47,9 +47,8 @@ export type Action = {
     | 'cancelled'
     | 'expired'
   snapshot_hash?: string
-  summary?: Record<string, unknown>
+  snapshot?: Record<string, unknown>
   authorization?: Authorization
-  tool_receipt?: ToolReceipt
   result?: Record<string, unknown>
   expires_at: string
   created_at?: string
