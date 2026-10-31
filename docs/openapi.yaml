@@ -776,16 +776,13 @@ components:
           $ref: '#/components/schemas/Workflow'
     ConfirmActionRequest:
       type: object
+      description: 用户确认动作快照；当前演示版本请求体为空对象即可。
       additionalProperties: false
-      required: [confirmation_token]
-      properties:
-        confirmation_token: { type: string, minLength: 1, maxLength: 256, writeOnly: true }
     VerifyMFARequest:
       type: object
       additionalProperties: false
-      required: [challenge_id, code]
+      required: [code]
       properties:
-        challenge_id: { type: string }
         code: { type: string, minLength: 4, maxLength: 12, writeOnly: true }
     Action:
       type: object
