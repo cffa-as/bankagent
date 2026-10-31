@@ -1,8 +1,9 @@
 'use client'
 
 import { FormEvent, useState } from 'react'
+import { LiquiditySandbox } from '../components/liquidity-sandbox'
 import { VaultlineMark } from '../components/vaultline-mark'
-import { cancelAction, confirmAction, createConversation, getAction, sendMessage, verifyMfa, type Action, type MessageResult } from '../lib/api'
+import { cancelAction, confirmAction, createConversation, createWorkflow, getAction, sendMessage, verifyMfa, type Action, type LiquidityAlternative, type MessageResult, type Workflow } from '../lib/api'
 
 type Stage = 'intent' | 'risk' | 'auth' | 'mfa'
 
@@ -44,7 +45,7 @@ function displayValue(value: unknown, fallback = '—') {
 }
 
 export default function Home() {
-  const [message, setMessage] = useState('转 500 元给王明，备注房租')
+  const [message, setMessage] = useState('锁定 1000 元会影响房租吗')
   const [conversationId, setConversationId] = useState<string>()
   const [liveResult, setLiveResult] = useState<MessageResult>()
   const [liveAction, setLiveAction] = useState<Action>()
@@ -52,6 +53,9 @@ export default function Home() {
   const [liveError, setLiveError] = useState('')
   const [mfaCode, setMfaCode] = useState('')
   const [actionBusy, setActionBusy] = useState(false)
+  const [sandboxWorkflow, setSandboxWorkflow] = useState<Workflow>()
+  const [sandboxBusy, setSandboxBusy] = useState(false)
+  const [sandboxError, setSandboxError] = useState('')
   const stage = getStage(liveAction)
   const current = stageCopy[stage]
   const currentIndex = stages.findIndex((item) => item.id === stage)
@@ -63,6 +67,8 @@ export default function Home() {
     setLiveError('')
     setLiveResult(undefined)
     setLiveAction(undefined)
+    setSandboxWorkflow(undefined)
+    setSandboxError('')
     try {
       const activeConversation = conversationId ?? (await createConversation()).data.conversation_id
       if (!conversationId) setConversationId(activeConversation)
@@ -73,6 +79,29 @@ export default function Home() {
     } catch (error) {
       setLiveState('error')
       setLiveError(error instanceof Error ? error.message : '无法连接服务端')
+    }
+  }
+
+  async function createSelectedBudgetPlan(alternative: LiquidityAlternative) {
+    const simulation = liveResult?.liquidity
+    if (!simulation || sandboxBusy || alternative.total_budget_minor <= 0 || alternative.reservations.length === 0) return
+    setSandboxBusy(true)
+    setSandboxError('')
+    try {
+      const deadline = new Date(new Date(simulation.start_at).getTime() + (simulation.horizon_days + 1) * 86400000).toISOString()
+      const nodes = alternative.reservations.map((reservation, index) => ({
+        node_id: `liquidity_lock_${index + 1}`,
+        kind: 'budget_lock' as const,
+        amount_minor: reservation.amount_minor,
+        due_at: `${reservation.date}T09:00:00+08:00`,
+        ...(index === 0 ? {} : { depends_on: [`liquidity_lock_${index}`] }),
+      }))
+      const response = await createWorkflow(`流动性沙盘：${alternative.label}`, deadline, nodes)
+      setSandboxWorkflow(response.data)
+    } catch (error) {
+      setSandboxError(error instanceof Error ? error.message : '预算计划生成失败')
+    } finally {
+      setSandboxBusy(false)
     }
   }
 
@@ -159,6 +188,7 @@ export default function Home() {
                 <div className="live-console">
                   <div className="live-console-heading"><span className="terminal-label">LIVE API ADAPTER</span><span className={`live-status live-status--${liveState}`}><i /> {liveStatus}</span></div>
                   <form onSubmit={submitMessage}><input aria-label="发送给银行服务端的自然语言请求" value={message} onChange={(event) => setMessage(event.target.value)} /><button type="submit" disabled={liveState === 'sending'}>{liveState === 'sending' ? '发送中' : '发送到服务端'} <span>↗</span></button></form>
+                  <div className="live-presets"><button type="button" onClick={() => setMessage('锁定 1000 元会影响房租吗')}>流动性 What-if</button><button type="button" onClick={() => setMessage('给张三转300元，备注房租')}>转账确认</button></div>
                   {liveResult && <p className="live-result">{liveResult.text ?? liveResult.reply_type} · <code>{liveActionStatus}</code></p>}
                   {liveError && <p className="live-error">{liveError}</p>}
                 </div>
@@ -178,6 +208,17 @@ export default function Home() {
           <div className="stage-foot"><span>MODEL PROPOSES</span><span className="stage-arrow">→</span><span>BANK SERVER DECIDES</span><span className="stage-arrow">→</span><span>RECEIPT ONLY WHEN ISSUED</span></div>
         </div>
       </section>
+
+      {liveResult?.liquidity && (
+        <LiquiditySandbox
+          key={liveResult.liquidity.simulation_id}
+          simulation={liveResult.liquidity}
+          workflow={sandboxWorkflow}
+          creating={sandboxBusy}
+          error={sandboxError}
+          onCreatePlan={createSelectedBudgetPlan}
+        />
+      )}
 
       <section className="control-strip" id="product" aria-label="产品控制边界">{['Natural language', 'Server risk', 'Action snapshot', 'Bank MFA'].map((item, index) => <div key={item}><span>0{index + 1}</span><strong>{item}</strong><i /></div>)}</section>
 

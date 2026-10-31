@@ -981,6 +981,12 @@ func TestLiquiditySimulationPersistsProjectionAndAudit(t *testing.T) {
 		Events []struct {
 			Description string `json:"description"`
 		} `json:"events"`
+		Alternatives []struct {
+			ID          string `json:"alternative_id"`
+			Status      string `json:"status"`
+			Recommended bool   `json:"recommended"`
+		} `json:"alternatives"`
+		RecommendedAlternativeID string `json:"recommended_alternative_id"`
 	}
 	if err := json.Unmarshal(result.Data, &simulation); err != nil {
 		t.Fatal(err)
@@ -993,6 +999,21 @@ func TestLiquiditySimulationPersistsProjectionAndAudit(t *testing.T) {
 	}
 	if !bytes.Contains(raw, []byte(`"description":"房租"`)) || !bytes.Contains(raw, []byte(`"kind":"subscription"`)) {
 		t.Fatalf("missing cashflow events: %s", raw)
+	}
+	if len(simulation.Alternatives) != 4 || simulation.RecommendedAlternativeID != "after_income" {
+		t.Fatalf("unexpected alternatives: %+v", simulation.Alternatives)
+	}
+	recommended, split := 0, 0
+	for _, alternative := range simulation.Alternatives {
+		if alternative.Recommended {
+			recommended++
+		}
+		if alternative.ID == "split" {
+			split++
+		}
+	}
+	if recommended != 1 || split != 1 {
+		t.Fatalf("unexpected recommendation flags: %+v", simulation.Alternatives)
 	}
 	resp, replay := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/liquidity-simulations", body, "liquidity-simulation-1")
 	if resp.StatusCode != http.StatusCreated || !bytes.Equal(bytes.TrimSpace(raw), bytes.TrimSpace(replay)) {

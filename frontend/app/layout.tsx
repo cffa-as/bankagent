@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import './liquidity-sandbox.css'
 
 export const metadata: Metadata = {
   title: 'Vaultline — Secure banking intelligence',

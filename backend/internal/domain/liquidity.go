@@ -97,6 +97,21 @@ func (s *Service) createLiquiditySimulationAt(ctx context.Context, userID, accou
 	if verdict == "safe" && conservative.Status != "safe" {
 		verdict = "tight"
 	}
+	alternatives := buildLiquidityAlternatives(startAt, horizonDays, profile, account.AvailableMinor, proposedBudgetMinor, maxSafeBudget, buffer, baseEvents)
+	recommendedAlternativeID := ""
+	if len(alternatives) > 0 {
+		best := 0
+		for i := 1; i < len(alternatives); i++ {
+			candidate, current := alternatives[i], alternatives[best]
+			if alternativeRiskRank(candidate.Status) < alternativeRiskRank(current.Status) ||
+				(alternativeRiskRank(candidate.Status) == alternativeRiskRank(current.Status) && candidate.ConservativeMinimumAvailable > current.ConservativeMinimumAvailable) ||
+				(alternativeRiskRank(candidate.Status) == alternativeRiskRank(current.Status) && candidate.ConservativeMinimumAvailable == current.ConservativeMinimumAvailable && candidate.TotalBudgetMinor > current.TotalBudgetMinor) {
+				best = i
+			}
+		}
+		alternatives[best].Recommended = true
+		recommendedAlternativeID = alternatives[best].ID
+	}
 	riskReason := liquidityRiskReason(verdict, expected, conservative, withProposal)
 	simulation := LiquiditySimulation{
 		ID: NewID("liq"), UserID: userID, AccountID: account.ID, Currency: account.Currency,
@@ -112,7 +127,8 @@ func (s *Service) createLiquiditySimulationAt(ctx context.Context, userID, accou
 			fmt.Sprintf("保守情景按过去30天最高单日可支配消费 %s %s 计算。", yuan(profile.ConservativeDailyMinor), account.Currency),
 			"计划预算在预测起点即从可用余额中占用。",
 		},
-		Events: withProposal, Scenarios: scenarios, CreatedAt: s.now(),
+		Events: withProposal, Scenarios: scenarios, Alternatives: alternatives,
+		RecommendedAlternativeID: recommendedAlternativeID, CreatedAt: s.now(),
 	}
 	trace := NewID("tr")
 	simulation.TraceID = trace
@@ -328,6 +344,75 @@ func liquidityRecommendation(verdict string, maxSafeBudget, buffer int64, curren
 		return fmt.Sprintf("该预算可以继续评估，但为保留 %s %s 必要支出缓冲，建议预留不超过 %s %s。", yuan(buffer), currency, yuan(maxSafeBudget), currency)
 	default:
 		return fmt.Sprintf("预算不会突破必要支出缓冲，仍保留至少 %s %s 的最低安全空间。", yuan(buffer), currency)
+	}
+}
+
+func buildLiquidityAlternatives(startAt time.Time, horizonDays int, profile HistoricalSpending, startingAvailable, proposedBudget, maxSafeBudget, buffer int64, baseEvents []LiquidityEvent) []LiquidityAlternative {
+	var alternatives []LiquidityAlternative
+	startDate := startAt.Format("2006-01-02")
+	add := func(id, label, description string, total int64, reservations []LiquidityReservation, tradeoff string) {
+		events := append([]LiquidityEvent{}, baseEvents...)
+		for i, reservation := range reservations {
+			if reservation.AmountMinor <= 0 {
+				continue
+			}
+			events = append(events, LiquidityEvent{
+				Date: reservation.Date, Kind: "proposed_budget", Direction: "out",
+				Description: "计划预留预算", AmountMinor: reservation.AmountMinor, SourceID: fmt.Sprintf("%s_%d", id, i),
+			})
+		}
+		sortLiquidityEvents(events)
+		expected := projectLiquidityScenario("expected", profile.AverageDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
+		conservative := projectLiquidityScenario("conservative", profile.ConservativeDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
+		status := expected.Status
+		if status == "safe" && conservative.Status != "safe" {
+			status = "tight"
+		}
+		alternatives = append(alternatives, LiquidityAlternative{
+			ID: id, Label: label, Description: description, TotalBudgetMinor: total,
+			Reservations: reservations, Status: status,
+			ExpectedMinimumAvailableMinor: expected.MinimumAvailableMinor, ExpectedMinimumDate: expected.MinimumDate,
+			ConservativeMinimumAvailable: conservative.MinimumAvailableMinor, ConservativeMinimumDate: conservative.MinimumDate,
+			ExpectedPoints: expected.Points, Tradeoff: tradeoff,
+		})
+	}
+	add("current", "保持原计划", "立即按原金额预留预算。", proposedBudget, []LiquidityReservation{{Date: startDate, AmountMinor: proposedBudget}}, "执行最简单，但会立即降低可用余额。")
+	if maxSafeBudget != proposedBudget {
+		label := "降至缓冲内额度"
+		description := fmt.Sprintf("将预算调整为 %s，保留必要支出缓冲。", yuan(maxSafeBudget))
+		if maxSafeBudget == 0 {
+			label = "暂不预留"
+			description = "当前不占用预算，等待资金状况改善。"
+		}
+		add("buffer_preserving", label, description, maxSafeBudget, []LiquidityReservation{{Date: startDate, AmountMinor: maxSafeBudget}}, "会减少可执行预算，但优先保护必要支出。")
+	}
+	nextIncomeDate := ""
+	for _, event := range baseEvents {
+		if event.Direction == "in" && event.Date > startDate {
+			nextIncomeDate = event.Date
+			break
+		}
+	}
+	if nextIncomeDate != "" {
+		add("after_income", "等待下一笔收入", fmt.Sprintf("在 %s 收入到账后预留完整预算。", nextIncomeDate), proposedBudget, []LiquidityReservation{{Date: nextIncomeDate, AmountMinor: proposedBudget}}, "资金缓冲更稳，但预算生效时间延后。")
+		if proposedBudget > 1 {
+			first, second := proposedBudget/2, proposedBudget-proposedBudget/2
+			add("split", "分两笔预留", "现在预留一半，下一笔收入到账后补齐。", proposedBudget, []LiquidityReservation{
+				{Date: startDate, AmountMinor: first}, {Date: nextIncomeDate, AmountMinor: second},
+			}, "兼顾当前预算与资金安全，但需要两次授权。")
+		}
+	}
+	return alternatives
+}
+
+func alternativeRiskRank(status string) int {
+	switch status {
+	case "safe":
+		return 0
+	case "tight":
+		return 1
+	default:
+		return 2
 	}
 }
 

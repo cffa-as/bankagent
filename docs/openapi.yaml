@@ -1315,6 +1315,46 @@ components:
         amount_minor: { type: integer, format: int64, minimum: 0 }
         essential: { type: boolean }
         source_id: { type: string }
+    LiquidityReservation:
+      type: object
+      required: [date, amount_minor]
+      properties:
+        date: { type: string, format: date }
+        amount_minor: { type: integer, format: int64, minimum: 0 }
+    LiquidityAlternative:
+      type: object
+      required:
+        - alternative_id
+        - label
+        - description
+        - total_budget_minor
+        - reservations
+        - status
+        - expected_minimum_available_minor
+        - expected_minimum_date
+        - conservative_minimum_available_minor
+        - conservative_minimum_date
+        - expected_points
+        - recommended
+        - tradeoff
+      properties:
+        alternative_id: { type: string, enum: [current, buffer_preserving, after_income, split] }
+        label: { type: string }
+        description: { type: string }
+        total_budget_minor: { type: integer, format: int64, minimum: 0 }
+        reservations:
+          type: array
+          items: { $ref: '#/components/schemas/LiquidityReservation' }
+        status: { type: string, enum: [safe, tight, unsafe] }
+        expected_minimum_available_minor: { type: integer, format: int64 }
+        expected_minimum_date: { type: string, format: date }
+        conservative_minimum_available_minor: { type: integer, format: int64 }
+        conservative_minimum_date: { type: string, format: date }
+        expected_points:
+          type: array
+          items: { $ref: '#/components/schemas/LiquidityTimelinePoint' }
+        recommended: { type: boolean }
+        tradeoff: { type: string }
     LiquiditySimulation:
       type: object
       required:
@@ -1336,6 +1376,8 @@ components:
         - assumptions
         - events
         - scenarios
+        - alternatives
+        - recommended_alternative_id
         - created_at
       properties:
         simulation_id: { type: string }
@@ -1362,6 +1404,10 @@ components:
           minItems: 3
           maxItems: 3
           items: { $ref: '#/components/schemas/LiquidityScenario' }
+        alternatives:
+          type: array
+          items: { $ref: '#/components/schemas/LiquidityAlternative' }
+        recommended_alternative_id: { type: string }
         created_at: { type: string, format: date-time }
     CardApplicationRequest:
       type: object

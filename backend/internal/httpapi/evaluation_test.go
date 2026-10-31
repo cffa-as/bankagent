@@ -108,11 +108,16 @@ func TestExecutableEvaluationReport(t *testing.T) {
 	}
 	var simulationEnvelope envelope
 	var simulation struct {
-		ID                     string          `json:"simulation_id"`
-		TraceID                string          `json:"trace_id"`
-		Verdict                string          `json:"verdict"`
-		MaximumSafeBudgetMinor int64           `json:"maximum_safe_budget_minor"`
-		Scenarios              json.RawMessage `json:"scenarios"`
+		ID                       string          `json:"simulation_id"`
+		TraceID                  string          `json:"trace_id"`
+		Verdict                  string          `json:"verdict"`
+		MaximumSafeBudgetMinor   int64           `json:"maximum_safe_budget_minor"`
+		Scenarios                json.RawMessage `json:"scenarios"`
+		RecommendedAlternativeID string          `json:"recommended_alternative_id"`
+		Alternatives             []struct {
+			ID          string `json:"alternative_id"`
+			Recommended bool   `json:"recommended"`
+		} `json:"alternatives"`
 	}
 	if err := json.Unmarshal(simulationRaw, &simulationEnvelope); err != nil {
 		t.Fatal(err)
@@ -122,6 +127,13 @@ func TestExecutableEvaluationReport(t *testing.T) {
 	}
 	goldenError := absInt64(simulation.MaximumSafeBudgetMinor - 42224)
 	addCheck("liquidity_golden_case", simulation.Verdict == "tight" && goldenError == 0, fmt.Sprintf("verdict=%s max_safe_error=%d", simulation.Verdict, goldenError))
+	recommendationCount := 0
+	for _, alternative := range simulation.Alternatives {
+		if alternative.Recommended {
+			recommendationCount++
+		}
+	}
+	addCheck("liquidity_alternatives", len(simulation.Alternatives) >= 3 && recommendationCount == 1 && simulation.RecommendedAlternativeID != "", fmt.Sprintf("alternatives=%d recommended=%d id=%s", len(simulation.Alternatives), recommendationCount, simulation.RecommendedAlternativeID))
 	resp, liquidityAudit := request(t, http.DefaultClient, http.MethodGet, liquidityServer.URL+"/v1/audit-traces/"+simulation.TraceID, "", "")
 	liquidityAuditOK := resp.StatusCode == http.StatusOK && bytes.Contains(liquidityAudit, []byte(`"event_type":"liquidity_simulation_completed"`))
 	auditChecks := 0

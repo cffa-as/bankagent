@@ -40,6 +40,7 @@ export type Action = {
   status:
     | 'awaiting_confirmation'
     | 'awaiting_mfa'
+    | 'scheduled'
     | 'executing'
     | 'processing'
     | 'reconciliation_required'
@@ -56,6 +57,99 @@ export type Action = {
   updated_at?: string
 }
 
+export type LiquidityTimelinePoint = {
+  date: string
+  available_minor: number
+}
+
+export type LiquidityScenario = {
+  name: 'essential_only' | 'expected' | 'conservative'
+  daily_discretionary_minor: number
+  ending_available_minor: number
+  minimum_available_minor: number
+  minimum_date: string
+  status: 'safe' | 'tight' | 'unsafe'
+  points: LiquidityTimelinePoint[]
+}
+
+export type LiquidityReservation = {
+  date: string
+  amount_minor: number
+}
+
+export type LiquidityAlternative = {
+  alternative_id: 'current' | 'buffer_preserving' | 'after_income' | 'split'
+  label: string
+  description: string
+  total_budget_minor: number
+  reservations: LiquidityReservation[]
+  status: 'safe' | 'tight' | 'unsafe'
+  expected_minimum_available_minor: number
+  expected_minimum_date: string
+  conservative_minimum_available_minor: number
+  conservative_minimum_date: string
+  expected_points: LiquidityTimelinePoint[]
+  recommended: boolean
+  tradeoff: string
+}
+
+export type LiquiditySimulation = {
+  simulation_id: string
+  account_id: string
+  trace_id: string
+  currency: string
+  start_at: string
+  horizon_days: number
+  starting_available_minor: number
+  proposed_budget_minor: number
+  essential_buffer_minor: number
+  historical_average_daily_minor: number
+  historical_conservative_daily_minor: number
+  maximum_safe_budget_minor: number
+  verdict: 'safe' | 'tight' | 'unsafe'
+  risk_reason: string
+  recommendation: string
+  assumptions: string[]
+  events: Array<{
+    date: string
+    kind: string
+    direction: 'in' | 'out'
+    description: string
+    amount_minor: number
+    essential: boolean
+    source_id?: string
+  }>
+  scenarios: LiquidityScenario[]
+  alternatives: LiquidityAlternative[]
+  recommended_alternative_id: string
+  created_at: string
+}
+
+export type WorkflowNodeInput = {
+  node_id: string
+  kind: 'budget_lock' | 'reminder' | 'external_order'
+  depends_on?: string[]
+  amount_minor?: number
+  merchant?: string
+  due_at?: string
+}
+
+export type Workflow = {
+  workflow_id: string
+  purpose: string
+  deadline: string
+  status: 'pending' | 'running' | 'partially_completed' | 'completed' | 'failed' | 'cancelled'
+  nodes: Array<{
+    node_id: string
+    kind: 'budget_lock' | 'reminder' | 'external_order'
+    status: string
+    amount_minor?: number
+    due_at?: string
+  }>
+  created_at: string
+  updated_at: string
+}
+
 export type MessageResult = {
   run_id: string
   reply_type: 'question' | 'query_result' | 'action_required' | 'workflow_created' | 'rejected'
@@ -64,6 +158,8 @@ export type MessageResult = {
   balance?: Record<string, unknown>
   transactions?: Array<Record<string, unknown>>
   bill?: Record<string, unknown>
+  liquidity?: LiquiditySimulation
+  workflow?: Workflow
 }
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/backend'
@@ -130,5 +226,13 @@ export function verifyMfa(actionId: string, code: string) {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey() },
     body: JSON.stringify({ code }),
+  })
+}
+
+export function createWorkflow(purpose: string, deadline: string, nodes: WorkflowNodeInput[]) {
+  return request<Workflow>('/v1/workflows', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey() },
+    body: JSON.stringify({ purpose, deadline, nodes }),
   })
 }

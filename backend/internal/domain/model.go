@@ -222,27 +222,50 @@ type LiquidityEvent struct {
 	SourceID    string `json:"source_id,omitempty"`
 }
 
+type LiquidityReservation struct {
+	Date        string `json:"date"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+type LiquidityAlternative struct {
+	ID                            string                   `json:"alternative_id"`
+	Label                         string                   `json:"label"`
+	Description                   string                   `json:"description"`
+	TotalBudgetMinor              int64                    `json:"total_budget_minor"`
+	Reservations                  []LiquidityReservation   `json:"reservations"`
+	Status                        string                   `json:"status"`
+	ExpectedMinimumAvailableMinor int64                    `json:"expected_minimum_available_minor"`
+	ExpectedMinimumDate           string                   `json:"expected_minimum_date"`
+	ConservativeMinimumAvailable  int64                    `json:"conservative_minimum_available_minor"`
+	ConservativeMinimumDate       string                   `json:"conservative_minimum_date"`
+	ExpectedPoints                []LiquidityTimelinePoint `json:"expected_points"`
+	Recommended                   bool                     `json:"recommended"`
+	Tradeoff                      string                   `json:"tradeoff"`
+}
+
 type LiquiditySimulation struct {
-	ID                        string              `json:"simulation_id"`
-	UserID                    string              `json:"-"`
-	AccountID                 string              `json:"account_id"`
-	TraceID                   string              `json:"trace_id"`
-	Currency                  string              `json:"currency"`
-	StartAt                   time.Time           `json:"start_at"`
-	HorizonDays               int                 `json:"horizon_days"`
-	StartingAvailableMinor    int64               `json:"starting_available_minor"`
-	ProposedBudgetMinor       int64               `json:"proposed_budget_minor"`
-	EssentialBufferMinor      int64               `json:"essential_buffer_minor"`
-	HistoricalAverageDaily    int64               `json:"historical_average_daily_minor"`
-	HistoricalConservativeDay int64               `json:"historical_conservative_daily_minor"`
-	MaximumSafeBudgetMinor    int64               `json:"maximum_safe_budget_minor"`
-	Verdict                   string              `json:"verdict"`
-	RiskReason                string              `json:"risk_reason"`
-	Recommendation            string              `json:"recommendation"`
-	Assumptions               []string            `json:"assumptions"`
-	Events                    []LiquidityEvent    `json:"events"`
-	Scenarios                 []LiquidityScenario `json:"scenarios"`
-	CreatedAt                 time.Time           `json:"created_at"`
+	ID                        string                 `json:"simulation_id"`
+	UserID                    string                 `json:"-"`
+	AccountID                 string                 `json:"account_id"`
+	TraceID                   string                 `json:"trace_id"`
+	Currency                  string                 `json:"currency"`
+	StartAt                   time.Time              `json:"start_at"`
+	HorizonDays               int                    `json:"horizon_days"`
+	StartingAvailableMinor    int64                  `json:"starting_available_minor"`
+	ProposedBudgetMinor       int64                  `json:"proposed_budget_minor"`
+	EssentialBufferMinor      int64                  `json:"essential_buffer_minor"`
+	HistoricalAverageDaily    int64                  `json:"historical_average_daily_minor"`
+	HistoricalConservativeDay int64                  `json:"historical_conservative_daily_minor"`
+	MaximumSafeBudgetMinor    int64                  `json:"maximum_safe_budget_minor"`
+	Verdict                   string                 `json:"verdict"`
+	RiskReason                string                 `json:"risk_reason"`
+	Recommendation            string                 `json:"recommendation"`
+	Assumptions               []string               `json:"assumptions"`
+	Events                    []LiquidityEvent       `json:"events"`
+	Scenarios                 []LiquidityScenario    `json:"scenarios"`
+	Alternatives              []LiquidityAlternative `json:"alternatives"`
+	RecommendedAlternativeID  string                 `json:"recommended_alternative_id"`
+	CreatedAt                 time.Time              `json:"created_at"`
 }
 
 type SplitParticipant struct {
