@@ -36,6 +36,15 @@ type Conversation struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type ConversationMessage struct {
+	ID             string    `json:"message_id"`
+	ConversationID string    `json:"conversation_id"`
+	UserID         string    `json:"-"`
+	Role           string    `json:"role"`
+	Text           string    `json:"text"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 type Account struct {
 	ID             string `json:"account_id"`
 	UserID         string `json:"-"`
@@ -232,6 +241,7 @@ type MessageResult struct {
 	Records   []Transaction `json:"transactions,omitempty"`
 	Bill      *BillSummary  `json:"bill,omitempty"`
 	Data      any           `json:"data,omitempty"`
+	Workflow  *Workflow     `json:"workflow,omitempty"`
 }
 
 type Service struct {
@@ -245,6 +255,8 @@ type Repository interface {
 	Seed(context.Context, time.Time) error
 	CreateConversation(context.Context, Conversation) error
 	ConversationOwner(context.Context, string) (string, error)
+	ConversationMessages(context.Context, string, string, int) ([]ConversationMessage, error)
+	AddConversationMessage(context.Context, ConversationMessage) error
 	Account(context.Context, string) (Account, error)
 	Transactions(context.Context, string) ([]Transaction, error)
 	Products(context.Context, string) ([]Product, error)
@@ -281,6 +293,7 @@ type Repository interface {
 	Workflow(context.Context, string, string) (Workflow, error)
 	WorkflowOwner(context.Context, string) (string, error)
 	CancelWorkflow(context.Context, string, string, time.Time) error
+	ExpireWorkflow(context.Context, string, string, time.Time) error
 	CompleteWorkflowNode(context.Context, string, string, time.Time) error
 	FailWorkflowNode(context.Context, string, string, time.Time) error
 	CancelWorkflowNode(context.Context, string, string, time.Time) error
@@ -327,8 +340,29 @@ func parseInvestmentPurchase(text string) (amountMinor int64, ok bool) {
 	return int64(amount*100 + 0.5), true
 }
 
+func parseBirthdayPlan(text string) (budgetMinor int64, eventAt time.Time, ok bool) {
+	budgetMatches := regexp.MustCompile(`预算\s*([0-9]+(?:\.[0-9]{1,2})?)\s*元`).FindAllStringSubmatch(strings.TrimSpace(text), -1)
+	dateMatches := regexp.MustCompile(`(20[0-9]{2}-[0-9]{2}-[0-9]{2})`).FindAllStringSubmatch(text, -1)
+	if len(budgetMatches) == 0 || len(dateMatches) == 0 {
+		return 0, time.Time{}, false
+	}
+	amount, err := strconv.ParseFloat(budgetMatches[len(budgetMatches)-1][1], 64)
+	if err != nil || amount <= 0 {
+		return 0, time.Time{}, false
+	}
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return 0, time.Time{}, false
+	}
+	eventAt, err = time.ParseInLocation("2006-01-02", dateMatches[len(dateMatches)-1][1], loc)
+	if err != nil {
+		return 0, time.Time{}, false
+	}
+	return int64(amount*100 + 0.5), eventAt, true
+}
+
 func parsePhoneTransfer(text string) (phone string, amountMinor int64, remark string, ok bool) {
-	pattern := regexp.MustCompile(`(?:手机号|手机|电话)\s*([0-9]{11}).*?转\s*([0-9]+(?:\.[0-9]{1,2})?)\s*元(?:[，,。 ]*备注\s*(.*))?$`)
+	pattern := regexp.MustCompile(`(?:手机号|手机|电话)\s*([0-9]{11}).*?转(?:账)?\s*([0-9]+(?:\.[0-9]{1,2})?)\s*元(?:[，,。 ]*备注\s*(.*))?$`)
 	matches := pattern.FindStringSubmatch(strings.TrimSpace(text))
 	if len(matches) == 0 {
 		return "", 0, "", false
@@ -341,7 +375,7 @@ func parsePhoneTransfer(text string) (phone string, amountMinor int64, remark st
 }
 
 func parseTransfer(text string) (name string, amountMinor int64, remark string, ok bool) {
-	pattern := regexp.MustCompile(`给\s*(.+?)\s*转\s*([0-9]+(?:\.[0-9]{1,2})?)\s*元(?:[，,。 ]*备注\s*(.*))?$`)
+	pattern := regexp.MustCompile(`给\s*(.+?)\s*转(?:账)?\s*([0-9]+(?:\.[0-9]{1,2})?)\s*元(?:[，,。 ]*备注\s*(.*))?$`)
 	matches := pattern.FindStringSubmatch(strings.TrimSpace(text))
 	if len(matches) == 0 {
 		return "", 0, "", false

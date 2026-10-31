@@ -46,7 +46,7 @@ paths:
     post:
       tags: [Conversations]
       summary: 提交自然语言消息
-      description: 返回追问、只读查询结果或待授权动作。不会直接接受模型返回的授权结论。
+      description: 返回追问、只读查询结果或待授权动作。服务端可使用当前会话 30 分钟内最近 6 条用户消息补全省略表达；不会直接接受模型返回的授权结论。
       operationId: createConversationMessage
       parameters:
         - $ref: '#/components/parameters/ConversationID'
@@ -423,6 +423,11 @@ paths:
           required: true
           schema: { type: string, minLength: 1 }
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CardApplicationRequest' }
       responses:
         '201':
           description: 卡片冻结动作已创建
@@ -444,6 +449,11 @@ paths:
           required: true
           schema: { type: string, minLength: 1 }
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CardApplicationRequest' }
       responses:
         '201':
           description: 卡片解冻动作已创建
@@ -521,6 +531,11 @@ paths:
           required: true
           schema: { type: string, minLength: 1 }
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CardApplicationRequest' }
       responses:
         '201':
           description: 订阅取消动作已创建
@@ -979,7 +994,7 @@ components:
     CreateConversationRequest:
       type: object
       additionalProperties: false
-      properties:
+      properties: {}
     Conversation:
       type: object
       required: [conversation_id, created_at]
@@ -991,7 +1006,7 @@ components:
       required: [text]
       additionalProperties: false
       properties:
-        text: { type: string, minLength: 1, maxLength: 4000 }
+        text: { type: string, minLength: 1, maxLength: 500 }
     MessageResult:
       type: object
       required: [run_id, reply_type]
@@ -1169,7 +1184,7 @@ components:
         scheduled_at:
           type: string
           format: date-time
-          description: 可选；设置后授权成功先进入 scheduled，到达时间后调用 trigger。
+          description: 可选；设置后授权成功先进入 scheduled，动作有效期延至 scheduled_at + 5 分钟，到达时间后调用 trigger。
     SplitParticipant:
       type: object
       additionalProperties: false
@@ -1185,6 +1200,7 @@ components:
       type: object
       additionalProperties: false
       required: [conversation_id, total_amount_minor, participants]
+      description: participants 包含付款人本人和所有分摊人，且必须恰好一人标记 is_payer；服务端按整数最小货币单位重算份额，除不尽的余数按数组顺序每人均摊 1 分。
       properties:
         conversation_id: { type: string, minLength: 1 }
         total_amount_minor: { type: integer, format: int64, minimum: 1 }

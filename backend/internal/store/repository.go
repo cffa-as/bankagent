@@ -90,6 +90,38 @@ func (r *Repository) ConversationOwner(ctx context.Context, id string) (string, 
 	return userID, err
 }
 
+func (r *Repository) ConversationMessages(ctx context.Context, userID, conversationID string, limit int) ([]domain.ConversationMessage, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,conversation_id,user_id,role,text,created_at FROM conversation_messages WHERE conversation_id=? AND user_id=? ORDER BY created_at DESC,rowid DESC LIMIT ?`, conversationID, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var messages []domain.ConversationMessage
+	for rows.Next() {
+		var message domain.ConversationMessage
+		var created string
+		if err := rows.Scan(&message.ID, &message.ConversationID, &message.UserID, &message.Role, &message.Text, &created); err != nil {
+			return nil, err
+		}
+		if message.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+	return messages, nil
+}
+
+func (r *Repository) AddConversationMessage(ctx context.Context, message domain.ConversationMessage) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO conversation_messages(id,conversation_id,user_id,role,text,created_at) VALUES(?,?,?,?,?,?)`, message.ID, message.ConversationID, message.UserID, message.Role, message.Text, message.CreatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
 func (r *Repository) Account(ctx context.Context, userID string) (domain.Account, error) {
 	var a domain.Account
 	err := r.db.QueryRowContext(ctx, `SELECT id,user_id,currency,balance_minor,reserved_minor FROM accounts WHERE user_id=?`, userID).Scan(&a.ID, &a.UserID, &a.Currency, &a.BalanceMinor, &a.ReservedMinor)
@@ -251,7 +283,7 @@ func (r *Repository) BillSummaryRange(ctx context.Context, userID string, start,
 		return domain.BillSummary{}, err
 	}
 	start, end = start.In(loc), end.In(loc)
-	rows, err := r.db.QueryContext(ctx, `SELECT l.category, COALESCE(SUM(l.amount_minor),0), COUNT(*) FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.created_at>=? AND l.created_at<? GROUP BY l.category ORDER BY SUM(l.amount_minor) DESC`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
+	rows, err := r.db.QueryContext(ctx, `SELECT l.category, COALESCE(SUM(l.amount_minor),0), COUNT(*) FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND datetime(l.created_at)>=datetime(?) AND datetime(l.created_at)<datetime(?) GROUP BY l.category ORDER BY SUM(l.amount_minor) DESC`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
 	if err != nil {
 		return domain.BillSummary{}, err
 	}
@@ -274,7 +306,7 @@ func (r *Repository) BillSummaryRange(ctx context.Context, userID string, start,
 			summary.Categories[i].ShareBPS = summary.Categories[i].AmountMinor * 10000 / summary.TotalMinor
 		}
 	}
-	anomalyRows, err := r.db.QueryContext(ctx, `SELECT l.id,l.amount_minor,l.category,l.description FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.amount_minor>=? AND l.created_at>=? AND l.created_at<? ORDER BY l.amount_minor DESC`, userID, int64(10000), start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
+	anomalyRows, err := r.db.QueryContext(ctx, `SELECT l.id,l.amount_minor,l.category,l.description FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.amount_minor>=? AND datetime(l.created_at)>=datetime(?) AND datetime(l.created_at)<datetime(?) ORDER BY l.amount_minor DESC`, userID, int64(10000), start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
 	if err != nil {
 		return domain.BillSummary{}, err
 	}
@@ -299,7 +331,7 @@ func (r *Repository) DailyOutgoing(ctx context.Context, userID string, day time.
 	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, loc)
 	end := start.AddDate(0, 0, 1)
 	var total sql.NullInt64
-	err = r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(l.amount_minor),0) FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.category='transfer' AND l.created_at>=? AND l.created_at<?`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)).Scan(&total)
+	err = r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(l.amount_minor),0) FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.category='transfer' AND datetime(l.created_at)>=datetime(?) AND datetime(l.created_at)<datetime(?)`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)).Scan(&total)
 	return total.Int64, err
 }
 
@@ -892,12 +924,20 @@ func (r *Repository) workflowNodes(ctx context.Context, workflowID string) ([]do
 }
 
 func (r *Repository) CancelWorkflow(ctx context.Context, id, userID string, now time.Time) error {
+	return r.terminateWorkflow(ctx, id, userID, "cancelled", now)
+}
+
+func (r *Repository) ExpireWorkflow(ctx context.Context, id, userID string, now time.Time) error {
+	return r.terminateWorkflow(ctx, id, userID, "failed", now)
+}
+
+func (r *Repository) terminateWorkflow(ctx context.Context, id, userID, status string, now time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE workflows SET status='cancelled',updated_at=? WHERE id=? AND user_id=? AND status IN ('pending','running','partially_completed')`, now.Format(time.RFC3339Nano), id, userID)
+	result, err := tx.ExecContext(ctx, `UPDATE workflows SET status=?,updated_at=? WHERE id=? AND user_id=? AND status IN ('pending','running','partially_completed')`, status, now.Format(time.RFC3339Nano), id, userID)
 	if err != nil {
 		return err
 	}

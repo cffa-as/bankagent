@@ -572,12 +572,12 @@ func (h *Handler) billSummary(w http.ResponseWriter, r *http.Request, userID, pa
 
 func (h *Handler) getAction(w http.ResponseWriter, r *http.Request, userID, path string) {
 	actionID := segment(path, 2)
-	action, err := h.service.GetAction(r.Context(), userID, actionID)
+	action, trace, err := h.service.GetAction(r.Context(), userID, actionID)
 	if err != nil {
-		writeServiceError(w, err, "tr_action")
+		writeServiceError(w, err, trace)
 		return
 	}
-	writeJSON(w, http.StatusOK, envelope(action, "tr_action"))
+	writeJSON(w, http.StatusOK, envelope(action, trace))
 }
 
 func (h *Handler) confirm(w http.ResponseWriter, r *http.Request, userID, path string) {
@@ -795,7 +795,7 @@ func (h *Handler) cancelWorkflow(w http.ResponseWriter, r *http.Request, userID,
 		body = []byte("{}")
 	}
 	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := decodeBody(body, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
 		return
 	}
@@ -827,7 +827,7 @@ func (h *Handler) advanceWorkflow(w http.ResponseWriter, r *http.Request, userID
 	var request struct {
 		VirtualNow string `json:"virtual_now"`
 	}
-	if err := json.Unmarshal(body, &request); err != nil {
+	if err := decodeBody(body, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
 		return
 	}
@@ -912,11 +912,24 @@ func decodeJSON(r *http.Request, target any) ([]byte, error) {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil, errors.New("empty body")
 	}
-	if err := json.Unmarshal(body, target); err != nil {
+	if err := decodeBody(body, target); err != nil {
 		return nil, err
 	}
 	return body, nil
 }
+
+func decodeBody(body []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("request body must contain one JSON object")
+	}
+	return nil
+}
+
 func fingerprint(body []byte) string { sum := sha256.Sum256(body); return hex.EncodeToString(sum[:]) }
 func envelope(data any, trace string) map[string]any {
 	return map[string]any{"data": data, "trace_id": trace}
@@ -931,6 +944,9 @@ func writeError(w http.ResponseWriter, status int, code, message, trace string) 
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}, "trace_id": trace})
 }
 func writeServiceError(w http.ResponseWriter, err error, trace string) {
+	if trace == "" {
+		trace = domain.NewID("tr")
+	}
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在", trace)

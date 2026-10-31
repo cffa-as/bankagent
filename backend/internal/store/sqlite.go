@@ -177,6 +177,15 @@ CREATE TABLE IF NOT EXISTS conversations (
     user_id TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS accounts (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL UNIQUE,
@@ -331,6 +340,7 @@ CREATE TABLE IF NOT EXISTS idempotency_records (
     PRIMARY KEY (user_id, method, path, idem_key)
 );
 CREATE INDEX IF NOT EXISTS idx_actions_user ON actions(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_conversation_messages ON conversation_messages(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_trace ON audit_events(trace_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_ledger_account ON ledger_entries(account_id, created_at);
 `

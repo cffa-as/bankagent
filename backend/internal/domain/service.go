@@ -69,7 +69,8 @@ func (s *Service) CreateTransferActionByPhone(ctx context.Context, userID, conve
 }
 
 func (s *Service) createTransferAction(ctx context.Context, userID, conversationID, beneficiaryName, phone, accountID string, amountMinor int64, remark string, scheduledAt *time.Time) (Action, string, error) {
-	if amountMinor <= 0 || strings.TrimSpace(beneficiaryName) == "" {
+	beneficiaryName, remark = strings.TrimSpace(beneficiaryName), strings.TrimSpace(remark)
+	if amountMinor <= 0 || beneficiaryName == "" || len([]rune(beneficiaryName)) > 100 || len([]rune(remark)) > 200 {
 		return Action{}, "", ErrInvalidArgument
 	}
 	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
@@ -79,7 +80,11 @@ func (s *Service) createTransferAction(ctx context.Context, userID, conversation
 	if err != nil {
 		return Action{}, "", err
 	}
-	daily, err := s.repo.DailyOutgoing(ctx, userID, s.now().In(loc))
+	riskDay := s.now().In(loc)
+	if scheduledAt != nil {
+		riskDay = scheduledAt.In(loc)
+	}
+	daily, err := s.repo.DailyOutgoing(ctx, userID, riskDay)
 	if err != nil {
 		return Action{}, "", err
 	}
@@ -89,7 +94,7 @@ func (s *Service) createTransferAction(ctx context.Context, userID, conversation
 	}
 	snapshot := map[string]any{
 		"beneficiary_name": beneficiaryName, "beneficiary_phone": phone, "beneficiary_account_id": accountID,
-		"amount_minor": amountMinor, "currency": "CNY", "remark": strings.TrimSpace(remark),
+		"amount_minor": amountMinor, "currency": "CNY", "remark": remark,
 		"daily_outgoing_before_minor": daily,
 	}
 	if scheduledAt != nil {
@@ -113,7 +118,7 @@ func (s *Service) CreateTransferSplitAction(ctx context.Context, userID, convers
 		if key == "" {
 			key = "name:" + name
 		}
-		if (name == "" && phone == "") || seen[key] {
+		if (name == "" && phone == "") || len([]rune(name)) > 100 || (phone != "" && !regexp.MustCompile(`^[0-9]{11}$`).MatchString(phone)) || seen[key] {
 			return Action{}, "", ErrInvalidArgument
 		}
 		seen[key] = true
@@ -145,14 +150,15 @@ func (s *Service) CreateTransferSplitAction(ctx context.Context, userID, convers
 }
 
 func (s *Service) CreateCardApplicationAction(ctx context.Context, userID, conversationID, cardType string) (Action, string, error) {
-	if strings.TrimSpace(cardType) == "" {
+	cardType = strings.TrimSpace(cardType)
+	if cardType != "virtual" {
 		return Action{}, "", ErrInvalidArgument
 	}
 	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
 		return Action{}, "", err
 	}
 	return s.createActionRecord(ctx, userID, conversationID, "card_application", "yellow", "awaiting_confirmation", map[string]any{
-		"card_type": strings.TrimSpace(cardType),
+		"card_type": cardType,
 	})
 }
 
@@ -195,7 +201,7 @@ func (s *Service) CreateCardStatusAction(ctx context.Context, userID, conversati
 			if !validTransition {
 				return Action{}, "", ErrActionStateConflict
 			}
-			snapshot := map[string]any{"card_id": card.ID, "target_status": targetStatus, "masked_number": card.MaskedNumber}
+			snapshot := map[string]any{"card_id": card.ID, "previous_status": card.Status, "target_status": targetStatus, "masked_number": card.MaskedNumber}
 			risk, status := "yellow", "awaiting_confirmation"
 			if targetStatus != "frozen" {
 				risk, status = "red", "awaiting_mfa"
@@ -210,12 +216,12 @@ func (s *Service) CreateSubscriptionCancelAction(ctx context.Context, userID, co
 	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
 		return Action{}, "", err
 	}
-	subscriptions, err := s.repo.Subscriptions(ctx, userID, "active")
+	subscriptions, err := s.repo.Subscriptions(ctx, userID, "")
 	if err != nil {
 		return Action{}, "", err
 	}
 	for _, subscription := range subscriptions {
-		if subscription.ID == subscriptionID {
+		if subscription.ID == subscriptionID && (subscription.Status == "active" || subscription.Status == "paused") {
 			snapshot := map[string]any{"subscription_id": subscription.ID, "merchant_ref": subscription.MerchantRef}
 			return s.createActionRecord(ctx, userID, conversationID, "subscription_cancel", "yellow", "awaiting_confirmation", snapshot)
 		}
@@ -331,6 +337,25 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 	trace := NewID("tr")
 	runID := NewID("run")
 	now := s.now()
+	recent, err := s.repo.ConversationMessages(ctx, userID, conversationID, 6)
+	if err != nil {
+		return MessageResult{}, trace, err
+	}
+	history := make([]string, 0, len(recent))
+	for _, message := range recent {
+		if now.Sub(message.CreatedAt) <= 30*time.Minute {
+			history = append(history, message.Text)
+		}
+	}
+	if err := s.repo.AddConversationMessage(ctx, ConversationMessage{
+		ID: NewID("msg"), ConversationID: conversationID, UserID: userID, Role: "user", Text: conversationContextText(text), CreatedAt: now,
+	}); err != nil {
+		return MessageResult{}, trace, err
+	}
+	continuation := strings.TrimSpace(text)
+	if len(history) > 0 && len([]rune(text)) <= 50 {
+		continuation = history[len(history)-1] + " " + continuation
+	}
 	if strings.Contains(text, "余额") {
 		account, err := s.repo.Account(ctx, userID)
 		if err != nil {
@@ -447,20 +472,18 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		if strings.Contains(text, "解挂") {
 			status, verb = "active", "解挂"
 		}
-		risk, actionStatus := "yellow", "awaiting_confirmation"
-		if status == "lost" || strings.Contains(text, "解冻") || strings.Contains(text, "解挂") {
-			risk, actionStatus = "red", "awaiting_mfa"
+		action, actionTrace, err := s.CreateCardStatusAction(ctx, userID, conversationID, "card_demo", status)
+		if errors.Is(err, ErrActionStateConflict) {
+			return MessageResult{RunID: runID, ReplyType: "question", Text: "当前卡片状态不支持该操作。"}, trace, nil
 		}
-		snapshot := map[string]any{"card_id": "card_demo", "target_status": status, "masked_number": "**** 1234"}
-		snapshotJSON, _ := json.Marshal(snapshot)
-		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "card_status_change", RiskLevel: risk, Status: actionStatus, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
-		if err := s.repo.CreateAction(ctx, action); err != nil {
+		if err != nil {
 			return MessageResult{}, trace, err
 		}
-		if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
-			return MessageResult{}, trace, err
+		text := "请确认" + verb + "卡片 **** 1234。"
+		if action.RiskLevel == "red" {
+			text = "该操作需要完成 MFA 验证。"
 		}
-		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "请确认" + verb + "卡片 **** 1234。", Action: ptr(action.Public())}, trace, nil
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: text, Action: ptr(action.Public())}, actionTrace, nil
 	}
 	if strings.Contains(text, "订阅") && strings.Contains(text, "取消") {
 		subscriptionID := "sub_streaming"
@@ -468,18 +491,30 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		if strings.Contains(text, "云") || strings.Contains(text, "cloud") {
 			subscriptionID, merchant = "sub_cloud", "demo-cloud"
 		}
-		snapshot := map[string]any{"subscription_id": subscriptionID, "merchant_ref": merchant}
-		snapshotJSON, _ := json.Marshal(snapshot)
-		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "subscription_cancel", RiskLevel: "yellow", Status: "awaiting_confirmation", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
-		if err := s.repo.CreateAction(ctx, action); err != nil {
+		action, actionTrace, err := s.CreateSubscriptionCancelAction(ctx, userID, conversationID, subscriptionID)
+		if errors.Is(err, ErrNotFound) {
+			return MessageResult{RunID: runID, ReplyType: "question", Text: "没有找到可取消的预置订阅。"}, trace, nil
+		}
+		if err != nil {
 			return MessageResult{}, trace, err
 		}
-		if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "请确认取消" + merchant + "订阅。", Action: ptr(action.Public())}, actionTrace, nil
+	}
+	if strings.Contains(continuation, "生日") && strings.Contains(continuation, "预算") {
+		budget, eventAt, ok := parseBirthdayPlan(continuation)
+		if !ok {
+			return MessageResult{RunID: runID, ReplyType: "question", Text: "请提供预算金额和生日日期，例如：爱人生日预算1000元，日期2026-11-08。"}, trace, nil
+		}
+		workflow, workflowTrace, err := s.CreateBirthdayWorkflow(ctx, userID, budget, eventAt)
+		if err != nil {
 			return MessageResult{}, trace, err
 		}
-		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "请确认取消" + merchant + "订阅。", Action: ptr(action.Public())}, trace, nil
+		return MessageResult{RunID: runID, ReplyType: "workflow_created", Text: "已生成生日预算、提醒和 Mock 采购 DAG。", Workflow: &workflow}, workflowTrace, nil
 	}
 	phone, phoneAmount, phoneRemark, phoneOK := parsePhoneTransfer(text)
+	if !phoneOK && continuation != text {
+		phone, phoneAmount, phoneRemark, phoneOK = parsePhoneTransfer(continuation)
+	}
 	if phoneOK {
 		action, actionTrace, err := s.CreateTransferActionByPhone(ctx, userID, conversationID, phone, phoneAmount, phoneRemark)
 		if errors.Is(err, ErrNotFound) {
@@ -495,6 +530,9 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		return MessageResult{RunID: runID, ReplyType: "action_required", Text: text, Action: ptr(action.Public())}, actionTrace, nil
 	}
 	name, amount, remark, ok := parseTransfer(text)
+	if !ok && continuation != text {
+		name, amount, remark, ok = parseTransfer(strings.ReplaceAll(continuation, "转账", "转"))
+	}
 	if ok {
 		action, actionTrace, err := s.CreateTransferAction(ctx, userID, conversationID, name, amount, remark)
 		if errors.Is(err, ErrNotFound) {
@@ -510,17 +548,22 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		return MessageResult{RunID: runID, ReplyType: "action_required", Text: text, Action: ptr(action.Public())}, actionTrace, nil
 	}
 	if s.model != nil {
-		plan, modelErr := s.model.Plan(ctx, text)
+		plan, modelErr := s.model.Plan(ctx, text, history)
 		if modelErr == nil && plan.Intent != "unknown" {
-			if len(plan.MissingFields) > 0 {
-				return MessageResult{RunID: runID, ReplyType: "question", Text: "请补充：" + strings.Join(plan.MissingFields, "、")}, trace, nil
-			}
 			result, handled, err := s.handleIntentPlan(ctx, userID, conversationID, runID, plan, trace)
 			if err != nil {
 				return MessageResult{}, trace, err
 			}
 			if handled {
 				return result, trace, nil
+			}
+		} else if modelErr != nil {
+			if err := s.audit(ctx, trace, conversationID, "", "model_plan_rejected", "failed", "model", nil, now); err != nil {
+				return MessageResult{}, trace, err
+			}
+		} else {
+			if err := s.audit(ctx, trace, conversationID, "", "model_plan_unknown", "failed", "model", nil, now); err != nil {
+				return MessageResult{}, trace, err
 			}
 		}
 	}
@@ -612,8 +655,9 @@ func (s *Service) handleIntentPlan(ctx context.Context, userID, conversationID, 
 		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("找到 %d 项订阅代扣。", len(subscriptions)), Data: subscriptions}, true, nil
 	case "transfer", "scheduled_transfer":
 		name := planString(plan, "beneficiary_name")
+		phone := planString(plan, "beneficiary_phone")
 		amount, ok := planInt64(plan, "amount_minor")
-		if name == "" || !ok {
+		if (name == "" && phone == "") || !ok {
 			return question("请补充收款人姓名和转账金额。")
 		}
 		var action Action
@@ -624,6 +668,8 @@ func (s *Service) handleIntentPlan(ctx context.Context, userID, conversationID, 
 				return question("请补充 RFC3339 格式的预约时间。")
 			}
 			action, _, err = s.CreateScheduledTransferAction(ctx, userID, conversationID, name, amount, planString(plan, "remark"), scheduledAt)
+		} else if name == "" {
+			action, _, err = s.CreateTransferActionByPhone(ctx, userID, conversationID, phone, amount, planString(plan, "remark"))
 		} else {
 			action, _, err = s.CreateTransferAction(ctx, userID, conversationID, name, amount, planString(plan, "remark"))
 		}
@@ -636,6 +682,17 @@ func (s *Service) handleIntentPlan(ctx context.Context, userID, conversationID, 
 		}
 		action, _, err := s.CreateTransferSplitAction(ctx, userID, conversationID, total, participants)
 		return actionReply(action, err)
+	case "birthday_plan":
+		budget, ok := planInt64(plan, "budget_minor")
+		eventAt, parseErr := time.Parse(time.RFC3339, planString(plan, "event_at"))
+		if !ok || parseErr != nil {
+			return question("请补充生日预算和生日日期。")
+		}
+		workflow, _, err := s.CreateBirthdayWorkflow(ctx, userID, budget, eventAt)
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "workflow_created", Text: "已生成生日预算、提醒和 Mock 采购 DAG。", Workflow: &workflow}, true, nil
 	case "investment_purchase":
 		productID := planString(plan, "product_id")
 		amount, amountOK := planInt64(plan, "amount_minor")
@@ -927,7 +984,7 @@ func (s *Service) SubscriptionReminders(ctx context.Context, userID string, days
 	var reminders []SubscriptionReminder
 	for _, item := range items {
 		delta := item.NextChargeAt.Sub(now)
-		until := int(delta.Hours() / 24)
+		until := int(math.Ceil(delta.Hours() / 24))
 		if delta < 0 {
 			until = 0
 		}
@@ -942,23 +999,24 @@ func (s *Service) SubscriptionReminders(ctx context.Context, userID string, days
 	return reminders, trace, nil
 }
 
-func (s *Service) GetAction(ctx context.Context, userID, id string) (Action, error) {
+func (s *Service) GetAction(ctx context.Context, userID, id string) (Action, string, error) {
+	trace := NewID("tr")
 	action, err := s.repo.Action(ctx, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return Action{}, ErrNotFound
+			return Action{}, trace, ErrNotFound
 		}
-		return Action{}, err
+		return Action{}, trace, err
 	}
 	if action.UserID != userID {
-		return Action{}, ErrForbidden
+		return Action{}, trace, ErrForbidden
 	}
 	if s.now().After(action.ExpiresAt) && isPending(action.Status) {
-		if err := s.expireAction(ctx, &action, NewID("tr"), s.now()); err != nil {
-			return Action{}, err
+		if err := s.expireAction(ctx, &action, trace, s.now()); err != nil {
+			return Action{}, trace, err
 		}
 	}
-	return action.Public(), nil
+	return action.Public(), trace, nil
 }
 
 func (s *Service) Confirm(ctx context.Context, userID, id, _ string) (Action, string, error) {
@@ -1328,8 +1386,9 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		return s.audit(ctx, trace, action.ConversationID, action.ID, "card_limit_changed", "succeeded", "tool", map[string]any{"card_id": snapshot.CardID, "target_limit_minor": snapshot.TargetLimitMinor}, now)
 	case "card_status_change":
 		var snapshot struct {
-			CardID       string `json:"card_id"`
-			TargetStatus string `json:"target_status"`
+			CardID         string `json:"card_id"`
+			PreviousStatus string `json:"previous_status"`
+			TargetStatus   string `json:"target_status"`
 		}
 		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
 			return err
@@ -1338,7 +1397,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "card_status_changed", "succeeded", "tool", map[string]any{"card_id": snapshot.CardID, "status": snapshot.TargetStatus}, now)
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "card_status_changed", "succeeded", "tool", map[string]any{"card_id": snapshot.CardID, "previous_status": snapshot.PreviousStatus, "status": snapshot.TargetStatus}, now)
 	case "subscription_cancel":
 		var snapshot struct {
 			SubscriptionID string `json:"subscription_id"`
@@ -1436,6 +1495,14 @@ func actionScheduledAt(action Action) (time.Time, bool) {
 	}
 	scheduledAt, err := time.Parse(time.RFC3339, snapshot.ScheduledAt)
 	return scheduledAt, err == nil
+}
+
+func conversationContextText(text string) string {
+	lower := strings.ToLower(text)
+	if strings.Contains(lower, "密码") || strings.Contains(lower, "验证码") || strings.Contains(lower, "token") {
+		return "[敏感输入已脱敏]"
+	}
+	return strings.TrimSpace(text)
 }
 
 func ptr[T any](value T) *T { return &value }

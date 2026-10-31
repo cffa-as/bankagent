@@ -41,14 +41,18 @@ type WorkflowNodeInput struct {
 }
 
 func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, deadline time.Time, inputs []WorkflowNodeInput) (Workflow, string, error) {
-	if purpose == "" || len(inputs) == 0 || len(inputs) > 10 || !deadline.After(s.now()) {
+	purpose = strings.TrimSpace(purpose)
+	if purpose == "" || len([]rune(purpose)) > 200 || len(inputs) == 0 || len(inputs) > 10 || !deadline.After(s.now()) {
 		return Workflow{}, "", ErrInvalidArgument
 	}
 	seen := make(map[string]bool, len(inputs))
 	indegree := make(map[string]int, len(inputs))
 	graph := make(map[string][]string, len(inputs))
-	for _, node := range inputs {
-		if node.ID == "" || seen[node.ID] || !validWorkflowKind(node.Kind) || node.AmountMinor < 0 {
+	for i := range inputs {
+		node := &inputs[i]
+		node.ID, node.Kind = strings.TrimSpace(node.ID), strings.TrimSpace(node.Kind)
+		node.Merchant = strings.TrimSpace(node.Merchant)
+		if node.ID == "" || len([]rune(node.ID)) > 64 || seen[node.ID] || !validWorkflowKind(node.Kind) || node.AmountMinor < 0 || len(node.DependsOn) > 10 {
 			return Workflow{}, "", ErrInvalidArgument
 		}
 		if !node.DueAt.IsZero() && node.DueAt.After(deadline) {
@@ -57,14 +61,17 @@ func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, de
 		if node.Kind != "reminder" && node.AmountMinor <= 0 {
 			return Workflow{}, "", ErrInvalidArgument
 		}
-		if node.Kind == "external_order" && strings.TrimSpace(node.Merchant) == "" {
+		if node.Kind == "external_order" && (strings.TrimSpace(node.Merchant) == "" || len([]rune(node.Merchant)) > 200) {
 			return Workflow{}, "", ErrInvalidArgument
 		}
 		seen[node.ID] = true
 		indegree[node.ID] = 0
 	}
-	for _, node := range inputs {
-		for _, dep := range node.DependsOn {
+	for i := range inputs {
+		node := &inputs[i]
+		for j := range node.DependsOn {
+			node.DependsOn[j] = strings.TrimSpace(node.DependsOn[j])
+			dep := node.DependsOn[j]
 			if !seen[dep] || dep == node.ID {
 				return Workflow{}, "", ErrInvalidArgument
 			}
@@ -113,6 +120,20 @@ func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, de
 		return Workflow{}, "", err
 	}
 	return workflow, trace, nil
+}
+
+func (s *Service) CreateBirthdayWorkflow(ctx context.Context, userID string, budgetMinor int64, eventAt time.Time) (Workflow, string, error) {
+	if budgetMinor < 50000 || !eventAt.After(s.now().Add(48*time.Hour)) {
+		return Workflow{}, "", ErrInvalidArgument
+	}
+	dueAt := eventAt.AddDate(0, 0, -2)
+	nodes := []WorkflowNodeInput{
+		{ID: "birthday_reminder", Kind: "reminder", DueAt: dueAt},
+		{ID: "budget_lock", Kind: "budget_lock", DependsOn: []string{"birthday_reminder"}, AmountMinor: budgetMinor, DueAt: dueAt},
+		{ID: "flowers", Kind: "external_order", DependsOn: []string{"budget_lock"}, AmountMinor: 30000, Merchant: "演示花店", DueAt: dueAt},
+		{ID: "cake", Kind: "external_order", DependsOn: []string{"budget_lock"}, AmountMinor: 20000, Merchant: "演示蛋糕店", DueAt: dueAt},
+	}
+	return s.CreateWorkflow(ctx, userID, "爱人生日准备", eventAt, nodes)
 }
 
 func validWorkflowKind(kind string) bool {
@@ -173,8 +194,21 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string, virtua
 		virtualNow = s.now()
 	}
 	trace := NewID("tr")
-	if workflow.Status == "completed" || workflow.Status == "cancelled" || workflow.Status == "failed" || !virtualNow.Before(workflow.Deadline) {
+	if workflow.Status == "completed" || workflow.Status == "cancelled" || workflow.Status == "failed" {
 		return WorkflowAdvanceResult{}, trace, ErrActionStateConflict
+	}
+	if !virtualNow.Before(workflow.Deadline) {
+		if err := s.repo.ExpireWorkflow(ctx, workflow.ID, userID, virtualNow); err != nil {
+			return WorkflowAdvanceResult{}, trace, err
+		}
+		updated, err := s.repo.Workflow(ctx, workflow.ID, userID)
+		if err != nil {
+			return WorkflowAdvanceResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, "", "", "workflow_expired", "failed", "system", map[string]any{"workflow_id": workflow.ID, "deadline": workflow.Deadline}, virtualNow); err != nil {
+			return WorkflowAdvanceResult{}, trace, err
+		}
+		return WorkflowAdvanceResult{Workflow: updated}, trace, nil
 	}
 	for _, node := range workflow.Nodes {
 		if node.Status == "awaiting_authorization" && node.ActionID != "" {
