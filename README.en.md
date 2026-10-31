@@ -13,7 +13,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-MVP-4D72FF?style=flat-square" alt="MVP" />
-  <img src="https://img.shields.io/badge/frontend-Next.js%2015-111C2E?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 15" />
+  <img src="https://img.shields.io/badge/frontend-Next.js%2016-111C2E?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/backend-Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
   <img src="https://img.shields.io/badge/API-OpenAPI%203.1-6BA539?style=flat-square&logo=openapiinitiative&logoColor=white" alt="OpenAPI 3.1" />
   <img src="https://img.shields.io/badge/security-server%20governed-111C2E?style=flat-square" alt="Server governed" />
@@ -131,7 +131,7 @@ flowchart LR
 
 | Layer | Implementation |
 | --- | --- |
-| Product surface | Next.js 15 · TypeScript · responsive safety console |
+| Product surface | Next.js 16 · TypeScript · responsive safety console |
 | API and policy | Go · REST `/v1` · OpenAPI 3.1 |
 | Agent boundary | Structured intent + server-approved tools |
 | State and evidence | SQLite WAL · transactional ledger · idempotency · audit |
@@ -140,7 +140,7 @@ flowchart LR
 
 ## Quick start
 
-Requires Go 1.27+, Node.js 20+, and CGO for the SQLite driver.
+Requires Go 1.27+, Node.js 24.13+, pnpm 11, and CGO for the SQLite driver.
 
 ```bash
 git clone https://github.com/cffa-as/bankagent.git
@@ -159,8 +159,11 @@ Start the frontend in another terminal:
 
 ```bash
 cd frontend
-npm install
-npm run dev
+nvm install
+nvm use
+corepack enable pnpm
+pnpm install
+pnpm dev
 ```
 
 Open <http://localhost:3000>. The demo identity is `Bearer demo-user-1`; the mock MFA code is `000000`.

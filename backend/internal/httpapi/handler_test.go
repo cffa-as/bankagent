@@ -365,6 +365,31 @@ func TestAccountBalanceAndTransactions(t *testing.T) {
 	}
 }
 
+func TestMessageReadOnlyQueriesUseServerData(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+
+	cases := []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "products", text: "比较稳健型理财产品", want: "product_conservative"},
+		{name: "cards", text: "查询卡片状态与额度", want: "card_demo"},
+		{name: "subscriptions", text: "检查订阅与续费提醒", want: "sub_streaming"},
+	}
+	for i, tc := range cases {
+		status, result, body := sendMessage(t, server.URL, conversationID, tc.text, fmt.Sprintf("read-only-query-%d", i))
+		if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(body, []byte(tc.want)) {
+			t.Fatalf("%s: status=%d result=%+v body=%s", tc.name, status, result, body)
+		}
+		if tc.name == "subscriptions" && !bytes.Contains(body, []byte(`"reminders"`)) {
+			t.Fatalf("%s: response missing reminders: %s", tc.name, body)
+		}
+	}
+}
+
 func TestTransactionQueryValidationAndAccountOwnership(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()

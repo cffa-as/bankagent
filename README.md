@@ -13,7 +13,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-MVP-4D72FF?style=flat-square" alt="MVP" />
-  <img src="https://img.shields.io/badge/frontend-Next.js%2015-111C2E?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 15" />
+  <img src="https://img.shields.io/badge/frontend-Next.js%2016-111C2E?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/backend-Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
   <img src="https://img.shields.io/badge/API-OpenAPI%203.1-6BA539?style=flat-square&logo=openapiinitiative&logoColor=white" alt="OpenAPI 3.1" />
   <img src="https://img.shields.io/badge/security-server%20governed-111C2E?style=flat-square" alt="Server governed" />
@@ -139,7 +139,7 @@ flowchart LR
 
 | Layer | Implementation |
 | --- | --- |
-| Product surface | Next.js 15 · TypeScript · responsive safety console |
+| Product surface | Next.js 16 · TypeScript · responsive safety console |
 | API and policy | Go · REST `/v1` · OpenAPI 3.1 |
 | Agent boundary | Structured intent + server-approved tools |
 | State and evidence | SQLite WAL · transactional ledger · idempotency · audit |
@@ -150,7 +150,7 @@ flowchart LR
 
 ## 快速开始 / Quick start
 
-需要 Go 1.27+、Node.js 20+ 和 CGO（SQLite 驱动）。
+需要 Go 1.27+、Node.js 24.13+、pnpm 11 和 CGO（SQLite 驱动）。
 
 ```bash
 git clone https://github.com/cffa-as/bankagent.git
@@ -169,8 +169,11 @@ go run ./cmd/bankagent
 
 ```bash
 cd frontend
-npm install
-npm run dev
+nvm install
+nvm use
+corepack enable pnpm
+pnpm install
+pnpm dev
 ```
 
 打开 <http://localhost:3000>。演示身份为 `Bearer demo-user-1`，演示 MFA 验证码为 `000000`。

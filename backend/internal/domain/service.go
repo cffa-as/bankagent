@@ -399,6 +399,45 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		}
 		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("已找到 %d 笔交易记录。", len(records)), Records: records}, trace, nil
 	}
+	if strings.Contains(text, "理财") && !strings.Contains(text, "申购") && !strings.Contains(text, "赎回") {
+		products, err := s.repo.Products(ctx, "")
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "investment_products_queried", "succeeded", "tool", map[string]any{"count": len(products)}, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("找到 %d 款理财产品。", len(products)), Data: products}, trace, nil
+	}
+	if strings.Contains(text, "卡") && !containsAny(text, "冻结", "解冻", "挂失", "解挂", "申请", "调整") {
+		cards, err := s.repo.Cards(ctx, userID)
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "cards_queried", "succeeded", "tool", map[string]any{"count": len(cards)}, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("找到 %d 张卡片。", len(cards)), Data: cards}, trace, nil
+	}
+	if strings.Contains(text, "订阅") && !strings.Contains(text, "取消") {
+		subscriptions, err := s.repo.Subscriptions(ctx, userID, "")
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		reminders, _, err := s.SubscriptionReminders(ctx, userID, 30)
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "subscriptions_queried", "succeeded", "tool", map[string]any{"count": len(subscriptions), "reminder_count": len(reminders)}, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+		return MessageResult{
+			RunID:     runID,
+			ReplyType: "query_result",
+			Text:      fmt.Sprintf("找到 %d 项订阅代扣，%d 条续费提醒。", len(subscriptions), len(reminders)),
+			Data:      map[string]any{"subscriptions": subscriptions, "reminders": reminders},
+		}, trace, nil
+	}
 	if strings.Contains(text, "理财") && strings.Contains(text, "赎回") {
 		holdings, err := s.repo.Holdings(ctx, userID)
 		if err != nil {
@@ -1556,6 +1595,15 @@ func conversationContextText(text string) string {
 		return "[敏感输入已脱敏]"
 	}
 	return strings.TrimSpace(text)
+}
+
+func containsAny(text string, values ...string) bool {
+	for _, value := range values {
+		if strings.Contains(text, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func ptr[T any](value T) *T { return &value }

@@ -1,30 +1,35 @@
 # Vaultline brand direction
 
-Status: provisional product brand for the `bankagent` repository.
+Status: selected product identity for `bankagent`.
 
 ## Name
 
-**Vaultline** means a protected line between a user's intent and a bank's execution system. The name is short in English, works in a GitHub repository header, and supports a security focused visual identity without sounding like a consumer finance app.
+**Vaultline** is the protected line between a user's intent and the bank's execution system.
 
 ## Mark
 
-The primary mark is a **hexagonal security seal**. Its outer shape signals an institutional control boundary; the three internal lines represent intent, review, and authorization; the short cobalt segment marks the final controlled gate. It is compact, recognizable at small sizes, and works as both a product logo and a demo cover image.
+The selected identity is **Reserve**:
 
-The primary asset is [`public/vaultline-mark.svg`](public/vaultline-mark.svg). The presentation asset is [`public/brand/vaultline-brand-hero.png`](public/brand/vaultline-brand-hero.png). Alternative geometric studies live in [`public/brand/`](public/brand/).
+- deep navy circular seal;
+- white V-shaped channel;
+- one cobalt execution marker;
+- tightly tracked `VAULTLINE` wordmark in Instrument Sans Bold.
 
-## Visual direction
+Canonical implementation: [`components/vaultline/seal.tsx`](components/vaultline/seal.tsx). App icon: [`app/icon.svg`](app/icon.svg).
 
-- Product character: regulated financial institution, private banking terminal, calm under risk.
-- Base: cold porcelain white, platinum gray, deep navy.
-- Accent: restrained cobalt blue.
-- Status: amber for explicit confirmation, red for MFA or high sensitivity, green for read only or validated states.
-- Type: Noto Sans SC / PingFang SC for Chinese, Space Grotesk for Latin, JetBrains Mono for IDs and technical labels.
-- Surfaces: flat, 1px steel borders, 4–8px radius, deliberate whitespace.
+## Visual system
+
+- Base surfaces: platinum `#F7F9FC`, cool surface `#F1F4F8`, ice `#EAF0FF`.
+- Structure and primary text: reserve navy `#0B1423`.
+- Primary action: execution cobalt `#315BFF`.
+- Read-only and verified evidence: teal `#2AA88A`.
+- Explicit confirmation: amber `#D29A3D`.
+- MFA and high-risk states: red `#C8574F`.
+- Type: Noto Sans SC / PingFang SC for Chinese, Instrument Sans for English, JetBrains Mono for amounts and evidence IDs.
+- Surfaces: thin steel borders, small radii, restrained shadows.
+
+Green/teal, amber and red always pair color with text or an icon. Success is shown only when the server returns a business receipt.
 
 ## Avoid
 
-Purple AI gradients, neon glow, glassmorphism, crypto dashboard patterns, warm paper themes, oversized rounded cards, and decorative locks that do not carry product meaning.
-
-## v0 instruction
-
-Use Vaultline as the product brand. Read this file and `bankagent-frontend/SKILL.md` before generating UI. Build visual variations on the homepage first. Keep the interactive demo synthetic and clearly labeled; do not turn the demo into a real banking workflow or modify `backend/` and `docs/`.
+Purple AI gradients, neon effects, glassmorphism, oversized rounded cards, fake terminal chrome, decorative security icons, and any visual that implies authorization or success without server evidence.

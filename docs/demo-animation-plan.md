@@ -33,7 +33,7 @@ remotion/
     VaultlineDemo.tsx
     scenarios.ts
   public/
-    vaultline-mark.svg
+    frontend/app/icon.svg
 ```
 
 第一版只做一个 16:9、60 秒、30 fps 的 MP4；需要在 GitHub README 首屏加载时，再从同一时间线导出 6–10 秒循环 GIF。
@@ -109,7 +109,7 @@ GIF 只用于快速表达“页面怎么动”；MP4 用于完整讲清场景和
 ## 工程约束
 
 - 首页 Demo Film 与真实 API 工作台分离，不新增支付 SDK、真实账户数据或独立后端。
-- 所有真实 API 请求继续通过 `frontend/lib/api.ts`，带 Bearer token 和 `Idempotency-Key`。
+- 所有真实 API 请求继续通过 `frontend/lib/vaultline/api.ts`，带 Bearer token 和 `Idempotency-Key`。
 - `action.status`、`risk_level`、`authorization`、`tool_receipt` 只展示服务端返回值。
 - MFA 输入值不能进入日志、审计展示、Remotion props 或视频素材。
 - 只有服务端返回 `result` 或 `tool_receipt` 后，视频和页面才能显示业务回执；演示脚本里的回执必须明确标记为 synthetic。
