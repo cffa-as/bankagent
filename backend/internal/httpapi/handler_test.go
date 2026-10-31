@@ -152,6 +152,79 @@ func TestBillSummaryQuery(t *testing.T) {
 	}
 }
 
+func TestAccountBalanceAndTransactions(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+
+	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("balance: status=%d body=%s", resp.StatusCode, body)
+	}
+	var balanceResult envelope
+	if err := json.Unmarshal(body, &balanceResult); err != nil {
+		t.Fatal(err)
+	}
+	var balance struct {
+		AccountID    string `json:"account_id"`
+		BalanceMinor int64  `json:"balance_minor"`
+	}
+	if err := json.Unmarshal(balanceResult.Data, &balance); err != nil {
+		t.Fatal(err)
+	}
+	if balance.AccountID != "acct_demo" || balance.BalanceMinor != 1000000 || balanceResult.TraceID == "" {
+		t.Fatalf("unexpected balance: %+v trace=%q", balance, balanceResult.TraceID)
+	}
+
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/transactions?page=2&page_size=2", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("transactions: status=%d body=%s", resp.StatusCode, body)
+	}
+	var transactionsResult envelope
+	if err := json.Unmarshal(body, &transactionsResult); err != nil {
+		t.Fatal(err)
+	}
+	var page struct {
+		Items    []any `json:"items"`
+		Page     int   `json:"page"`
+		PageSize int   `json:"page_size"`
+		Total    int   `json:"total"`
+	}
+	if err := json.Unmarshal(transactionsResult.Data, &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Page != 2 || page.PageSize != 2 || page.Total != 4 || len(page.Items) != 2 {
+		t.Fatalf("unexpected page: %+v", page)
+	}
+
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/transactions?category=food&page_size=100", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("category filter: status=%d body=%s", resp.StatusCode, body)
+	}
+	if err := json.Unmarshal(body, &transactionsResult); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(transactionsResult.Data, &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 {
+		t.Fatalf("unexpected category page: %+v", page)
+	}
+}
+
+func TestTransactionQueryValidationAndAccountOwnership(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+
+	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/transactions?page=0", "", "")
+	if resp.StatusCode != http.StatusBadRequest || !bytes.Contains(body, []byte("INVALID_ARGUMENT")) {
+		t.Fatalf("invalid page: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/other/transactions", "", "")
+	if resp.StatusCode != http.StatusForbidden || !bytes.Contains(body, []byte("PERMISSION_DENIED")) {
+		t.Fatalf("other account: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
 func BenchmarkBillSummaryHTTP(b *testing.B) {
 	application, err := app.New(app.Config{Database: filepath.Join(b.TempDir(), "bankagent.db")})
 	if err != nil {

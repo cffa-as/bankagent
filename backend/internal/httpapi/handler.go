@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/conversations/") && strings.HasSuffix(path, "/messages") {
 		h.message(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/accounts/") && strings.HasSuffix(path, "/balance") {
+		h.accountBalance(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/accounts/") && strings.HasSuffix(path, "/transactions") {
+		h.transactions(w, r, userID, path)
 		return
 	}
 	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/accounts/") && strings.HasSuffix(path, "/bills/summary") {
@@ -128,6 +137,34 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID, path s
 	response := envelope(result, trace)
 	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) accountBalance(w http.ResponseWriter, r *http.Request, userID, path string) {
+	account, trace, err := h.service.AccountBalance(r.Context(), userID, segment(path, 2))
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(account, trace))
+}
+
+func (h *Handler) transactions(w http.ResponseWriter, r *http.Request, userID, path string) {
+	page, pageSize, err := queryPage(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "page 和 page_size 参数无效", "tr_invalid")
+		return
+	}
+	from, to, err := queryDateRange(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "from 和 to 必须使用 YYYY-MM-DD 格式，且 from 不得晚于 to", "tr_invalid")
+		return
+	}
+	result, trace, err := h.service.ListTransactions(r.Context(), userID, segment(path, 2), from, to, strings.TrimSpace(r.URL.Query().Get("category")), page, pageSize)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(result, trace))
 }
 
 func (h *Handler) billSummary(w http.ResponseWriter, r *http.Request, userID, path string) {
@@ -230,6 +267,62 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request, userID, path st
 	response := envelope(action, trace)
 	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func queryPage(r *http.Request) (int, int, error) {
+	page, pageSize := 1, 20
+	if value := strings.TrimSpace(r.URL.Query().Get("page")); value != "" {
+		var err error
+		page, err = strconv.Atoi(value)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("page_size")); value != "" {
+		var err error
+		pageSize, err = strconv.Atoi(value)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+	if page < 1 || pageSize < 1 || pageSize > 100 {
+		return 0, 0, errors.New("invalid page")
+	}
+	return page, pageSize, nil
+}
+
+func queryDateRange(r *http.Request) (*time.Time, *time.Time, error) {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return nil, nil, err
+	}
+	parse := func(name string) (*time.Time, error) {
+		value := strings.TrimSpace(r.URL.Query().Get(name))
+		if value == "" {
+			return nil, nil
+		}
+		parsed, err := time.ParseInLocation("2006-01-02", value, loc)
+		if err != nil {
+			return nil, err
+		}
+		return &parsed, nil
+	}
+	from, err := parse("from")
+	if err != nil {
+		return nil, nil, err
+	}
+	to, err := parse("to")
+	if err != nil {
+		return nil, nil, err
+	}
+	if to != nil {
+		end := to.AddDate(0, 0, 1)
+		to = &end
+	}
+	if from != nil && to != nil && !from.Before(*to) {
+		return nil, nil, errors.New("invalid date range")
+	}
+	return from, to, nil
 }
 
 func (h *Handler) audit(w http.ResponseWriter, r *http.Request, userID, path string) {

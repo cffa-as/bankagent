@@ -9,6 +9,14 @@ go vet ./...
 go test -bench BenchmarkBillSummaryHTTP ./internal/httpapi
 ```
 
+查询接口：
+
+```text
+GET /v1/accounts/{account_id}/balance
+GET /v1/accounts/{account_id}/transactions?from=YYYY-MM-DD&to=YYYY-MM-DD&category=food&page=1&page_size=20
+GET /v1/accounts/{account_id}/bills/summary?month=YYYY-MM
+```
+
 运行服务：
 
 ```bash

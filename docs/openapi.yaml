@@ -430,6 +430,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EnvelopeTransactionPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -823,22 +825,21 @@ components:
         occurred_at: { type: string, format: date-time }
     Balance:
       type: object
-      required: [account_id, available_minor, currency]
+      required: [account_id, currency, balance_minor]
       properties:
         account_id: { type: string }
-        available_minor: { type: integer, format: int64 }
-        current_minor: { type: integer, format: int64 }
         currency: { type: string, minLength: 3, maxLength: 3 }
+        balance_minor: { type: integer, format: int64 }
     Transaction:
       type: object
-      required: [transaction_id, amount_minor, currency, occurred_at]
+      required: [transaction_id, direction, amount_minor, description, created_at]
       properties:
         transaction_id: { type: string }
+        direction: { type: string, enum: [in, out] }
         amount_minor: { type: integer, format: int64 }
-        currency: { type: string }
         category: { type: string }
-        merchant: { type: string }
-        occurred_at: { type: string, format: date-time }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
     TransactionPage:
       type: object
       required: [items, page, page_size]

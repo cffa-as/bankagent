@@ -49,6 +49,13 @@ type Transaction struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type TransactionPage struct {
+	Items    []Transaction `json:"items"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"page_size"`
+	Total    int           `json:"total"`
+}
+
 type BillCategory struct {
 	Category    string `json:"category"`
 	AmountMinor int64  `json:"amount_minor"`

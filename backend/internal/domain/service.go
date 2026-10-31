@@ -114,6 +114,75 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 	return MessageResult{RunID: runID, ReplyType: "question", Text: "我可以帮你查询余额、交易记录，或处理预置收款人的转账。"}, trace, nil
 }
 
+func (s *Service) AccountBalance(ctx context.Context, userID, accountID string) (Account, string, error) {
+	account, err := s.repo.Account(ctx, userID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return Account{}, "", ErrNotFound
+		}
+		return Account{}, "", err
+	}
+	if account.ID != accountID {
+		return Account{}, "", ErrForbidden
+	}
+	trace := NewID("tr")
+	if err := s.audit(ctx, trace, "", "", "balance_queried", "succeeded", "tool", map[string]any{"account_id": accountID}, s.now()); err != nil {
+		return Account{}, trace, err
+	}
+	return account, trace, nil
+}
+
+func (s *Service) ListTransactions(ctx context.Context, userID, accountID string, from, to *time.Time, category string, page, pageSize int) (TransactionPage, string, error) {
+	account, err := s.repo.Account(ctx, userID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return TransactionPage{}, "", ErrNotFound
+		}
+		return TransactionPage{}, "", err
+	}
+	if account.ID != accountID {
+		return TransactionPage{}, "", ErrForbidden
+	}
+	if page < 1 || pageSize < 1 || pageSize > 100 {
+		return TransactionPage{}, "", ErrInvalidArgument
+	}
+	records, err := s.repo.Transactions(ctx, userID)
+	if err != nil {
+		return TransactionPage{}, "", err
+	}
+	filtered := make([]Transaction, 0, len(records))
+	for _, record := range records {
+		if from != nil && record.CreatedAt.Before(*from) {
+			continue
+		}
+		if to != nil && !record.CreatedAt.Before(*to) {
+			continue
+		}
+		if category != "" && record.Category != category {
+			continue
+		}
+		filtered = append(filtered, record)
+	}
+	total := len(filtered)
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	items := filtered[start:end]
+	if items == nil {
+		items = []Transaction{}
+	}
+	trace := NewID("tr")
+	if err := s.audit(ctx, trace, "", "", "transactions_queried", "succeeded", "tool", map[string]any{"account_id": accountID, "count": total, "page": page, "page_size": pageSize}, s.now()); err != nil {
+		return TransactionPage{}, trace, err
+	}
+	return TransactionPage{Items: items, Page: page, PageSize: pageSize, Total: total}, trace, nil
+}
+
 func (s *Service) BillSummary(ctx context.Context, userID, accountID string, month time.Time) (BillSummary, string, error) {
 	account, err := s.repo.Account(ctx, userID)
 	if err != nil {
