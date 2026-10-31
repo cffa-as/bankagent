@@ -189,9 +189,15 @@ func (s *Service) CreateCardStatusAction(ctx context.Context, userID, conversati
 	}
 	for _, card := range cards {
 		if card.ID == cardID {
+			validTransition := (targetStatus == "frozen" && card.Status == "active") ||
+				(targetStatus == "lost" && (card.Status == "active" || card.Status == "frozen")) ||
+				(targetStatus == "active" && (card.Status == "frozen" || card.Status == "lost"))
+			if !validTransition {
+				return Action{}, "", ErrActionStateConflict
+			}
 			snapshot := map[string]any{"card_id": card.ID, "target_status": targetStatus, "masked_number": card.MaskedNumber}
 			risk, status := "yellow", "awaiting_confirmation"
-			if targetStatus == "lost" || (targetStatus == "active" && card.Status != "active") {
+			if targetStatus != "frozen" {
 				risk, status = "red", "awaiting_mfa"
 			}
 			return s.createActionRecord(ctx, userID, conversationID, "card_status_change", risk, status, snapshot)
@@ -948,9 +954,7 @@ func (s *Service) GetAction(ctx context.Context, userID, id string) (Action, err
 		return Action{}, ErrForbidden
 	}
 	if s.now().After(action.ExpiresAt) && isPending(action.Status) {
-		action.Status = "expired"
-		action.UpdatedAt = s.now()
-		if err := s.repo.UpdateAction(ctx, action); err != nil {
+		if err := s.expireAction(ctx, &action, NewID("tr"), s.now()); err != nil {
 			return Action{}, err
 		}
 	}
@@ -967,9 +971,7 @@ func (s *Service) Confirm(ctx context.Context, userID, id, _ string) (Action, st
 		return Action{}, trace, ErrActionStateConflict
 	}
 	if s.now().After(action.ExpiresAt) {
-		action.Status = "expired"
-		action.UpdatedAt = s.now()
-		if err := s.repo.UpdateAction(ctx, action); err != nil {
+		if err := s.expireAction(ctx, &action, trace, s.now()); err != nil {
 			return Action{}, trace, err
 		}
 		return Action{}, trace, ErrActionExpired
@@ -990,9 +992,7 @@ func (s *Service) VerifyMFA(ctx context.Context, userID, id, code string) (Actio
 		return Action{}, trace, ErrActionStateConflict
 	}
 	if s.now().After(action.ExpiresAt) {
-		action.Status = "expired"
-		action.UpdatedAt = s.now()
-		if err := s.repo.UpdateAction(ctx, action); err != nil {
+		if err := s.expireAction(ctx, &action, trace, s.now()); err != nil {
 			return Action{}, trace, err
 		}
 		return Action{}, trace, ErrActionExpired
@@ -1006,6 +1006,9 @@ func (s *Service) VerifyMFA(ctx context.Context, userID, id, code string) (Actio
 		if locked {
 			action.Status = "failed"
 			if err := s.audit(ctx, trace, action.ConversationID, action.ID, "mfa_locked", "failed", "system", nil, s.now()); err != nil {
+				return Action{}, trace, err
+			}
+			if err := s.failWorkflowAction(ctx, &action, s.now()); err != nil {
 				return Action{}, trace, err
 			}
 			return Action{}, trace, ErrMFALocked
@@ -1039,8 +1042,7 @@ func (s *Service) TriggerScheduled(ctx context.Context, userID, id string) (Acti
 		return Action{}, trace, ErrActionStateConflict
 	}
 	if now.After(action.ExpiresAt) {
-		action.Status, action.UpdatedAt = "expired", now
-		if err := s.repo.UpdateAction(ctx, action); err != nil {
+		if err := s.expireAction(ctx, &action, trace, now); err != nil {
 			return Action{}, trace, err
 		}
 		return Action{}, trace, ErrActionExpired
@@ -1089,6 +1091,17 @@ func (s *Service) Cancel(ctx context.Context, userID, id string) (Action, string
 		return Action{}, trace, err
 	}
 	return action.Public(), trace, nil
+}
+
+func (s *Service) expireAction(ctx context.Context, action *Action, trace string, now time.Time) error {
+	action.Status, action.UpdatedAt = "expired", now
+	if err := s.repo.UpdateAction(ctx, *action); err != nil {
+		return err
+	}
+	if err := s.cancelWorkflowAction(ctx, action, now); err != nil {
+		return err
+	}
+	return s.audit(ctx, trace, action.ConversationID, action.ID, "action_expired", "failed", "system", nil, now)
 }
 
 func (s *Service) proceedAuthorized(ctx context.Context, action *Action, trace string) error {

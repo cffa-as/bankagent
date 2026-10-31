@@ -87,6 +87,19 @@ type RedemptionResult struct {
 	AnnualRateBPS int64
 }
 
+type TransferResult struct {
+	TransactionID string `json:"transaction_id"`
+	AmountMinor   int64  `json:"amount_minor"`
+	Currency      string `json:"currency"`
+}
+
+type InvestmentPurchaseResult struct {
+	HoldingID   string `json:"holding_id"`
+	ProductID   string `json:"product_id"`
+	AmountMinor int64  `json:"amount_minor"`
+	Currency    string `json:"currency"`
+}
+
 type Holding struct {
 	ID          string    `json:"holding_id"`
 	ProductID   string    `json:"product_id"`
@@ -248,8 +261,8 @@ type Repository interface {
 	CreateAction(context.Context, Action) error
 	Action(context.Context, string) (Action, error)
 	UpdateAction(context.Context, Action) error
-	ExecuteTransfer(context.Context, Action, int64, string, time.Time) error
-	ExecuteInvestmentPurchase(context.Context, Action, string, int64, time.Time) error
+	ExecuteTransfer(context.Context, Action, int64, string, time.Time) (TransferResult, error)
+	ExecuteInvestmentPurchase(context.Context, Action, string, int64, time.Time) (InvestmentPurchaseResult, error)
 	ExecuteInvestmentRedemption(context.Context, Action, string, time.Time) (RedemptionResult, error)
 	ExecuteCardStatus(context.Context, Action, string, string, time.Time) error
 	ExecuteCardApplication(context.Context, Action, string, time.Time) (Card, error)

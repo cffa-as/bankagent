@@ -937,6 +937,10 @@ func TestCardLostRequiresMFA(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"status":"lost"`)) {
 		t.Fatalf("lost card: status=%d body=%s", resp.StatusCode, body)
 	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/cards/card_demo/freeze", `{"conversation_id":"`+conversationID+`"}`, "card-invalid-lost-freeze")
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("lost card cannot silently downgrade to frozen: status=%d body=%s", resp.StatusCode, body)
+	}
 	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/cards/card_demo/unlost", `{"conversation_id":"`+conversationID+`"}`, "card-unlost-action")
 	if resp.StatusCode != http.StatusCreated || !bytes.Contains(body, []byte(`"risk_level":"red"`)) || !bytes.Contains(body, []byte(`"status":"awaiting_mfa"`)) {
 		t.Fatalf("card unlost action: status=%d body=%s", resp.StatusCode, body)
@@ -1160,6 +1164,56 @@ func TestWorkflowBudgetLockFailuresAndCancellationReleaseReservation(t *testing.
 		resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
 		if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) {
 			t.Fatalf("cancelled workflow did not release reservation: status=%d body=%s", resp.StatusCode, raw)
+		}
+	})
+
+	t.Run("mfa lock fails workflow", func(t *testing.T) {
+		server, cleanup := newServer(t)
+		defer cleanup()
+		deadline := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+		body := `{"purpose":"锁定失败","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":100000}]}`
+		resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "mfa-lock-workflow-create-1")
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
+		}
+		var created envelope
+		if err := json.Unmarshal(raw, &created); err != nil {
+			t.Fatal(err)
+		}
+		var workflow struct {
+			ID string `json:"workflow_id"`
+		}
+		if err := json.Unmarshal(created.Data, &workflow); err != nil {
+			t.Fatal(err)
+		}
+		resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "mfa-lock-workflow-advance-1")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("advance workflow: status=%d body=%s", resp.StatusCode, raw)
+		}
+		var advanced envelope
+		if err := json.Unmarshal(raw, &advanced); err != nil {
+			t.Fatal(err)
+		}
+		var pending struct {
+			Action struct {
+				ID string `json:"action_id"`
+			} `json:"action"`
+		}
+		if err := json.Unmarshal(advanced.Data, &pending); err != nil {
+			t.Fatal(err)
+		}
+		for attempt := 1; attempt <= 3; attempt++ {
+			resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/mfa/verify", `{"code":"111111"}`, "mfa-lock-attempt-"+string(rune('0'+attempt)))
+			if attempt < 3 && resp.StatusCode != http.StatusUnprocessableEntity {
+				t.Fatalf("mfa attempt %d: status=%d body=%s", attempt, resp.StatusCode, raw)
+			}
+			if attempt == 3 && resp.StatusCode != http.StatusLocked {
+				t.Fatalf("mfa lock: status=%d body=%s", resp.StatusCode, raw)
+			}
+		}
+		resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/workflows/"+workflow.ID, "", "")
+		if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"failed"`)) {
+			t.Fatalf("workflow after mfa lock: status=%d body=%s", resp.StatusCode, raw)
 		}
 	})
 }

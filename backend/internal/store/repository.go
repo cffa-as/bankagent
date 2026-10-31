@@ -299,7 +299,7 @@ func (r *Repository) DailyOutgoing(ctx context.Context, userID string, day time.
 	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, loc)
 	end := start.AddDate(0, 0, 1)
 	var total sql.NullInt64
-	err = r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(l.amount_minor),0) FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.created_at>=? AND l.created_at<?`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)).Scan(&total)
+	err = r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(l.amount_minor),0) FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.category='transfer' AND l.created_at>=? AND l.created_at<?`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano)).Scan(&total)
 	return total.Int64, err
 }
 
@@ -565,7 +565,7 @@ func (r *Repository) ExecuteCardStatus(ctx context.Context, a domain.Action, car
 	} else if affected != 1 {
 		return domain.ErrActionStateConflict
 	}
-	result, err = tx.ExecContext(ctx, `UPDATE cards SET status=? WHERE id=? AND user_id=? AND status<>?`, status, cardID, a.UserID, status)
+	result, err = tx.ExecContext(ctx, `UPDATE cards SET status=? WHERE id=? AND user_id=? AND ((?='frozen' AND status='active') OR (?='lost' AND status IN ('active','frozen')) OR (?='active' AND status IN ('frozen','lost')))`, status, cardID, a.UserID, status, status, status)
 	if err != nil {
 		return err
 	}
