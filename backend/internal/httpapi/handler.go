@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,20 +11,56 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cffa-as/bankagent/internal/domain"
 )
 
 const demoUser = domain.DemoUserID
+const maxRequestBodyBytes = 1 << 20
 
 type Handler struct {
 	service *domain.Service
-	mu      sync.Mutex
 }
 
 func New(service *domain.Service) http.Handler { return &Handler{service: service} }
+
+type bufferedResponse struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func newBufferedResponse() *bufferedResponse {
+	return &bufferedResponse{header: make(http.Header)}
+}
+
+func (b *bufferedResponse) Header() http.Header { return b.header }
+
+func (b *bufferedResponse) WriteHeader(status int) {
+	if b.status == 0 {
+		b.status = status
+	}
+}
+
+func (b *bufferedResponse) Write(payload []byte) (int, error) {
+	if b.status == 0 {
+		b.status = http.StatusOK
+	}
+	return b.body.Write(payload)
+}
+
+func (b *bufferedResponse) flush(w http.ResponseWriter) {
+	for key, values := range b.header {
+		w.Header()[key] = append([]string(nil), values...)
+	}
+	status := b.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+	_, _ = w.Write(b.body.Bytes())
+}
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
@@ -36,6 +73,92 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.URL.Path
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/") {
+		locked, err := h.service.SecurityLocked(r.Context(), userID)
+		if err != nil {
+			writeServiceError(w, err, "tr_security")
+			return
+		}
+		if locked {
+			writeError(w, http.StatusLocked, "SECURITY_LOCKED", "连续异常操作已触发安全锁定，请稍后重试", "tr_security")
+			return
+		}
+		h.serveIdempotent(w, r, userID, path)
+		return
+	}
+	h.route(w, r, userID, path)
+}
+
+func (h *Handler) serveIdempotent(w http.ResponseWriter, r *http.Request, userID, path string) {
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len(key) < 8 || len(key) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "Idempotency-Key 长度必须为 8 到 128 个字符", "tr_invalid")
+		return
+	}
+	body, err := readBody(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.ContentLength = int64(len(body))
+	fp := fingerprint(body)
+	if h.replayIdempotency(w, r, userID, path, key, fp) {
+		return
+	}
+	reserved, err := h.service.ReserveIdempotency(r.Context(), userID, r.Method, path, key, fp)
+	if err != nil {
+		writeServiceError(w, err, "tr_idempotency")
+		return
+	}
+	if !reserved && h.replayIdempotency(w, r, userID, path, key, fp) {
+		return
+	}
+	if !reserved {
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "相同幂等键的请求正在处理中", "tr_idempotency")
+		return
+	}
+
+	recorder := newBufferedResponse()
+	h.route(recorder, r, userID, path)
+	status := recorder.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	if status >= 200 && status < 300 {
+		saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := h.service.SaveIdempotency(saveCtx, userID, r.Method, path, key, fp, status, recorder.body.Bytes()); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "IDEMPOTENCY_UNAVAILABLE", "业务已受理，但幂等回执暂不可用，请勿重复提交", "tr_idempotency")
+			return
+		}
+	} else if err := h.service.DeleteIdempotency(context.WithoutCancel(r.Context()), userID, r.Method, path, key); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "IDEMPOTENCY_UNAVAILABLE", "幂等状态暂不可用，请稍后重试", "tr_idempotency")
+		return
+	}
+	recorder.flush(w)
+}
+
+func (h *Handler) replayIdempotency(w http.ResponseWriter, r *http.Request, userID, path, key, fp string) bool {
+	response, status, err := h.service.Idempotency(r.Context(), userID, r.Method, path, key, fp)
+	if err != nil {
+		writeServiceError(w, err, "tr_idempotency")
+		return true
+	}
+	if response == nil {
+		return false
+	}
+	if status == 0 {
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "相同幂等键的请求正在处理中", "tr_idempotency")
+		return true
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(response)
+	return true
+}
+
+func (h *Handler) route(w http.ResponseWriter, r *http.Request, userID, path string) {
 	if r.Method == http.MethodPost && path == "/v1/conversations" {
 		h.createConversation(w, r, userID)
 		return
@@ -172,8 +295,6 @@ func authenticate(r *http.Request) (string, bool) {
 }
 
 func (h *Handler) createConversation(w http.ResponseWriter, r *http.Request, userID string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	body, err := readBody(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
@@ -183,34 +304,23 @@ func (h *Handler) createConversation(w http.ResponseWriter, r *http.Request, use
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "创建会话不接受请求字段", "tr_invalid")
 		return
 	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, r.URL.Path, fp) {
-		return
-	}
 	conversation, trace, err := h.service.CreateConversation(r.Context(), userID)
 	if err != nil {
 		writeServiceError(w, err, trace)
 		return
 	}
 	response := envelope(conversation, trace)
-	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	conversationID := segment(path, 2)
 	var request struct {
 		Text string `json:"text"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fingerprint := fingerprint(body)
-	if h.replay(w, r, userID, path, fingerprint) {
 		return
 	}
 	result, trace, err := h.service.Message(r.Context(), userID, conversationID, request.Text)
@@ -219,13 +329,10 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID, path s
 		return
 	}
 	response := envelope(result, trace)
-	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) createTransfer(w http.ResponseWriter, r *http.Request, userID string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		ConversationID  string `json:"conversation_id"`
 		BeneficiaryName string `json:"beneficiary_name"`
@@ -233,13 +340,9 @@ func (h *Handler) createTransfer(w http.ResponseWriter, r *http.Request, userID 
 		Remark          string `json:"remark"`
 		ScheduledAt     string `json:"scheduled_at"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, r.URL.Path, fp) {
 		return
 	}
 	var action domain.Action
@@ -259,25 +362,18 @@ func (h *Handler) createTransfer(w http.ResponseWriter, r *http.Request, userID 
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) createTransferSplit(w http.ResponseWriter, r *http.Request, userID string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		ConversationID   string                    `json:"conversation_id"`
 		TotalAmountMinor int64                     `json:"total_amount_minor"`
 		Participants     []domain.SplitParticipant `json:"participants"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, r.URL.Path, fp) {
 		return
 	}
 	action, trace, err := h.service.CreateTransferSplitAction(r.Context(), userID, request.ConversationID, request.TotalAmountMinor, request.Participants)
@@ -286,26 +382,19 @@ func (h *Handler) createTransferSplit(w http.ResponseWriter, r *http.Request, us
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) createLiquiditySimulation(w http.ResponseWriter, r *http.Request, userID string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		AccountID            string `json:"account_id"`
 		HorizonDays          int    `json:"horizon_days"`
 		ProposedBudgetMinor  int64  `json:"proposed_budget_minor"`
 		EssentialBufferMinor *int64 `json:"essential_buffer_minor"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, r.URL.Path, fp) {
 		return
 	}
 	simulation, trace, err := h.service.CreateLiquiditySimulation(r.Context(), userID, request.AccountID, request.HorizonDays, request.ProposedBudgetMinor, request.EssentialBufferMinor)
@@ -314,7 +403,6 @@ func (h *Handler) createLiquiditySimulation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	response := envelope(simulation, trace)
-	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
@@ -328,18 +416,12 @@ func (h *Handler) getLiquiditySimulation(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *Handler) createCardApplication(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		ConversationID string `json:"conversation_id"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, path, fp) {
 		return
 	}
 	action, trace, err := h.service.CreateCardApplicationAction(r.Context(), userID, request.ConversationID, segment(path, 2))
@@ -348,25 +430,18 @@ func (h *Handler) createCardApplication(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) createInvestmentPurchase(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		ConversationID   string `json:"conversation_id"`
 		AmountMinor      int64  `json:"amount_minor"`
 		RiskAcknowledged bool   `json:"risk_acknowledged"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, path, fp) {
 		return
 	}
 	action, trace, err := h.service.CreateInvestmentPurchaseAction(r.Context(), userID, request.ConversationID, segment(path, 3), request.AmountMinor, request.RiskAcknowledged)
@@ -375,23 +450,16 @@ func (h *Handler) createInvestmentPurchase(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) createInvestmentRedemption(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		ConversationID string `json:"conversation_id"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, path, fp) {
 		return
 	}
 	action, trace, err := h.service.CreateInvestmentRedemptionAction(r.Context(), userID, request.ConversationID, segment(path, 3))
@@ -400,24 +468,17 @@ func (h *Handler) createInvestmentRedemption(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) createCardLimit(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		ConversationID string `json:"conversation_id"`
 		LimitMinor     int64  `json:"limit_minor"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, path, fp) {
 		return
 	}
 	action, trace, err := h.service.CreateCardLimitAction(r.Context(), userID, request.ConversationID, segment(path, 2), request.LimitMinor)
@@ -426,23 +487,16 @@ func (h *Handler) createCardLimit(w http.ResponseWriter, r *http.Request, userID
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) createCardStatus(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		ConversationID string `json:"conversation_id"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, path, fp) {
 		return
 	}
 	target := "frozen"
@@ -458,23 +512,16 @@ func (h *Handler) createCardStatus(w http.ResponseWriter, r *http.Request, userI
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) createSubscriptionCancel(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		ConversationID string `json:"conversation_id"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, path, fp) {
 		return
 	}
 	action, trace, err := h.service.CreateSubscriptionCancelAction(r.Context(), userID, request.ConversationID, segment(path, 2))
@@ -483,7 +530,6 @@ func (h *Handler) createSubscriptionCancel(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
@@ -626,17 +672,11 @@ func (h *Handler) getAction(w http.ResponseWriter, r *http.Request, userID, path
 }
 
 func (h *Handler) confirm(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	actionID := segment(path, 2)
 	var request struct{}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fingerprint := fingerprint(body)
-	if h.replay(w, r, userID, path, fingerprint) {
 		return
 	}
 	action, trace, err := h.service.Confirm(r.Context(), userID, actionID, "")
@@ -645,24 +685,17 @@ func (h *Handler) confirm(w http.ResponseWriter, r *http.Request, userID, path s
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) verifyMFA(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	actionID := segment(path, 2)
 	var request struct {
 		Code string `json:"code"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fingerprint := fingerprint(body)
-	if h.replay(w, r, userID, path, fingerprint) {
 		return
 	}
 	action, trace, err := h.service.VerifyMFA(r.Context(), userID, actionID, request.Code)
@@ -671,21 +704,13 @@ func (h *Handler) verifyMFA(w http.ResponseWriter, r *http.Request, userID, path
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) cancel(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	actionID := segment(path, 2)
-	body, err := readBody(r)
-	if err != nil {
+	if _, err := readBody(r); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fingerprint := fingerprint(body)
-	if h.replay(w, r, userID, path, fingerprint) {
 		return
 	}
 	action, trace, err := h.service.Cancel(r.Context(), userID, actionID)
@@ -694,22 +719,15 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request, userID, path st
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) trigger(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	actionID := segment(path, 2)
 	var request struct{}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fingerprint := fingerprint(body)
-	if h.replay(w, r, userID, path, fingerprint) {
 		return
 	}
 	action, trace, err := h.service.TriggerScheduled(r.Context(), userID, actionID)
@@ -718,7 +736,6 @@ func (h *Handler) trigger(w http.ResponseWriter, r *http.Request, userID, path s
 		return
 	}
 	response := envelope(action, trace)
-	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -779,20 +796,14 @@ func queryDateRange(r *http.Request) (*time.Time, *time.Time, error) {
 }
 
 func (h *Handler) createWorkflow(w http.ResponseWriter, r *http.Request, userID string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var request struct {
 		Purpose  string                     `json:"purpose"`
 		Deadline string                     `json:"deadline"`
 		Nodes    []domain.WorkflowNodeInput `json:"nodes"`
 	}
-	body, err := decodeJSON(r, &request)
+	_, err := decodeJSON(r, &request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, r.URL.Path, fp) {
 		return
 	}
 	deadline, err := time.Parse(time.RFC3339, request.Deadline)
@@ -806,7 +817,6 @@ func (h *Handler) createWorkflow(w http.ResponseWriter, r *http.Request, userID 
 		return
 	}
 	response := envelope(workflow, trace)
-	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
 }
 
@@ -829,8 +839,6 @@ func (h *Handler) getWorkflow(w http.ResponseWriter, r *http.Request, userID, pa
 }
 
 func (h *Handler) cancelWorkflow(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	body, err := readBody(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
@@ -844,23 +852,16 @@ func (h *Handler) cancelWorkflow(w http.ResponseWriter, r *http.Request, userID,
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
 		return
 	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, path, fp) {
-		return
-	}
 	workflow, trace, err := h.service.CancelWorkflow(r.Context(), userID, segment(path, 2))
 	if err != nil {
 		writeServiceError(w, err, trace)
 		return
 	}
 	response := envelope(workflow, trace)
-	h.saveReplay(r, userID, path, fp, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) advanceWorkflow(w http.ResponseWriter, r *http.Request, userID, path string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	body, err := readBody(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
@@ -874,10 +875,6 @@ func (h *Handler) advanceWorkflow(w http.ResponseWriter, r *http.Request, userID
 	}
 	if err := decodeBody(body, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
-		return
-	}
-	fp := fingerprint(body)
-	if h.replay(w, r, userID, path, fp) {
 		return
 	}
 	var virtualNow time.Time
@@ -894,7 +891,6 @@ func (h *Handler) advanceWorkflow(w http.ResponseWriter, r *http.Request, userID
 		return
 	}
 	response := envelope(result, trace)
-	h.saveReplay(r, userID, path, fp, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -908,38 +904,6 @@ func (h *Handler) audit(w http.ResponseWriter, r *http.Request, userID, path str
 	writeJSON(w, http.StatusOK, envelope(map[string]any{"trace_id": traceID, "events": events}, traceID))
 }
 
-func (h *Handler) replay(w http.ResponseWriter, r *http.Request, userID, path, fingerprint string) bool {
-	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
-	if len(key) < 8 || len(key) > 128 {
-		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "Idempotency-Key 长度必须为 8 到 128 个字符", "tr_invalid")
-		return true
-	}
-	response, status, err := h.service.Idempotency(r.Context(), userID, r.Method, path, key, fingerprint)
-	if err != nil {
-		writeServiceError(w, err, "tr_idempotency")
-		return true
-	}
-	if response != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_, _ = w.Write(response)
-		return true
-	}
-	return false
-}
-
-func (h *Handler) saveReplay(r *http.Request, userID, path, fingerprint string, status int, response any) {
-	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
-	if key == "" {
-		return
-	}
-	data, err := json.Marshal(response)
-	if err != nil {
-		return
-	}
-	_ = h.service.SaveIdempotency(r.Context(), userID, r.Method, path, key, fingerprint, status, data)
-}
-
 func segment(path string, index int) string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if index >= len(parts) {
@@ -948,7 +912,16 @@ func segment(path string, index int) string {
 	return parts[index]
 }
 
-func readBody(r *http.Request) ([]byte, error) { return io.ReadAll(io.LimitReader(r.Body, 1<<20)) }
+func readBody(r *http.Request) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxRequestBodyBytes {
+		return nil, errors.New("request body too large")
+	}
+	return body, nil
+}
 func decodeJSON(r *http.Request, target any) ([]byte, error) {
 	body, err := readBody(r)
 	if err != nil {

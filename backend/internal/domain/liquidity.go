@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultLiquidityHorizonDays = 30
-	maxLiquidityHorizonDays     = 90
+	maxLiquidityHorizonDays     = 366
 	defaultEssentialBufferMinor = 100000
 )
 
@@ -80,7 +80,9 @@ func (s *Service) createLiquiditySimulationAt(ctx context.Context, userID, accou
 	sortLiquidityEvents(baseEvents)
 
 	expectedBase := projectLiquidityScenario("expected", profile.AverageDailyMinor, account.AvailableMinor, startAt, horizonDays, buffer, baseEvents)
-	maxSafeBudget := expectedBase.MinimumAvailableMinor - buffer
+	conservativeBase := projectLiquidityScenario("conservative", profile.ConservativeDailyMinor, account.AvailableMinor, startAt, horizonDays, buffer, baseEvents)
+	baseMinimum := min(expectedBase.MinimumAvailableMinor, conservativeBase.MinimumAvailableMinor)
+	maxSafeBudget := baseMinimum - buffer
 	if maxSafeBudget < 0 {
 		maxSafeBudget = 0
 	}
@@ -93,15 +95,19 @@ func (s *Service) createLiquiditySimulationAt(ctx context.Context, userID, accou
 		projectLiquidityScenario("conservative", profile.ConservativeDailyMinor, account.AvailableMinor, startAt, horizonDays, buffer, withProposal),
 	}
 	expected, conservative := scenarios[1], scenarios[2]
-	verdict := expected.Status
-	if verdict == "safe" && conservative.Status != "safe" {
-		verdict = "tight"
-	}
+	verdict := combineLiquidityStatus(expected.Status, conservative.Status)
 	alternatives := buildLiquidityAlternatives(startAt, horizonDays, profile, account.AvailableMinor, proposedBudgetMinor, maxSafeBudget, buffer, baseEvents)
 	recommendedAlternativeID := ""
 	if len(alternatives) > 0 {
-		best := 0
-		for i := 1; i < len(alternatives); i++ {
+		best := -1
+		for i := range alternatives {
+			if alternatives[i].Conditional || alternatives[i].Status == "unsafe" {
+				continue
+			}
+			if best == -1 {
+				best = i
+				continue
+			}
 			candidate, current := alternatives[i], alternatives[best]
 			if alternativeRiskRank(candidate.Status) < alternativeRiskRank(current.Status) ||
 				(alternativeRiskRank(candidate.Status) == alternativeRiskRank(current.Status) && candidate.ConservativeMinimumAvailable > current.ConservativeMinimumAvailable) ||
@@ -109,8 +115,10 @@ func (s *Service) createLiquiditySimulationAt(ctx context.Context, userID, accou
 				best = i
 			}
 		}
-		alternatives[best].Recommended = true
-		recommendedAlternativeID = alternatives[best].ID
+		if best >= 0 {
+			alternatives[best].Recommended = true
+			recommendedAlternativeID = alternatives[best].ID
+		}
 	}
 	riskReason := liquidityRiskReason(verdict, expected, conservative, withProposal)
 	simulation := LiquiditySimulation{
@@ -322,7 +330,7 @@ func liquidityRiskReason(verdict string, expected, conservative LiquidityScenari
 	if verdict == "safe" {
 		return "预期和保守消费情景均保持在安全缓冲之上。"
 	}
-	if expected.Status == "safe" && conservative.Status != "safe" {
+	if expected.Status != "unsafe" && conservative.Status != "safe" {
 		if conservative.Status == "unsafe" {
 			return fmt.Sprintf("预期情景最低可用余额为 %s，但保守消费情景将在 %s 出现资金不足。", yuan(expected.MinimumAvailableMinor), conservative.MinimumDate)
 		}
@@ -350,7 +358,7 @@ func liquidityRecommendation(verdict string, maxSafeBudget, buffer int64, curren
 func buildLiquidityAlternatives(startAt time.Time, horizonDays int, profile HistoricalSpending, startingAvailable, proposedBudget, maxSafeBudget, buffer int64, baseEvents []LiquidityEvent) []LiquidityAlternative {
 	var alternatives []LiquidityAlternative
 	startDate := startAt.Format("2006-01-02")
-	add := func(id, label, description string, total int64, reservations []LiquidityReservation, tradeoff string) {
+	add := func(id, label, description string, conditional bool, condition string, total int64, reservations []LiquidityReservation, tradeoff string) {
 		events := append([]LiquidityEvent{}, baseEvents...)
 		for i, reservation := range reservations {
 			if reservation.AmountMinor <= 0 {
@@ -364,19 +372,17 @@ func buildLiquidityAlternatives(startAt time.Time, horizonDays int, profile Hist
 		sortLiquidityEvents(events)
 		expected := projectLiquidityScenario("expected", profile.AverageDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
 		conservative := projectLiquidityScenario("conservative", profile.ConservativeDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
-		status := expected.Status
-		if status == "safe" && conservative.Status != "safe" {
-			status = "tight"
-		}
+		status := combineLiquidityStatus(expected.Status, conservative.Status)
 		alternatives = append(alternatives, LiquidityAlternative{
 			ID: id, Label: label, Description: description, TotalBudgetMinor: total,
+			Conditional: conditional, Condition: condition,
 			Reservations: reservations, Status: status,
 			ExpectedMinimumAvailableMinor: expected.MinimumAvailableMinor, ExpectedMinimumDate: expected.MinimumDate,
 			ConservativeMinimumAvailable: conservative.MinimumAvailableMinor, ConservativeMinimumDate: conservative.MinimumDate,
 			ExpectedPoints: expected.Points, Tradeoff: tradeoff,
 		})
 	}
-	add("current", "保持原计划", "立即按原金额预留预算。", proposedBudget, []LiquidityReservation{{Date: startDate, AmountMinor: proposedBudget}}, "执行最简单，但会立即降低可用余额。")
+	add("current", "保持原计划", "立即按原金额预留预算。", false, "", proposedBudget, []LiquidityReservation{{Date: startDate, AmountMinor: proposedBudget}}, "执行最简单，但会立即降低可用余额。")
 	if maxSafeBudget != proposedBudget {
 		label := "降至缓冲内额度"
 		description := fmt.Sprintf("将预算调整为 %s，保留必要支出缓冲。", yuan(maxSafeBudget))
@@ -384,7 +390,7 @@ func buildLiquidityAlternatives(startAt time.Time, horizonDays int, profile Hist
 			label = "暂不预留"
 			description = "当前不占用预算，等待资金状况改善。"
 		}
-		add("buffer_preserving", label, description, maxSafeBudget, []LiquidityReservation{{Date: startDate, AmountMinor: maxSafeBudget}}, "会减少可执行预算，但优先保护必要支出。")
+		add("buffer_preserving", label, description, false, "", maxSafeBudget, []LiquidityReservation{{Date: startDate, AmountMinor: maxSafeBudget}}, "会减少可执行预算，但优先保护必要支出。")
 	}
 	nextIncomeDate := ""
 	for _, event := range baseEvents {
@@ -394,15 +400,26 @@ func buildLiquidityAlternatives(startAt time.Time, horizonDays int, profile Hist
 		}
 	}
 	if nextIncomeDate != "" {
-		add("after_income", "等待下一笔收入", fmt.Sprintf("在 %s 收入到账后预留完整预算。", nextIncomeDate), proposedBudget, []LiquidityReservation{{Date: nextIncomeDate, AmountMinor: proposedBudget}}, "资金缓冲更稳，但预算生效时间延后。")
+		condition := fmt.Sprintf("仅在 %s 收入确认入账后执行。", nextIncomeDate)
+		add("after_income", "等待下一笔收入", fmt.Sprintf("在 %s 收入到账后预留完整预算。", nextIncomeDate), true, condition, proposedBudget, []LiquidityReservation{{Date: nextIncomeDate, AmountMinor: proposedBudget}}, "资金缓冲更稳，但依赖尚未确认的收入。")
 		if proposedBudget > 1 {
 			first, second := proposedBudget/2, proposedBudget-proposedBudget/2
-			add("split", "分两笔预留", "现在预留一半，下一笔收入到账后补齐。", proposedBudget, []LiquidityReservation{
+			add("split", "分两笔预留", "现在预留一半，下一笔收入到账后补齐。", true, condition, proposedBudget, []LiquidityReservation{
 				{Date: startDate, AmountMinor: first}, {Date: nextIncomeDate, AmountMinor: second},
 			}, "兼顾当前预算与资金安全，但需要两次授权。")
 		}
 	}
 	return alternatives
+}
+
+func combineLiquidityStatus(expected, conservative string) string {
+	if expected == "unsafe" || conservative == "unsafe" {
+		return "unsafe"
+	}
+	if expected == "tight" || conservative == "tight" {
+		return "tight"
+	}
+	return "safe"
 }
 
 func alternativeRiskRank(status string) int {
@@ -438,6 +455,35 @@ func parseLiquidityBudget(text string) (int64, bool) {
 		return 0, false
 	}
 	return int64(amount*100 + 0.5), true
+}
+
+func parseLiquidityHorizon(text string) int {
+	match := regexp.MustCompile(`未来\s*([0-9]{1,3})\s*天`).FindStringSubmatch(text)
+	if len(match) != 2 {
+		return defaultLiquidityHorizonDays
+	}
+	days, err := strconv.Atoi(match[1])
+	if err != nil || days < 1 || days > maxLiquidityHorizonDays {
+		return defaultLiquidityHorizonDays
+	}
+	return days
+}
+
+func parseLiquidityBuffer(text string) *int64 {
+	if regexp.MustCompile(`(?:不保留|无需|不需要|零)\s*(?:必要)?(?:支出)?缓冲|(?:必要)?(?:支出)?缓冲\s*(?:为|设为)?\s*0\s*元`).MatchString(text) {
+		value := int64(0)
+		return &value
+	}
+	match := regexp.MustCompile(`(?:必要)?(?:支出)?缓冲\s*(?:保留|设为|为)?\s*([0-9]+(?:\.[0-9]{1,2})?)\s*元`).FindStringSubmatch(text)
+	if len(match) != 2 {
+		return nil
+	}
+	amount, err := strconv.ParseFloat(match[1], 64)
+	if err != nil || amount < 0 || amount > 1e13 {
+		return nil
+	}
+	value := int64(amount*100 + 0.5)
+	return &value
 }
 
 func liquiditySummary(simulation LiquiditySimulation) string {

@@ -14,6 +14,9 @@ import (
 	"github.com/cffa-as/bankagent/internal/agent"
 )
 
+var negatedBankingIntentPattern = regexp.MustCompile(`(?:不要|别|无需|不需要|不用|禁止).{0,12}(?:取消|转账|转|查询|查|冻结|解冻|挂失|解挂|申购|赎回|锁定|预留|设置|申请)`)
+var suspiciousInputPattern = regexp.MustCompile(`忽略.{0,8}(?:系统|权限|规则)|我是管理员|直接执行`)
+
 func (s *Service) CreateConversation(ctx context.Context, userID string) (Conversation, string, error) {
 	now := s.now()
 	conversation := Conversation{ID: NewID("conv"), UserID: userID, CreatedAt: now}
@@ -310,11 +313,8 @@ func (s *Service) createActionRecord(ctx context.Context, userID, conversationID
 			expiresAt = scheduledAt.Add(5 * time.Minute)
 		}
 	}
-	action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: kind, RiskLevel: riskLevel, Status: status, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: expiresAt, CreatedAt: now, UpdatedAt: now}
+	action := Action{ID: NewID("act"), TraceID: trace, ConversationID: conversationID, UserID: userID, Kind: kind, RiskLevel: riskLevel, Status: status, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, SnapshotHash: snapshotHash(string(snapshotJSON)), ExpiresAt: expiresAt, CreatedAt: now, UpdatedAt: now}
 	if err := s.repo.CreateAction(ctx, action); err != nil {
-		return Action{}, trace, err
-	}
-	if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
 		return Action{}, trace, err
 	}
 	return action.Public(), trace, nil
@@ -353,8 +353,19 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		return MessageResult{}, trace, err
 	}
 	continuation := strings.TrimSpace(text)
-	if len(history) > 0 && len([]rune(text)) <= 50 {
+	if len(history) > 0 && len([]rune(text)) <= 50 && isStandaloneFollowUp(text) {
 		continuation = history[len(history)-1] + " " + continuation
+	}
+	if suspiciousInputPattern.MatchString(text) {
+		if err := s.repo.RecordSecurityFailure(ctx, userID, "suspicious_input", now); err != nil {
+			return MessageResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "suspicious_input_detected", "failed", "system", nil, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+	}
+	if negatedBankingIntentPattern.MatchString(text) {
+		return MessageResult{RunID: runID, ReplyType: "question", Text: "我检测到否定表达，尚未创建任何动作。请明确说明你要执行哪项银行业务。"}, trace, nil
 	}
 	if strings.Contains(text, "余额") {
 		account, err := s.repo.Account(ctx, userID)
@@ -419,15 +430,11 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 			return MessageResult{}, trace, err
 		}
 		snapshot := map[string]any{"holding_id": holding.ID, "product_id": holding.ProductID, "product_name": holding.ProductName, "principal_minor": holding.AmountMinor, "currency": "CNY"}
-		snapshotJSON, _ := json.Marshal(snapshot)
-		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "investment_redemption", RiskLevel: "red", Status: "awaiting_mfa", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
-		if err := s.repo.CreateAction(ctx, action); err != nil {
-			return MessageResult{}, trace, err
+		action, actionTrace, err := s.createActionRecord(ctx, userID, conversationID, "investment_redemption", "red", "awaiting_mfa", snapshot)
+		if err != nil {
+			return MessageResult{}, actionTrace, err
 		}
-		if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
-			return MessageResult{}, trace, err
-		}
-		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "该理财赎回需要完成 MFA 验证。", Action: ptr(action.Public())}, trace, nil
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "该理财赎回需要完成 MFA 验证。", Action: ptr(action)}, actionTrace, nil
 	}
 	if strings.Contains(text, "理财") && strings.Contains(text, "申购") {
 		amount, ok := parseInvestmentPurchase(text)
@@ -451,15 +458,11 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 			return MessageResult{}, trace, ErrInvalidArgument
 		}
 		snapshot := map[string]any{"product_id": product.ID, "product_name": product.Name, "amount_minor": amount, "currency": "CNY"}
-		snapshotJSON, _ := json.Marshal(snapshot)
-		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "investment_purchase", RiskLevel: "red", Status: "awaiting_mfa", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
-		if err := s.repo.CreateAction(ctx, action); err != nil {
-			return MessageResult{}, trace, err
+		action, actionTrace, err := s.createActionRecord(ctx, userID, conversationID, "investment_purchase", "red", "awaiting_mfa", snapshot)
+		if err != nil {
+			return MessageResult{}, actionTrace, err
 		}
-		if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
-			return MessageResult{}, trace, err
-		}
-		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "该理财申购需要完成 MFA 验证。", Action: ptr(action.Public())}, trace, nil
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "该理财申购需要完成 MFA 验证。", Action: ptr(action)}, actionTrace, nil
 	}
 	if strings.Contains(text, "卡") && (strings.Contains(text, "冻结") || strings.Contains(text, "解冻") || strings.Contains(text, "挂失") || strings.Contains(text, "解挂")) {
 		status, verb := "frozen", "冻结"
@@ -511,7 +514,7 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		if err != nil {
 			return MessageResult{}, trace, err
 		}
-		simulation, simulationTrace, err := s.CreateLiquiditySimulation(ctx, userID, account.ID, defaultLiquidityHorizonDays, budget, nil)
+		simulation, simulationTrace, err := s.CreateLiquiditySimulation(ctx, userID, account.ID, parseLiquidityHorizon(continuation), budget, parseLiquidityBuffer(continuation))
 		if err != nil {
 			return MessageResult{}, trace, err
 		}
@@ -572,7 +575,11 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 				return MessageResult{}, trace, err
 			}
 			if handled {
-				return result, trace, nil
+				resultTrace := trace
+				if result.Action != nil && result.Action.TraceID != "" {
+					resultTrace = result.Action.TraceID
+				}
+				return result, resultTrace, nil
 			}
 		} else if modelErr != nil {
 			if err := s.audit(ctx, trace, conversationID, "", "model_plan_rejected", "failed", "model", nil, now); err != nil {
@@ -603,9 +610,6 @@ func (s *Service) handleIntentPlan(ctx context.Context, userID, conversationID, 
 			return question("没有找到对应业务资源，请检查收款人、卡片、产品或持仓。")
 		}
 		if err != nil {
-			return MessageResult{}, true, err
-		}
-		if err := s.audit(ctx, trace, conversationID, action.ID, "model_action_candidate_selected", "succeeded", "model", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, s.now()); err != nil {
 			return MessageResult{}, true, err
 		}
 		text := "请确认操作详情。"
@@ -709,7 +713,7 @@ func (s *Service) handleIntentPlan(ctx context.Context, userID, conversationID, 
 			horizonDays = int(value)
 		}
 		var buffer *int64
-		if value, exists := planInt64(plan, "essential_buffer_minor"); exists {
+		if value, exists := planNonNegativeInt64(plan, "essential_buffer_minor"); exists {
 			buffer = &value
 		}
 		account, err := s.repo.Account(ctx, userID)
@@ -778,6 +782,14 @@ func planString(plan agent.IntentPlan, key string) string {
 func planInt64(plan agent.IntentPlan, key string) (int64, bool) {
 	value, ok := plan.Entities[key].(float64)
 	if !ok || value <= 0 || value != math.Trunc(value) || value > 1e15 {
+		return 0, false
+	}
+	return int64(value), true
+}
+
+func planNonNegativeInt64(plan agent.IntentPlan, key string) (int64, bool) {
+	value, ok := plan.Entities[key].(float64)
+	if !ok || value < 0 || value != math.Trunc(value) || value > 1e15 {
 		return 0, false
 	}
 	return int64(value), true
@@ -1053,6 +1065,7 @@ func (s *Service) GetAction(ctx context.Context, userID, id string) (Action, str
 	if action.UserID != userID {
 		return Action{}, trace, ErrForbidden
 	}
+	trace = actionTraceID(action)
 	if s.now().After(action.ExpiresAt) && isPending(action.Status) {
 		if err := s.expireAction(ctx, &action, trace, s.now()); err != nil {
 			return Action{}, trace, err
@@ -1066,7 +1079,7 @@ func (s *Service) Confirm(ctx context.Context, userID, id, _ string) (Action, st
 	if err != nil {
 		return Action{}, "", err
 	}
-	trace := NewID("tr")
+	trace := actionTraceID(action)
 	if action.RiskLevel != "yellow" || action.Status != "awaiting_confirmation" {
 		return Action{}, trace, ErrActionStateConflict
 	}
@@ -1075,6 +1088,9 @@ func (s *Service) Confirm(ctx context.Context, userID, id, _ string) (Action, st
 			return Action{}, trace, err
 		}
 		return Action{}, trace, ErrActionExpired
+	}
+	if err := s.audit(ctx, trace, action.ConversationID, action.ID, "confirmation_succeeded", "succeeded", "user", map[string]any{"snapshot_hash": action.SnapshotHash}, s.now()); err != nil {
+		return Action{}, trace, err
 	}
 	if err := s.proceedAuthorized(ctx, &action, trace); err != nil {
 		return Action{}, trace, err
@@ -1087,7 +1103,7 @@ func (s *Service) VerifyMFA(ctx context.Context, userID, id, code string) (Actio
 	if err != nil {
 		return Action{}, "", err
 	}
-	trace := NewID("tr")
+	trace := actionTraceID(action)
 	if action.RiskLevel != "red" || action.Status != "awaiting_mfa" {
 		return Action{}, trace, ErrActionStateConflict
 	}
@@ -1100,6 +1116,9 @@ func (s *Service) VerifyMFA(ctx context.Context, userID, id, code string) (Actio
 	if code != "000000" {
 		attempts, locked, err := s.repo.RecordMFAFailure(ctx, action.ID, s.now())
 		if err != nil {
+			return Action{}, trace, err
+		}
+		if err := s.repo.RecordSecurityFailure(ctx, userID, "mfa_failed", s.now()); err != nil {
 			return Action{}, trace, err
 		}
 		action.MFAAttempts = attempts
@@ -1118,6 +1137,9 @@ func (s *Service) VerifyMFA(ctx context.Context, userID, id, code string) (Actio
 		}
 		return Action{}, trace, ErrMFAInvalid
 	}
+	if err := s.audit(ctx, trace, action.ConversationID, action.ID, "mfa_succeeded", "succeeded", "user", map[string]any{"snapshot_hash": action.SnapshotHash}, s.now()); err != nil {
+		return Action{}, trace, err
+	}
 	if err := s.proceedAuthorized(ctx, &action, trace); err != nil {
 		return Action{}, trace, err
 	}
@@ -1129,7 +1151,7 @@ func (s *Service) TriggerScheduled(ctx context.Context, userID, id string) (Acti
 	if err != nil {
 		return Action{}, "", err
 	}
-	trace := NewID("tr")
+	trace := actionTraceID(action)
 	if action.Status != "scheduled" {
 		return Action{}, trace, ErrActionStateConflict
 	}
@@ -1147,6 +1169,19 @@ func (s *Service) TriggerScheduled(ctx context.Context, userID, id string) (Acti
 		}
 		return Action{}, trace, ErrActionExpired
 	}
+	if action.RiskLevel == "red" {
+		expiresAt := now.Add(5 * time.Minute)
+		required, err := s.repo.RequireScheduledMFA(ctx, action.ID, expiresAt, now)
+		if err != nil {
+			return Action{}, trace, err
+		}
+		if !required {
+			return Action{}, trace, ErrActionStateConflict
+		}
+		action.Status, action.ExpiresAt = "awaiting_mfa", expiresAt
+		action.MFAAttempts, action.UpdatedAt = 0, now
+		return action.Public(), trace, nil
+	}
 	if err := s.enforceTransferLimit(ctx, &action, trace, now); err != nil {
 		return Action{}, trace, err
 	}
@@ -1159,9 +1194,6 @@ func (s *Service) TriggerScheduled(ctx context.Context, userID, id string) (Acti
 	if err := s.finishWorkflowAction(ctx, &action, now); err != nil {
 		return Action{}, trace, err
 	}
-	if err := s.audit(ctx, trace, action.ConversationID, action.ID, "scheduled_action_triggered", "succeeded", "system", map[string]any{"scheduled_at": scheduledAt}, now); err != nil {
-		return Action{}, trace, err
-	}
 	return action.Public(), trace, nil
 }
 
@@ -1170,7 +1202,7 @@ func (s *Service) Cancel(ctx context.Context, userID, id string) (Action, string
 	if err != nil {
 		return Action{}, "", err
 	}
-	trace := NewID("tr")
+	trace := actionTraceID(action)
 	if !isPending(action.Status) {
 		return Action{}, trace, ErrActionStateConflict
 	}
@@ -1187,9 +1219,6 @@ func (s *Service) Cancel(ctx context.Context, userID, id string) (Action, string
 	if err := s.cancelWorkflowAction(ctx, &action, now); err != nil {
 		return Action{}, trace, err
 	}
-	if err := s.audit(ctx, trace, action.ConversationID, action.ID, "action_cancelled", "succeeded", "user", nil, now); err != nil {
-		return Action{}, trace, err
-	}
 	return action.Public(), trace, nil
 }
 
@@ -1201,7 +1230,7 @@ func (s *Service) expireAction(ctx context.Context, action *Action, trace string
 	if err := s.cancelWorkflowAction(ctx, action, now); err != nil {
 		return err
 	}
-	return s.audit(ctx, trace, action.ConversationID, action.ID, "action_expired", "failed", "system", nil, now)
+	return nil
 }
 
 func (s *Service) proceedAuthorized(ctx context.Context, action *Action, trace string) error {
@@ -1218,7 +1247,7 @@ func (s *Service) proceedAuthorized(ctx context.Context, action *Action, trace s
 			return ErrActionStateConflict
 		}
 		action.Status, action.UpdatedAt = "scheduled", now
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "action_scheduled", "succeeded", "user", map[string]any{"scheduled_at": scheduledAt}, now)
+		return nil
 	}
 	if err := s.enforceTransferLimit(ctx, action, trace, now); err != nil {
 		return err
@@ -1253,9 +1282,6 @@ func (s *Service) enforceTransferLimit(ctx context.Context, action *Action, trac
 	if err := s.repo.UpdateAction(ctx, *action); err != nil {
 		return err
 	}
-	if err := s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_reauthorization_required", "failed", "system", map[string]any{"daily_outgoing_minor": daily, "amount_minor": snapshot.AmountMinor}, now); err != nil {
-		return err
-	}
 	return ErrActionStateConflict
 }
 
@@ -1287,6 +1313,10 @@ func (s *Service) Audit(ctx context.Context, userID, traceID string) ([]AuditEve
 	return events, nil
 }
 
+func (s *Service) SecurityLocked(ctx context.Context, userID string) (bool, error) {
+	return s.repo.SecurityLocked(ctx, userID, s.now(), 10*time.Minute, 15*time.Minute, 6)
+}
+
 func (s *Service) authorizedAction(ctx context.Context, userID, id string) (Action, error) {
 	action, err := s.repo.Action(ctx, id)
 	if err != nil {
@@ -1298,11 +1328,29 @@ func (s *Service) authorizedAction(ctx context.Context, userID, id string) (Acti
 	if action.UserID != userID {
 		return Action{}, ErrForbidden
 	}
+	if action.SnapshotHash != "" && action.SnapshotHash != snapshotHash(action.SnapshotJSON) {
+		now := s.now()
+		action.Status, action.UpdatedAt = "failed", now
+		if err := s.repo.UpdateAction(ctx, action); err != nil {
+			return Action{}, err
+		}
+		if err := s.failWorkflowAction(ctx, &action, now); err != nil {
+			return Action{}, err
+		}
+		trace := actionTraceID(action)
+		if err := s.audit(ctx, trace, action.ConversationID, action.ID, "action_snapshot_mismatch", "failed", "system", nil, now); err != nil {
+			return Action{}, err
+		}
+		return Action{}, ErrActionStateConflict
+	}
 	return action, nil
 }
 
 func (s *Service) execute(ctx context.Context, action *Action, trace string) error {
 	now := s.now()
+	if action.SnapshotHash != "" && action.SnapshotHash != snapshotHash(action.SnapshotJSON) {
+		return ErrActionStateConflict
+	}
 	switch action.Kind {
 	case "transfer":
 		var snapshot struct {
@@ -1315,19 +1363,12 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		}
 		result, err := s.repo.ExecuteTransfer(ctx, *action, snapshot.AmountMinor, "转账给"+snapshot.BeneficiaryName+" "+snapshot.Remark, now)
 		if err != nil {
-			if errors.Is(err, ErrInsufficientBalance) {
-				action.Status = "failed"
-				action.UpdatedAt = now
-				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
-					return auditErr
-				}
-			}
 			return err
 		}
 		action.Status = "succeeded"
 		action.UpdatedAt = now
 		action.Result = result
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_succeeded", "succeeded", "tool", map[string]any{"transaction_id": result.TransactionID, "amount_minor": result.AmountMinor}, now)
+		return nil
 	case "transfer_split":
 		var snapshot TransferSplitSnapshot
 		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
@@ -1338,10 +1379,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		action.Status, action.UpdatedAt, action.Result = "succeeded", now, transferSplit
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_split_requested", "succeeded", "tool", map[string]any{
-			"transfer_split_id": transferSplit.ID, "total_amount_minor": transferSplit.TotalAmountMinor,
-			"collectible_minor": transferSplit.CollectibleMinor,
-		}, now)
+		return nil
 	case "investment_redemption":
 		var snapshot struct {
 			HoldingID string `json:"holding_id"`
@@ -1356,9 +1394,6 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 				if updateErr := s.repo.UpdateAction(ctx, *action); updateErr != nil {
 					return updateErr
 				}
-				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "investment_redemption_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
-					return auditErr
-				}
 			}
 			return err
 		}
@@ -1372,7 +1407,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		if err := s.repo.UpdateAction(ctx, *action); err != nil {
 			return err
 		}
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "investment_redeemed", "succeeded", "tool", action.Result.(map[string]any), now)
+		return nil
 	case "investment_purchase":
 		var snapshot struct {
 			ProductID   string `json:"product_id"`
@@ -1383,17 +1418,11 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		}
 		result, err := s.repo.ExecuteInvestmentPurchase(ctx, *action, snapshot.ProductID, snapshot.AmountMinor, now)
 		if err != nil {
-			if errors.Is(err, ErrInsufficientBalance) {
-				action.Status, action.UpdatedAt = "failed", now
-				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "investment_purchase_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
-					return auditErr
-				}
-			}
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
 		action.Result = result
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "investment_purchased", "succeeded", "tool", map[string]any{"holding_id": result.HoldingID, "product_id": result.ProductID, "amount_minor": result.AmountMinor}, now)
+		return nil
 	case "card_application":
 		var snapshot struct {
 			CardType string `json:"card_type"`
@@ -1415,7 +1444,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		if err := s.repo.UpdateAction(ctx, *action); err != nil {
 			return err
 		}
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "card_applied", "succeeded", "tool", map[string]any{"card_id": card.ID, "card_type": snapshot.CardType}, now)
+		return nil
 	case "card_limit_change":
 		var snapshot struct {
 			CardID           string `json:"card_id"`
@@ -1428,7 +1457,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "card_limit_changed", "succeeded", "tool", map[string]any{"card_id": snapshot.CardID, "target_limit_minor": snapshot.TargetLimitMinor}, now)
+		return nil
 	case "card_status_change":
 		var snapshot struct {
 			CardID         string `json:"card_id"`
@@ -1442,7 +1471,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "card_status_changed", "succeeded", "tool", map[string]any{"card_id": snapshot.CardID, "previous_status": snapshot.PreviousStatus, "status": snapshot.TargetStatus}, now)
+		return nil
 	case "subscription_cancel":
 		var snapshot struct {
 			SubscriptionID string `json:"subscription_id"`
@@ -1454,7 +1483,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "subscription_cancelled", "succeeded", "tool", map[string]any{"subscription_id": snapshot.SubscriptionID}, now)
+		return nil
 	case "workflow_budget_lock":
 		var snapshot struct {
 			WorkflowID  string `json:"workflow_id"`
@@ -1465,12 +1494,6 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		if err := s.repo.ExecuteWorkflowBudgetLock(ctx, *action, snapshot.WorkflowID, snapshot.NodeID, snapshot.AmountMinor, now); err != nil {
-			if errors.Is(err, ErrInsufficientBalance) {
-				action.Status, action.UpdatedAt = "failed", now
-				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "workflow_budget_lock_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
-					return auditErr
-				}
-			}
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
@@ -1483,7 +1506,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		if err := s.repo.UpdateAction(ctx, *action); err != nil {
 			return err
 		}
-		return s.audit(ctx, trace, "", action.ID, "workflow_budget_locked", "succeeded", "tool", map[string]any{"workflow_id": snapshot.WorkflowID, "node_id": snapshot.NodeID, "amount_minor": snapshot.AmountMinor}, now)
+		return nil
 	case "workflow_external_order":
 		var snapshot struct {
 			WorkflowID  string `json:"workflow_id"`
@@ -1495,12 +1518,6 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		if err := s.repo.ExecuteWorkflowOrder(ctx, *action, snapshot.WorkflowID, snapshot.NodeID, snapshot.AmountMinor, snapshot.Merchant, now); err != nil {
-			if errors.Is(err, ErrBudgetNotReserved) || errors.Is(err, ErrInsufficientBalance) {
-				action.Status, action.UpdatedAt = "failed", now
-				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "workflow_order_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
-					return auditErr
-				}
-			}
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
@@ -1513,14 +1530,16 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		if err := s.repo.UpdateAction(ctx, *action); err != nil {
 			return err
 		}
-		return s.audit(ctx, trace, "", action.ID, "workflow_order_confirmed", "succeeded", "tool", map[string]any{"workflow_id": snapshot.WorkflowID, "node_id": snapshot.NodeID, "amount_minor": snapshot.AmountMinor}, now)
+		return nil
 	default:
 		return ErrInvalidArgument
 	}
 }
 
 func (s *Service) audit(ctx context.Context, trace, conversation, action, event, outcome, actor string, detail map[string]any, now time.Time) error {
-	return s.repo.AddAudit(ctx, AuditEvent{ID: NewID("evt"), TraceID: trace, ConversationID: conversation, ActionID: action, EventType: event, Outcome: outcome, Actor: actor, Detail: detail, OccurredAt: now, Sequence: 1})
+	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return s.repo.AddAudit(auditCtx, AuditEvent{ID: NewID("evt"), TraceID: trace, ConversationID: conversation, ActionID: action, EventType: event, Outcome: outcome, Actor: actor, PolicyVersion: "bankagent-policy-v1", Detail: detail, OccurredAt: now, Sequence: 1})
 }
 
 func parseHoldingID(text string) string {
@@ -1540,6 +1559,13 @@ func actionScheduledAt(action Action) (time.Time, bool) {
 	}
 	scheduledAt, err := time.Parse(time.RFC3339, snapshot.ScheduledAt)
 	return scheduledAt, err == nil
+}
+
+func actionTraceID(action Action) string {
+	if action.TraceID != "" {
+		return action.TraceID
+	}
+	return NewID("tr")
 }
 
 func conversationContextText(text string) string {

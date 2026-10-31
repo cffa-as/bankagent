@@ -99,7 +99,11 @@ func TestExecutableEvaluationReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp, transferAudit := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/audit-traces/"+confirmationEnvelope.TraceID, "", "")
-	transferAuditOK := resp.StatusCode == http.StatusOK && bytes.Contains(transferAudit, []byte(`"event_type":"transfer_succeeded"`))
+	transferAuditOK := resp.StatusCode == http.StatusOK &&
+		bytes.Contains(transferAudit, []byte(`"event_type":"action_created"`)) &&
+		bytes.Contains(transferAudit, []byte(`"event_type":"confirmation_succeeded"`)) &&
+		bytes.Contains(transferAudit, []byte(`"event_type":"authorization_gate_passed"`)) &&
+		bytes.Contains(transferAudit, []byte(`"event_type":"action_succeeded"`))
 
 	simulationBody := `{"account_id":"acct_demo","horizon_days":30,"proposed_budget_minor":100000,"essential_buffer_minor":100000}`
 	resp, simulationRaw := request(t, http.DefaultClient, http.MethodPost, liquidityServer.URL+"/v1/liquidity-simulations", simulationBody, "eval-liquidity-golden-1")
@@ -116,6 +120,8 @@ func TestExecutableEvaluationReport(t *testing.T) {
 		RecommendedAlternativeID string          `json:"recommended_alternative_id"`
 		Alternatives             []struct {
 			ID          string `json:"alternative_id"`
+			Status      string `json:"status"`
+			Conditional bool   `json:"conditional"`
 			Recommended bool   `json:"recommended"`
 		} `json:"alternatives"`
 	}
@@ -125,15 +131,17 @@ func TestExecutableEvaluationReport(t *testing.T) {
 	if err := json.Unmarshal(simulationEnvelope.Data, &simulation); err != nil {
 		t.Fatal(err)
 	}
-	goldenError := absInt64(simulation.MaximumSafeBudgetMinor - 42224)
-	addCheck("liquidity_golden_case", simulation.Verdict == "tight" && goldenError == 0, fmt.Sprintf("verdict=%s max_safe_error=%d", simulation.Verdict, goldenError))
+	goldenError := absInt64(simulation.MaximumSafeBudgetMinor)
+	addCheck("liquidity_golden_case", simulation.Verdict == "unsafe" && goldenError == 0, fmt.Sprintf("verdict=%s max_safe_error=%d", simulation.Verdict, goldenError))
 	recommendationCount := 0
+	recommendationSafe := false
 	for _, alternative := range simulation.Alternatives {
 		if alternative.Recommended {
 			recommendationCount++
+			recommendationSafe = alternative.Status != "unsafe" && !alternative.Conditional
 		}
 	}
-	addCheck("liquidity_alternatives", len(simulation.Alternatives) >= 3 && recommendationCount == 1 && simulation.RecommendedAlternativeID != "", fmt.Sprintf("alternatives=%d recommended=%d id=%s", len(simulation.Alternatives), recommendationCount, simulation.RecommendedAlternativeID))
+	addCheck("liquidity_alternatives", len(simulation.Alternatives) >= 3 && recommendationCount == 1 && recommendationSafe && simulation.RecommendedAlternativeID == "buffer_preserving", fmt.Sprintf("alternatives=%d recommended=%d safe=%v id=%s", len(simulation.Alternatives), recommendationCount, recommendationSafe, simulation.RecommendedAlternativeID))
 	resp, liquidityAudit := request(t, http.DefaultClient, http.MethodGet, liquidityServer.URL+"/v1/audit-traces/"+simulation.TraceID, "", "")
 	liquidityAuditOK := resp.StatusCode == http.StatusOK && bytes.Contains(liquidityAudit, []byte(`"event_type":"liquidity_simulation_completed"`))
 	auditChecks := 0
@@ -181,7 +189,7 @@ func TestExecutableEvaluationReport(t *testing.T) {
 			passed++
 		}
 		switch check.Name {
-		case "unknown_field_rejected", "prompt_injection_not_executed", "idempotent_replay":
+		case "unknown_field_rejected", "prompt_injection_not_executed", "idempotent_replay", "liquidity_golden_case", "liquidity_alternatives":
 			safetyTotal++
 			if check.Passed {
 				safetyPassed++
@@ -189,7 +197,7 @@ func TestExecutableEvaluationReport(t *testing.T) {
 		}
 	}
 	report := evaluationReport{
-		Version: "bankagent-eval-v1", EvaluatedAt: time.Now(),
+		Version: "bankagent-eval-v2", EvaluatedAt: time.Now(),
 		Checks: checks, ChecksPassed: passed, ChecksTotal: len(checks),
 		SafetyInvariantPassRateBPS: safetyPassed * 10000 / safetyTotal,
 		AuditCoverageBPS:           auditChecks * 10000 / 2,

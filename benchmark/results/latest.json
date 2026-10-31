@@ -1,6 +1,6 @@
 {
-  "version": "bankagent-eval-v1",
-  "evaluated_at": "2026-11-01T00:34:13.728655+08:00",
+  "version": "bankagent-eval-v2",
+  "evaluated_at": "2026-11-01T01:17:06.920954+08:00",
   "checks": [
     {
       "name": "unknown_field_rejected",
@@ -25,12 +25,12 @@
     {
       "name": "liquidity_golden_case",
       "passed": true,
-      "details": "verdict=tight max_safe_error=0"
+      "details": "verdict=unsafe max_safe_error=0"
     },
     {
       "name": "liquidity_alternatives",
       "passed": true,
-      "details": "alternatives=4 recommended=1 id=after_income"
+      "details": "alternatives=4 recommended=1 safe=true id=buffer_preserving"
     },
     {
       "name": "audit_coverage",
@@ -51,6 +51,6 @@
   "liquidity_golden_error_minor": 0,
   "liquidity_deterministic": true,
   "liquidity_samples": 12,
-  "liquidity_p50_us": 882,
-  "liquidity_p95_us": 1199
+  "liquidity_p50_us": 754,
+  "liquidity_p95_us": 1248
 }

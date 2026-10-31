@@ -55,6 +55,20 @@ func TestParseLiquidityBudgetUsesLatestAmount(t *testing.T) {
 	}
 }
 
+func TestParseLiquidityHorizonAndZeroBuffer(t *testing.T) {
+	if got := parseLiquidityHorizon("锁定100元，会影响未来45天房租吗"); got != 45 {
+		t.Fatalf("horizon=%d", got)
+	}
+	buffer := parseLiquidityBuffer("锁定100元，不保留缓冲，会影响未来30天房租吗")
+	if buffer == nil || *buffer != 0 {
+		t.Fatalf("buffer=%v", buffer)
+	}
+	buffer = parseLiquidityBuffer("必要支出缓冲设为500元，锁定100元")
+	if buffer == nil || *buffer != 50000 {
+		t.Fatalf("buffer=%v", buffer)
+	}
+}
+
 func TestLiquidityEventsIncludeConfirmedScheduledTransfer(t *testing.T) {
 	loc := time.FixedZone("CST", 8*60*60)
 	start := time.Date(2026, 11, 15, 0, 0, 0, 0, loc)

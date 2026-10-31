@@ -36,7 +36,7 @@ POST /v1/cards/{card_id}/lost
 POST /v1/cards/{card_id}/unlost
 POST /v1/subscriptions/{subscription_id}/cancel
 
-黄色动作使用 `/v1/actions/{action_id}/confirm`；红色动作使用动作绑定的 `/mfa/verify`。预约转账授权后进入 `scheduled`，到点调用 `/trigger`。所有副作用请求都需要 `Idempotency-Key`。
+黄色动作使用 `/v1/actions/{action_id}/confirm`；红色动作使用动作绑定的 `/mfa/verify`。预约转账授权后进入 `scheduled`，到点调用 `/trigger`；红色预约动作会生成新的执行 MFA，需要再次 `/mfa/verify` 才能扣款。所有副作用请求都需要 `Idempotency-Key`。
 ```
 
 运行服务：

@@ -44,6 +44,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '423':
+          $ref: '#/components/responses/Locked'
         '500':
           $ref: '#/components/responses/InternalError'
   /v1/conversations/{conversation_id}/messages:
@@ -82,6 +84,8 @@ paths:
           $ref: '#/components/responses/UnprocessableEntity'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '423':
+          $ref: '#/components/responses/Locked'
         '500':
           $ref: '#/components/responses/InternalError'
   /v1/actions/{action_id}:
@@ -140,6 +144,8 @@ paths:
           $ref: '#/components/responses/Expired'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '423':
+          $ref: '#/components/responses/Locked'
   /v1/actions/{action_id}/mfa/verify:
     post:
       tags: [Actions]
@@ -209,11 +215,13 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '423':
+          $ref: '#/components/responses/Locked'
   /v1/actions/{action_id}/trigger:
     post:
       tags: [Actions]
       summary: 触发已到预约时间的动作
-      description: 仅允许 scheduled 状态且已到达 scheduled_at 的预约动作；仍经过一次性执行门和幂等控制。
+      description: 仅允许 scheduled 状态且已到达 scheduled_at 的预约动作。红色动作先返回 awaiting_mfa，重新验证后才执行。
       operationId: triggerScheduledAction
       parameters:
         - $ref: '#/components/parameters/ActionID'
@@ -246,6 +254,8 @@ paths:
           $ref: '#/components/responses/Expired'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '423':
+          $ref: '#/components/responses/Locked'
   /v1/transfers:
     post:
       tags: [Actions]
@@ -269,6 +279,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '423': { $ref: '#/components/responses/Locked' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
   /v1/transfer-splits:
     post:
@@ -296,6 +307,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '423': { $ref: '#/components/responses/Locked' }
 
   /v1/liquidity-simulations:
     post:
@@ -323,6 +335,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '423': { $ref: '#/components/responses/Locked' }
   /v1/liquidity-simulations/{simulation_id}:
     get:
       tags: [Queries]
@@ -374,6 +387,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '423': { $ref: '#/components/responses/Locked' }
         '502': { $ref: '#/components/responses/BadGateway' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /v1/investments/holdings/{holding_id}/redemptions:
@@ -406,6 +420,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '423': { $ref: '#/components/responses/Locked' }
         '502': { $ref: '#/components/responses/BadGateway' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /v1/cards/{card_id}/apply:
@@ -435,6 +450,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '423': { $ref: '#/components/responses/Locked' }
   /v1/cards/{card_id}/limit:
     post:
       tags: [Actions]
@@ -463,6 +479,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '423': { $ref: '#/components/responses/Locked' }
   /v1/cards/{card_id}/freeze:
     post:
       tags: [Actions]
@@ -489,6 +506,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '423': { $ref: '#/components/responses/Locked' }
   /v1/cards/{card_id}/unfreeze:
     post:
       tags: [Actions]
@@ -515,6 +533,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '423': { $ref: '#/components/responses/Locked' }
   /v1/cards/{card_id}/lost:
     post:
       tags: [Actions]
@@ -543,6 +562,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '423': { $ref: '#/components/responses/Locked' }
   /v1/cards/{card_id}/unlost:
     post:
       tags: [Actions]
@@ -571,6 +591,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '423': { $ref: '#/components/responses/Locked' }
   /v1/subscriptions/{subscription_id}/cancel:
     post:
       tags: [Actions]
@@ -597,6 +618,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '423': { $ref: '#/components/responses/Locked' }
   /v1/accounts/{account_id}/balance:
     get:
       tags: [Queries]
@@ -812,6 +834,8 @@ paths:
           $ref: '#/components/responses/IdempotencyConflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '423':
+          $ref: '#/components/responses/Locked'
     get:
       tags: [Queries]
       summary: 查询工作流列表
@@ -868,6 +892,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
   /v1/workflows/{workflow_id}/advance:
     post:
       tags: [Actions]
@@ -903,6 +929,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '423':
+          $ref: '#/components/responses/Locked'
   /v1/audit-traces/{trace_id}:
     get:
       tags: [Audit]
@@ -978,7 +1006,7 @@ components:
       description: 状态冲突、重复执行或资源版本冲突
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     IdempotencyConflict:
-      description: 幂等键已用于不同请求体
+      description: 幂等键已用于不同请求体，或相同键的请求仍在处理中
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     Expired:
       description: 动作已过期
@@ -990,7 +1018,7 @@ components:
       description: 请求或验证频率受限
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     Locked:
-      description: 当前动作的 MFA 尝试次数已耗尽并被锁定
+      description: 当前动作 MFA 尝试耗尽，或用户连续异常操作触发安全锁定
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     BadGateway:
       description: 受控业务工具明确拒绝或执行失败
@@ -1028,9 +1056,12 @@ components:
             - NOT_FOUND
             - ACTION_STATE_CONFLICT
             - IDEMPOTENCY_CONFLICT
+            - IDEMPOTENCY_IN_PROGRESS
+            - IDEMPOTENCY_UNAVAILABLE
             - ACTION_EXPIRED
             - MFA_INVALID
             - MFA_LOCKED
+            - SECURITY_LOCKED
             - INSUFFICIENT_BALANCE
             - BUDGET_NOT_RESERVED
             - TOOL_REJECTED
@@ -1094,9 +1125,10 @@ components:
         code: { type: string, minLength: 4, maxLength: 12, writeOnly: true }
     Action:
       type: object
-      required: [action_id, conversation_id, kind, risk_level, status, expires_at, created_at, updated_at]
+      required: [action_id, trace_id, conversation_id, kind, risk_level, status, snapshot_hash, expires_at, created_at, updated_at]
       properties:
         action_id: { type: string }
+        trace_id: { type: string, description: 动作全生命周期统一 Trace ID }
         conversation_id: { type: string }
         kind: { type: string }
         risk_level:
@@ -1106,6 +1138,7 @@ components:
           type: string
           enum: [awaiting_confirmation, awaiting_mfa, scheduled, executing, processing, reconciliation_required, succeeded, failed, cancelled, expired]
         snapshot: { type: object, additionalProperties: true, description: 服务端生成的不可变动作快照 }
+        snapshot_hash: { type: string, description: 规范化快照的 SHA-256 哈希，授权和执行前必须复核 }
         result: { type: object, additionalProperties: true, description: 动作成功后的业务回执结果，例如理财赎回本金、收益和到账总额 }
         expires_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }
@@ -1282,7 +1315,7 @@ components:
       required: [account_id, proposed_budget_minor]
       properties:
         account_id: { type: string, minLength: 1 }
-        horizon_days: { type: integer, minimum: 0, maximum: 90, default: 30, description: 0 表示使用默认 30 天。 }
+        horizon_days: { type: integer, minimum: 0, maximum: 366, default: 30, description: 0 表示使用默认 30 天。 }
         proposed_budget_minor: { type: integer, format: int64, minimum: 0 }
         essential_buffer_minor: { type: integer, format: int64, minimum: 0, description: 省略时默认 100000，即 1000.00 CNY }
     LiquidityTimelinePoint:
@@ -1312,7 +1345,7 @@ components:
         kind: { type: string }
         direction: { type: string, enum: [in, out] }
         description: { type: string }
-        amount_minor: { type: integer, format: int64, minimum: 0 }
+        amount_minor: { type: integer, format: int64, minimum: 0, description: 外部订单不超过 1000.00 CNY 为黄色确认，超过则为红色 MFA }
         essential: { type: boolean }
         source_id: { type: string }
     LiquidityReservation:
@@ -1327,6 +1360,7 @@ components:
         - alternative_id
         - label
         - description
+        - conditional
         - total_budget_minor
         - reservations
         - status
@@ -1341,6 +1375,8 @@ components:
         alternative_id: { type: string, enum: [current, buffer_preserving, after_income, split] }
         label: { type: string }
         description: { type: string }
+        conditional: { type: boolean, description: 为 true 时依赖尚未确认入账的未来收入 }
+        condition: { type: string, description: 条件方案的人工可读执行条件 }
         total_budget_minor: { type: integer, format: int64, minimum: 0 }
         reservations:
           type: array
@@ -1385,7 +1421,7 @@ components:
         trace_id: { type: string }
         currency: { type: string }
         start_at: { type: string, format: date-time }
-        horizon_days: { type: integer, minimum: 1, maximum: 90 }
+        horizon_days: { type: integer, minimum: 1, maximum: 366 }
         starting_available_minor: { type: integer, format: int64 }
         proposed_budget_minor: { type: integer, format: int64, minimum: 0 }
         essential_buffer_minor: { type: integer, format: int64, minimum: 0 }
@@ -1442,7 +1478,7 @@ components:
       required: [purpose, deadline, nodes]
       properties:
         purpose: { type: string, minLength: 1, maxLength: 200 }
-        deadline: { type: string, format: date-time }
+        deadline: { type: string, format: date-time, description: 未来一年内；预算预检会覆盖当前日至截止日的完整现金流 }
         nodes:
           type: array
           minItems: 1

@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -231,6 +232,8 @@ type LiquidityAlternative struct {
 	ID                            string                   `json:"alternative_id"`
 	Label                         string                   `json:"label"`
 	Description                   string                   `json:"description"`
+	Conditional                   bool                     `json:"conditional"`
+	Condition                     string                   `json:"condition,omitempty"`
 	TotalBudgetMinor              int64                    `json:"total_budget_minor"`
 	Reservations                  []LiquidityReservation   `json:"reservations"`
 	Status                        string                   `json:"status"`
@@ -288,6 +291,7 @@ type TransferSplit struct {
 
 type Action struct {
 	ID             string    `json:"action_id"`
+	TraceID        string    `json:"trace_id"`
 	ConversationID string    `json:"conversation_id"`
 	UserID         string    `json:"-"`
 	Kind           string    `json:"kind"`
@@ -295,6 +299,7 @@ type Action struct {
 	Status         string    `json:"status"`
 	SnapshotJSON   string    `json:"-"`
 	Snapshot       any       `json:"snapshot,omitempty"`
+	SnapshotHash   string    `json:"snapshot_hash"`
 	ResultJSON     string    `json:"-"`
 	Result         any       `json:"result,omitempty"`
 	ExpiresAt      time.Time `json:"expires_at"`
@@ -320,11 +325,13 @@ func (a Action) Public() Action {
 type AuditEvent struct {
 	ID             string         `json:"event_id"`
 	TraceID        string         `json:"trace_id"`
+	RunID          string         `json:"run_id,omitempty"`
 	ConversationID string         `json:"conversation_id,omitempty"`
 	ActionID       string         `json:"action_id,omitempty"`
 	EventType      string         `json:"event_type"`
 	Outcome        string         `json:"outcome"`
 	Actor          string         `json:"actor"`
+	PolicyVersion  string         `json:"policy_version,omitempty"`
 	Detail         map[string]any `json:"detail"`
 	OccurredAt     time.Time      `json:"occurred_at"`
 	Sequence       int64          `json:"sequence"`
@@ -387,11 +394,16 @@ type Repository interface {
 	ExecuteTransferSplit(context.Context, Action, TransferSplitSnapshot, time.Time) (TransferSplit, error)
 	CancelAction(context.Context, string, time.Time) (bool, error)
 	ScheduleAction(context.Context, string, string, time.Time) (bool, error)
+	RequireScheduledMFA(context.Context, string, time.Time, time.Time) (bool, error)
 	RecordMFAFailure(context.Context, string, time.Time) (int, bool, error)
+	RecordSecurityFailure(context.Context, string, string, time.Time) error
+	SecurityLocked(context.Context, string, time.Time, time.Duration, time.Duration, int) (bool, error)
 	AddAudit(context.Context, AuditEvent) error
 	Audit(context.Context, string) ([]AuditEvent, error)
 	Idempotency(context.Context, string, string, string, string, string) ([]byte, int, error)
+	ReserveIdempotency(context.Context, string, string, string, string, string, time.Time) (bool, error)
 	SaveIdempotency(context.Context, string, string, string, string, string, int, []byte, time.Time) error
+	DeleteIdempotency(context.Context, string, string, string, string) error
 	CreateWorkflow(context.Context, Workflow) error
 	Workflows(context.Context, string) ([]Workflow, error)
 	Workflow(context.Context, string, string) (Workflow, error)
@@ -431,6 +443,11 @@ func NewID(prefix string) string {
 	return prefix + "_" + hex.EncodeToString(raw[:])
 }
 
+func snapshotHash(snapshotJSON string) string {
+	sum := sha256.Sum256([]byte(snapshotJSON))
+	return hex.EncodeToString(sum[:])
+}
+
 func parseInvestmentPurchase(text string) (amountMinor int64, ok bool) {
 	pattern := regexp.MustCompile(`申购.*?([0-9]+(?:\.[0-9]{1,2})?)\s*元`)
 	matches := pattern.FindStringSubmatch(strings.TrimSpace(text))
@@ -463,6 +480,13 @@ func parseBirthdayPlan(text string) (budgetMinor int64, eventAt time.Time, ok bo
 		return 0, time.Time{}, false
 	}
 	return int64(amount*100 + 0.5), eventAt, true
+}
+
+func isStandaloneFollowUp(text string) bool {
+	value := strings.TrimSpace(text)
+	amount := regexp.MustCompile(`^[0-9]+(?:\.[0-9]{1,2})?\s*元$`)
+	date := regexp.MustCompile(`^(?:日期\s*)?20[0-9]{2}-[0-9]{2}-[0-9]{2}$`)
+	return amount.MatchString(value) || date.MatchString(value)
 }
 
 func parsePhoneTransfer(text string) (phone string, amountMinor int64, remark string, ok bool) {

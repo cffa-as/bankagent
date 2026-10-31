@@ -42,7 +42,8 @@ type WorkflowNodeInput struct {
 
 func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, deadline time.Time, inputs []WorkflowNodeInput) (Workflow, string, error) {
 	purpose = strings.TrimSpace(purpose)
-	if purpose == "" || len([]rune(purpose)) > 200 || len(inputs) == 0 || len(inputs) > 10 || !deadline.After(s.now()) {
+	now := s.now()
+	if purpose == "" || len([]rune(purpose)) > 200 || len(inputs) == 0 || len(inputs) > 10 || !deadline.After(now) || deadline.After(now.AddDate(1, 0, 0)) {
 		return Workflow{}, "", ErrInvalidArgument
 	}
 	seen := make(map[string]bool, len(inputs))
@@ -100,7 +101,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, de
 	if visited != len(inputs) {
 		return Workflow{}, "", fmt.Errorf("%w: workflow cycle", ErrInvalidArgument)
 	}
-	workflow := Workflow{ID: NewID("wf"), UserID: userID, Purpose: purpose, Deadline: deadline, Status: "pending", CreatedAt: s.now(), UpdatedAt: s.now()}
+	workflow := Workflow{ID: NewID("wf"), UserID: userID, Purpose: purpose, Deadline: deadline, Status: "pending", CreatedAt: now, UpdatedAt: now}
 	for _, input := range inputs {
 		status := "pending"
 		if len(input.DependsOn) == 0 {
@@ -108,7 +109,7 @@ func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, de
 		}
 		dueAt := input.DueAt
 		if dueAt.IsZero() {
-			dueAt = s.now()
+			dueAt = now
 		}
 		workflow.Nodes = append(workflow.Nodes, WorkflowNode{ID: input.ID, Kind: input.Kind, DependsOn: input.DependsOn, Status: status, AmountMinor: input.AmountMinor, Merchant: input.Merchant, DueAt: dueAt})
 	}
@@ -250,7 +251,8 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string, virtua
 		if err != nil {
 			return WorkflowAdvanceResult{}, trace, err
 		}
-		simulation, _, err := s.createLiquiditySimulationAt(ctx, userID, account.ID, liquidityHorizonDays(virtualNow, workflow.Deadline), node.AmountMinor, nil, virtualNow)
+		simulationNow := s.now()
+		simulation, _, err := s.createLiquiditySimulationAt(ctx, userID, account.ID, liquidityHorizonDays(simulationNow, workflow.Deadline), node.AmountMinor, nil, simulationNow)
 		if err != nil {
 			return WorkflowAdvanceResult{}, trace, err
 		}
@@ -294,16 +296,13 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string, virtua
 
 func (s *Service) createWorkflowActionRecord(ctx context.Context, userID, kind, risk, status string, snapshot map[string]any) (Action, error) {
 	now := s.now()
+	trace := NewID("tr")
 	encoded, err := json.Marshal(snapshot)
 	if err != nil {
 		return Action{}, err
 	}
-	action := Action{ID: NewID("act"), UserID: userID, Kind: kind, RiskLevel: risk, Status: status, SnapshotJSON: string(encoded), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+	action := Action{ID: NewID("act"), TraceID: trace, UserID: userID, Kind: kind, RiskLevel: risk, Status: status, SnapshotJSON: string(encoded), Snapshot: snapshot, SnapshotHash: snapshotHash(string(encoded)), ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
 	if err := s.repo.CreateAction(ctx, action); err != nil {
-		return Action{}, err
-	}
-	trace := NewID("tr")
-	if err := s.audit(ctx, trace, "", action.ID, "action_created", "succeeded", "system", map[string]any{"kind": kind, "risk_level": risk, "workflow_id": snapshot["workflow_id"]}, now); err != nil {
 		return Action{}, err
 	}
 	return action, nil

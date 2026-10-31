@@ -3,10 +3,12 @@ package httpapi_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -137,6 +139,17 @@ func TestYellowTransferAndIdempotency(t *testing.T) {
 	resp, secondBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", confirmBody, "confirm-1")
 	if resp.StatusCode != http.StatusOK || !bytes.Equal(bytes.TrimSpace(secondBody), bytes.TrimSpace(body)) {
 		t.Fatalf("idempotent replay: status=%d first=%s second=%s", resp.StatusCode, body, secondBody)
+	}
+	if !bytes.Contains(body, []byte(`"snapshot_hash":"`)) || !bytes.Contains(body, []byte(`"trace_id":"tr_`)) {
+		t.Fatalf("action is missing lifecycle evidence: %s", body)
+	}
+	resp, auditBody := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/audit-traces/"+first.TraceID, "", "")
+	if resp.StatusCode != http.StatusOK ||
+		!bytes.Contains(auditBody, []byte(`"event_type":"action_created"`)) ||
+		!bytes.Contains(auditBody, []byte(`"event_type":"confirmation_succeeded"`)) ||
+		!bytes.Contains(auditBody, []byte(`"event_type":"authorization_gate_passed"`)) ||
+		!bytes.Contains(auditBody, []byte(`"event_type":"action_succeeded"`)) {
+		t.Fatalf("incomplete audit lifecycle: status=%d body=%s", resp.StatusCode, auditBody)
 	}
 }
 
@@ -400,6 +413,172 @@ func TestRedTransferRequiresMFAAndLocksAfterThreeFailures(t *testing.T) {
 		if resp.StatusCode != want {
 			t.Fatalf("attempt %d: status=%d want=%d body=%s", i+1, resp.StatusCode, want, body)
 		}
+	}
+}
+
+func TestUserCircuitBreakerDegradesWritesToReadOnly(t *testing.T) {
+	base := time.Date(2026, 10, 31, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	now := base
+	server, cleanup := newServerWithClock(t, func() time.Time { return now })
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	createRedAction := func(key string) string {
+		t.Helper()
+		body := `{"conversation_id":"` + conversationID + `","beneficiary_name":"张三","amount_minor":150000}`
+		resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfers", body, key)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create red action: status=%d body=%s", resp.StatusCode, raw)
+		}
+		var result envelope
+		var action struct {
+			ID string `json:"action_id"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(result.Data, &action); err != nil {
+			t.Fatal(err)
+		}
+		return action.ID
+	}
+	for actionIndex, id := range []string{createRedAction("circuit-create-1"), createRedAction("circuit-create-2")} {
+		for attempt := 0; attempt < 3; attempt++ {
+			resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+id+"/mfa/verify", `{"code":"111111"}`, fmt.Sprintf("circuit-mfa-%d-%d", actionIndex, attempt))
+			if resp.StatusCode != http.StatusUnprocessableEntity && resp.StatusCode != http.StatusLocked {
+				t.Fatalf("mfa failure %d/%d: status=%d body=%s", actionIndex, attempt, resp.StatusCode, raw)
+			}
+		}
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/conversations", `{}`, "circuit-blocked-write-1")
+	if resp.StatusCode != http.StatusLocked || !bytes.Contains(raw, []byte("SECURITY_LOCKED")) {
+		t.Fatalf("security lock must block writes: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("security lock must preserve read-only access: status=%d body=%s", resp.StatusCode, raw)
+	}
+	now = base.Add(16 * time.Minute)
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/conversations", `{}`, "circuit-recovered-write-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("security lock did not expire: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestConcurrentConfirmationExecutesOnce(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	status, result, raw := sendMessage(t, server.URL, conversationID, "给张三转300元", "concurrent-confirm-message-1")
+	if status != http.StatusOK || result.Action.ID == "" {
+		t.Fatalf("create transfer: status=%d result=%+v body=%s", status, result, raw)
+	}
+	type response struct {
+		status int
+		body   []byte
+	}
+	start := make(chan struct{})
+	results := make(chan response, 2)
+	var wait sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", bytes.NewBufferString(`{}`))
+			if err != nil {
+				results <- response{body: []byte(err.Error())}
+				return
+			}
+			req.Header.Set("Authorization", "Bearer demo-user-1")
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Idempotency-Key", fmt.Sprintf("concurrent-confirm-key-%d", index))
+			<-start
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				results <- response{body: []byte(err.Error())}
+				return
+			}
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			results <- response{status: resp.StatusCode, body: body}
+		}(i)
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+	successes, conflicts := 0, 0
+	for item := range results {
+		switch item.status {
+		case http.StatusOK:
+			successes++
+			if !bytes.Contains(item.body, []byte(`"status":"succeeded"`)) {
+				t.Fatalf("success response missing receipt: %s", item.body)
+			}
+		case http.StatusConflict:
+			conflicts++
+		default:
+			t.Fatalf("unexpected concurrent status=%d body=%s", item.status, item.body)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("execution gate winners: success=%d conflict=%d", successes, conflicts)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":970000`)) {
+		t.Fatalf("concurrent confirmation debited more than once: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestCancelAndConfirmHaveSingleWinner(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	status, result, raw := sendMessage(t, server.URL, conversationID, "给张三转300元", "cancel-race-message-1")
+	if status != http.StatusOK || result.Action.ID == "" {
+		t.Fatalf("create transfer: status=%d result=%+v body=%s", status, result, raw)
+	}
+	type response struct {
+		status int
+		body   []byte
+	}
+	start := make(chan struct{})
+	results := make(chan response, 2)
+	var wait sync.WaitGroup
+	for index, command := range []string{"confirm", "cancel"} {
+		wait.Add(1)
+		go func(index int, command string) {
+			defer wait.Done()
+			req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/"+command, bytes.NewBufferString(`{}`))
+			if err != nil {
+				results <- response{body: []byte(err.Error())}
+				return
+			}
+			req.Header.Set("Authorization", "Bearer demo-user-1")
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Idempotency-Key", fmt.Sprintf("cancel-race-key-%d", index))
+			<-start
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				results <- response{body: []byte(err.Error())}
+				return
+			}
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			results <- response{status: resp.StatusCode, body: body}
+		}(index, command)
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+	successes := 0
+	for item := range results {
+		if item.status == http.StatusOK {
+			successes++
+		} else if item.status != http.StatusConflict {
+			t.Fatalf("unexpected race status=%d body=%s", item.status, item.body)
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("cancel/confirm must have one winner, got %d", successes)
 	}
 }
 
@@ -797,6 +976,11 @@ func TestWorkflowLifecycleAndCycleValidation(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest || !bytes.Contains(responseBody, []byte("INVALID_ARGUMENT")) {
 		t.Fatalf("cycle validation: status=%d body=%s", resp.StatusCode, responseBody)
 	}
+	tooFar := time.Now().AddDate(1, 0, 2).Format(time.RFC3339)
+	resp, responseBody = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", `{"purpose":"too far","deadline":"`+tooFar+`","nodes":[{"node_id":"reminder","kind":"reminder"}]}`, "workflow-too-far-1")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("workflow horizon validation: status=%d body=%s", resp.StatusCode, responseBody)
+	}
 }
 
 func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
@@ -892,6 +1076,62 @@ func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
 	}
 }
 
+func TestWorkflowExternalOrderOverThresholdRequiresMFA(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	deadline := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	body := `{"purpose":"大额外部订单","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":150000},{"node_id":"order","kind":"external_order","depends_on":["lock"],"amount_minor":100001,"merchant":"演示商户"}]}`
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "external-order-create-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created envelope
+	var workflow struct {
+		ID string `json:"workflow_id"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(created.Data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "external-order-advance-lock-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("advance lock: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var advanced envelope
+	var pending struct {
+		Action struct {
+			ID     string `json:"action_id"`
+			Risk   string `json:"risk_level"`
+			Status string `json:"status"`
+		} `json:"action"`
+	}
+	if err := json.Unmarshal(raw, &advanced); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(advanced.Data, &pending); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/mfa/verify", `{"code":"000000"}`, "external-order-lock-mfa-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("verify lock: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "external-order-advance-order-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("advance order: status=%d body=%s", resp.StatusCode, raw)
+	}
+	if err := json.Unmarshal(raw, &advanced); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(advanced.Data, &pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending.Action.Risk != "red" || pending.Action.Status != "awaiting_mfa" {
+		t.Fatalf("large external order must require MFA: %+v", pending.Action)
+	}
+}
+
 func TestPhoneTransferCreatesBoundBeneficiaryAction(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()
@@ -942,6 +1182,22 @@ func TestPromptInjectionCannotAutoExecuteTransfer(t *testing.T) {
 	}
 }
 
+func TestNegatedBankingIntentCreatesNoOppositeAction(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+
+	for i, text := range []string{"不要取消我的流媒体订阅", "不要查余额，帮我分析本月账单"} {
+		status, result, raw := sendMessage(t, server.URL, conversationID, text, fmt.Sprintf("negated-intent-%d", i))
+		if status != http.StatusOK || result.ReplyType != "question" || result.Action.ID != "" {
+			t.Fatalf("negated intent %q: status=%d result=%+v body=%s", text, status, result, raw)
+		}
+		if bytes.Contains(raw, []byte(`"balance":`)) || bytes.Contains(raw, []byte(`"subscription_cancel"`)) {
+			t.Fatalf("negated intent produced business result: %s", raw)
+		}
+	}
+}
+
 func TestAnnualBillAndSubscriptionReminderQueries(t *testing.T) {
 	base := time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	server, cleanup := newServerWithClock(t, func() time.Time { return base })
@@ -984,6 +1240,7 @@ func TestLiquiditySimulationPersistsProjectionAndAudit(t *testing.T) {
 		Alternatives []struct {
 			ID          string `json:"alternative_id"`
 			Status      string `json:"status"`
+			Conditional bool   `json:"conditional"`
 			Recommended bool   `json:"recommended"`
 		} `json:"alternatives"`
 		RecommendedAlternativeID string `json:"recommended_alternative_id"`
@@ -991,7 +1248,7 @@ func TestLiquiditySimulationPersistsProjectionAndAudit(t *testing.T) {
 	if err := json.Unmarshal(result.Data, &simulation); err != nil {
 		t.Fatal(err)
 	}
-	if simulation.ID == "" || simulation.Verdict != "tight" || simulation.MaximumSafeBudgetMinor != 42224 {
+	if simulation.ID == "" || simulation.Verdict != "unsafe" || simulation.MaximumSafeBudgetMinor != 0 {
 		t.Fatalf("unexpected simulation: %+v", simulation)
 	}
 	if len(simulation.Scenarios) != 3 || len(simulation.Scenarios[1].Points) != 31 {
@@ -1000,10 +1257,10 @@ func TestLiquiditySimulationPersistsProjectionAndAudit(t *testing.T) {
 	if !bytes.Contains(raw, []byte(`"description":"房租"`)) || !bytes.Contains(raw, []byte(`"kind":"subscription"`)) {
 		t.Fatalf("missing cashflow events: %s", raw)
 	}
-	if len(simulation.Alternatives) != 4 || simulation.RecommendedAlternativeID != "after_income" {
+	if len(simulation.Alternatives) != 4 || simulation.RecommendedAlternativeID != "buffer_preserving" {
 		t.Fatalf("unexpected alternatives: %+v", simulation.Alternatives)
 	}
-	recommended, split := 0, 0
+	recommended, split, conditional := 0, 0, 0
 	for _, alternative := range simulation.Alternatives {
 		if alternative.Recommended {
 			recommended++
@@ -1011,8 +1268,11 @@ func TestLiquiditySimulationPersistsProjectionAndAudit(t *testing.T) {
 		if alternative.ID == "split" {
 			split++
 		}
+		if alternative.Conditional {
+			conditional++
+		}
 	}
-	if recommended != 1 || split != 1 {
+	if recommended != 1 || split != 1 || conditional != 2 {
 		t.Fatalf("unexpected recommendation flags: %+v", simulation.Alternatives)
 	}
 	resp, replay := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/liquidity-simulations", body, "liquidity-simulation-1")
@@ -1035,8 +1295,12 @@ func TestLiquiditySimulationFromConversation(t *testing.T) {
 	defer cleanup()
 	conversationID := createConversation(t, server.URL)
 	status, result, raw := sendMessage(t, server.URL, conversationID, "锁定1000元会影响房租吗", "liquidity-message-1")
-	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"liquidity"`)) || !bytes.Contains(raw, []byte(`"verdict":"tight"`)) {
+	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"liquidity"`)) || !bytes.Contains(raw, []byte(`"verdict":"unsafe"`)) {
 		t.Fatalf("liquidity message: status=%d result=%+v body=%s", status, result, raw)
+	}
+	status, result, raw = sendMessage(t, server.URL, conversationID, "锁定100元，不保留缓冲，会影响未来30天房租吗", "liquidity-message-safe-1")
+	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"verdict":"safe"`)) || !bytes.Contains(raw, []byte(`"essential_buffer_minor":0`)) {
+		t.Fatalf("safe liquidity message: status=%d result=%+v body=%s", status, result, raw)
 	}
 }
 
@@ -1049,7 +1313,7 @@ func TestLiquiditySimulationValidatesBounds(t *testing.T) {
 		status int
 	}{
 		{"other account", `{"account_id":"acct_other","proposed_budget_minor":10000}`, http.StatusForbidden},
-		{"horizon too long", `{"account_id":"acct_demo","horizon_days":91,"proposed_budget_minor":10000}`, http.StatusBadRequest},
+		{"horizon too long", `{"account_id":"acct_demo","horizon_days":367,"proposed_budget_minor":10000}`, http.StatusBadRequest},
 		{"negative budget", `{"account_id":"acct_demo","proposed_budget_minor":-1}`, http.StatusBadRequest},
 		{"negative buffer", `{"account_id":"acct_demo","proposed_budget_minor":10000,"essential_buffer_minor":-1}`, http.StatusBadRequest},
 	}
@@ -1174,6 +1438,109 @@ func TestScheduledTransferWaitsForDueTimeAndTriggersOnce(t *testing.T) {
 	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
 	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":970000`)) {
 		t.Fatalf("scheduled transfer debited once: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestScheduledRedTransferRequiresFreshMFAAtExecution(t *testing.T) {
+	base := time.Date(2026, 10, 31, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	now := base
+	server, cleanup := newServerWithClock(t, func() time.Time { return now })
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	scheduledAt := base.Add(time.Hour)
+	body, err := json.Marshal(map[string]any{
+		"conversation_id": conversationID, "beneficiary_name": "张三",
+		"amount_minor": 500000, "remark": "预约大额转账", "scheduled_at": scheduledAt.Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfers", string(body), "red-scheduled-create-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create scheduled red transfer: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created envelope
+	var action struct {
+		ID string `json:"action_id"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(created.Data, &action); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+action.ID+"/mfa/verify", `{"code":"000000"}`, "red-scheduled-auth-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"scheduled"`)) {
+		t.Fatalf("schedule red transfer: status=%d body=%s", resp.StatusCode, raw)
+	}
+	now = scheduledAt
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+action.ID+"/trigger", `{}`, "red-scheduled-trigger-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"awaiting_mfa"`)) {
+		t.Fatalf("trigger must require fresh MFA: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
+		t.Fatalf("scheduled action executed before fresh MFA: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+action.ID+"/mfa/verify", `{"code":"000000"}`, "red-scheduled-auth-2")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"succeeded"`)) {
+		t.Fatalf("fresh scheduled MFA: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":500000`)) {
+		t.Fatalf("scheduled transfer did not execute once: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestLongHorizonWorkflowProjectsInterveningCashflows(t *testing.T) {
+	base := time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	server, cleanup := newServerWithClock(t, func() time.Time { return base })
+	defer cleanup()
+	deadline := base.AddDate(0, 0, 150)
+	dueAt := base.AddDate(0, 0, 148)
+	body, err := json.Marshal(map[string]any{
+		"purpose": "长周期预算", "deadline": deadline.Format(time.RFC3339),
+		"nodes": []map[string]any{{"node_id": "lock", "kind": "budget_lock", "amount_minor": 100000, "due_at": dueAt.Format(time.RFC3339)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", string(body), "long-horizon-create-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create long workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created envelope
+	var workflow struct {
+		ID string `json:"workflow_id"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(created.Data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	advanceBody, err := json.Marshal(map[string]any{"virtual_now": dueAt.Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", string(advanceBody), "long-horizon-advance-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"verdict":"unsafe"`)) || bytes.Contains(raw, []byte(`"action":{`)) {
+		t.Fatalf("long horizon preflight must block: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var advanced envelope
+	var result struct {
+		Liquidity struct {
+			HorizonDays int `json:"horizon_days"`
+		} `json:"liquidity"`
+	}
+	if err := json.Unmarshal(raw, &advanced); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(advanced.Data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Liquidity.HorizonDays < 148 || result.Liquidity.HorizonDays > 151 {
+		t.Fatalf("long horizon was truncated: %d", result.Liquidity.HorizonDays)
 	}
 }
 
@@ -1643,6 +2010,20 @@ func TestStaleConversationContextIsNotReused(t *testing.T) {
 	}
 }
 
+func TestUnrelatedShortMessageDoesNotReusePreviousDomainContext(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	status, first, raw := sendMessage(t, server.URL, conversationID, "如果生日预算1000元，会影响未来30天资金安全吗", "context-isolation-message-1")
+	if status != http.StatusOK || first.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"liquidity"`)) {
+		t.Fatalf("initial liquidity query: status=%d result=%+v body=%s", status, first, raw)
+	}
+	status, result, raw := sendMessage(t, server.URL, conversationID, "你好，你是谁？", "context-isolation-message-2")
+	if status != http.StatusOK || result.ReplyType != "question" || bytes.Contains(raw, []byte(`"liquidity"`)) {
+		t.Fatalf("unrelated message must not reuse prior context: status=%d result=%+v body=%s", status, result, raw)
+	}
+}
+
 func TestModelPlanCreatesValidatedActionWithoutTrustingAuthorizationFields(t *testing.T) {
 	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		plan, err := json.Marshal(map[string]any{
@@ -1685,7 +2066,7 @@ func TestModelCanRequestDeterministicLiquiditySimulation(t *testing.T) {
 		plan, err := json.Marshal(map[string]any{
 			"intent": "liquidity_simulation",
 			"entities": map[string]any{
-				"proposed_budget_minor": 100000, "horizon_days": 30, "essential_buffer_minor": 100000,
+				"proposed_budget_minor": 100000, "horizon_days": 30, "essential_buffer_minor": 0,
 			},
 			"missing_fields": []string{},
 			"candidate_plan": []map[string]string{{"kind": "calculate_cashflow"}},
@@ -1707,7 +2088,7 @@ func TestModelCanRequestDeterministicLiquiditySimulation(t *testing.T) {
 	defer cleanup()
 	conversationID := createConversation(t, server.URL)
 	status, result, raw := sendMessage(t, server.URL, conversationID, "如果生日花1000元，未来30天资金安全吗", "model-liquidity-message-1")
-	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"liquidity"`)) || !bytes.Contains(raw, []byte(`"simulation_id":"liq_`)) {
+	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"liquidity"`)) || !bytes.Contains(raw, []byte(`"simulation_id":"liq_`)) || !bytes.Contains(raw, []byte(`"essential_buffer_minor":0`)) {
 		t.Fatalf("model liquidity simulation: status=%d result=%+v body=%s", status, result, raw)
 	}
 }

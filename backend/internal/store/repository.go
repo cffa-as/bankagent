@@ -481,14 +481,14 @@ func (r *Repository) BeneficiaryByPhone(ctx context.Context, userID, phone strin
 }
 
 func (r *Repository) CreateAction(ctx context.Context, a domain.Action) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO actions(id,conversation_id,user_id,kind,risk_level,status,snapshot_json,result_json,expires_at,created_at,updated_at,mfa_attempts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.ConversationID, a.UserID, a.Kind, a.RiskLevel, a.Status, a.SnapshotJSON, a.ResultJSON, a.ExpiresAt.Format(time.RFC3339Nano), a.CreatedAt.Format(time.RFC3339Nano), a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts)
+	_, err := r.db.ExecContext(ctx, `INSERT INTO actions(id,trace_id,conversation_id,user_id,kind,risk_level,status,snapshot_json,snapshot_hash,result_json,expires_at,created_at,updated_at,mfa_attempts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.TraceID, a.ConversationID, a.UserID, a.Kind, a.RiskLevel, a.Status, a.SnapshotJSON, a.SnapshotHash, a.ResultJSON, a.ExpiresAt.Format(time.RFC3339Nano), a.CreatedAt.Format(time.RFC3339Nano), a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts)
 	return err
 }
 
 func (r *Repository) Action(ctx context.Context, id string) (domain.Action, error) {
 	var a domain.Action
 	var expires, created, updated string
-	err := r.db.QueryRowContext(ctx, `SELECT id,conversation_id,user_id,kind,risk_level,status,snapshot_json,result_json,expires_at,created_at,updated_at,mfa_attempts FROM actions WHERE id=?`, id).Scan(&a.ID, &a.ConversationID, &a.UserID, &a.Kind, &a.RiskLevel, &a.Status, &a.SnapshotJSON, &a.ResultJSON, &expires, &created, &updated, &a.MFAAttempts)
+	err := r.db.QueryRowContext(ctx, `SELECT id,trace_id,conversation_id,user_id,kind,risk_level,status,snapshot_json,snapshot_hash,result_json,expires_at,created_at,updated_at,mfa_attempts FROM actions WHERE id=?`, id).Scan(&a.ID, &a.TraceID, &a.ConversationID, &a.UserID, &a.Kind, &a.RiskLevel, &a.Status, &a.SnapshotJSON, &a.SnapshotHash, &a.ResultJSON, &expires, &created, &updated, &a.MFAAttempts)
 	if err != nil {
 		return a, err
 	}
@@ -857,6 +857,15 @@ func (r *Repository) ScheduleAction(ctx context.Context, id, currentStatus strin
 	return affected == 1, err
 }
 
+func (r *Repository) RequireScheduledMFA(ctx context.Context, id string, expiresAt, now time.Time) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `UPDATE actions SET status='awaiting_mfa',expires_at=?,mfa_attempts=0,updated_at=? WHERE id=? AND status='scheduled'`, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected == 1, err
+}
+
 func (r *Repository) RecordMFAFailure(ctx context.Context, id string, now time.Time) (int, bool, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -885,19 +894,41 @@ func (r *Repository) RecordMFAFailure(ctx context.Context, id string, now time.T
 	return attempts, status == "failed", nil
 }
 
+func (r *Repository) RecordSecurityFailure(ctx context.Context, userID, kind string, now time.Time) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO security_failures(id,user_id,kind,occurred_at) VALUES(?,?,?,?)`, domain.NewID("sec"), userID, kind, now.Format(time.RFC3339Nano))
+	return err
+}
+
+func (r *Repository) SecurityLocked(ctx context.Context, userID string, now time.Time, window, lockDuration time.Duration, threshold int) (bool, error) {
+	var count int
+	var latest sql.NullString
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*),MAX(occurred_at) FROM security_failures WHERE user_id=? AND occurred_at>=?`, userID, now.Add(-window).Format(time.RFC3339Nano)).Scan(&count, &latest)
+	if err != nil {
+		return false, err
+	}
+	if count < threshold || !latest.Valid {
+		return false, nil
+	}
+	latestAt, err := time.Parse(time.RFC3339Nano, latest.String)
+	if err != nil {
+		return false, err
+	}
+	return now.Before(latestAt.Add(lockDuration)), nil
+}
+
 func (r *Repository) AddAudit(ctx context.Context, event domain.AuditEvent) error {
 	detail, err := json.Marshal(event.Detail)
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT INTO audit_events(id,trace_id,conversation_id,action_id,event_type,outcome,actor,detail_json,occurred_at,sequence)
-		SELECT ?,?,?,?,?,?,?,?, ?, COALESCE(MAX(sequence),0)+1 FROM audit_events WHERE trace_id=?`,
-		event.ID, event.TraceID, event.ConversationID, event.ActionID, event.EventType, event.Outcome, event.Actor, string(detail), event.OccurredAt.Format(time.RFC3339Nano), event.TraceID)
+	_, err = r.db.ExecContext(ctx, `INSERT INTO audit_events(id,trace_id,run_id,conversation_id,action_id,event_type,outcome,actor,policy_version,detail_json,occurred_at,sequence)
+		SELECT ?,?,?,?,?,?,?,?,?,?, ?, COALESCE(MAX(sequence),0)+1 FROM audit_events WHERE trace_id=?`,
+		event.ID, event.TraceID, event.RunID, event.ConversationID, event.ActionID, event.EventType, event.Outcome, event.Actor, event.PolicyVersion, string(detail), event.OccurredAt.Format(time.RFC3339Nano), event.TraceID)
 	return err
 }
 
 func (r *Repository) Audit(ctx context.Context, traceID string) ([]domain.AuditEvent, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,trace_id,conversation_id,action_id,event_type,outcome,actor,detail_json,occurred_at,sequence FROM audit_events WHERE trace_id=? ORDER BY sequence`, traceID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,trace_id,run_id,conversation_id,action_id,event_type,outcome,actor,policy_version,detail_json,occurred_at,sequence FROM audit_events WHERE trace_id=? ORDER BY sequence`, traceID)
 	if err != nil {
 		return nil, err
 	}
@@ -906,7 +937,7 @@ func (r *Repository) Audit(ctx context.Context, traceID string) ([]domain.AuditE
 	for rows.Next() {
 		var e domain.AuditEvent
 		var detail, occurred string
-		if err := rows.Scan(&e.ID, &e.TraceID, &e.ConversationID, &e.ActionID, &e.EventType, &e.Outcome, &e.Actor, &detail, &occurred, &e.Sequence); err != nil {
+		if err := rows.Scan(&e.ID, &e.TraceID, &e.RunID, &e.ConversationID, &e.ActionID, &e.EventType, &e.Outcome, &e.Actor, &e.PolicyVersion, &detail, &occurred, &e.Sequence); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(detail), &e.Detail); err != nil {
@@ -938,7 +969,31 @@ func (r *Repository) Idempotency(ctx context.Context, userID, method, path, key,
 }
 
 func (r *Repository) SaveIdempotency(ctx context.Context, userID, method, path, key, fingerprint string, status int, response []byte, now time.Time) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO idempotency_records(user_id,method,path,idem_key,fingerprint,status_code,response_json,created_at) VALUES(?,?,?,?,?,?,?,?)`, userID, method, path, key, fingerprint, status, string(response), now.Format(time.RFC3339Nano))
+	result, err := r.db.ExecContext(ctx, `UPDATE idempotency_records SET status_code=?,response_json=? WHERE user_id=? AND method=? AND path=? AND idem_key=? AND fingerprint=? AND status_code=0`, status, string(response), userID, method, path, key, fingerprint)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return domain.ErrIdempotencyConflict
+	}
+	return nil
+}
+
+func (r *Repository) ReserveIdempotency(ctx context.Context, userID, method, path, key, fingerprint string, now time.Time) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `INSERT OR IGNORE INTO idempotency_records(user_id,method,path,idem_key,fingerprint,status_code,response_json,created_at) VALUES(?,?,?,?,?,0,'',?)`, userID, method, path, key, fingerprint, now.Format(time.RFC3339Nano))
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected == 1, err
+}
+
+func (r *Repository) DeleteIdempotency(ctx context.Context, userID, method, path, key string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM idempotency_records WHERE user_id=? AND method=? AND path=? AND idem_key=? AND status_code=0`, userID, method, path, key)
 	return err
 }
 

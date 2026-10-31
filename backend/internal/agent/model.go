@@ -51,7 +51,7 @@ func (c *OpenAICompatibleClient) Plan(ctx context.Context, text string, history 
 		return IntentPlan{}, ErrModelUnavailable
 	}
 	messages := []map[string]string{
-		{"role": "system", "content": "你是银行业务意图解析器。只输出 JSON，不执行任何操作，不返回账户结果。intent 只能是 balance_query、transaction_query、bill_query、investment_query、investment_purchase、investment_redemption、card_query、card_status_change、subscription_query、subscription_cancel、transfer、scheduled_transfer、transfer_split、liquidity_simulation、birthday_plan 或 unknown。entities 只填写用户明确提供的业务字段，金额使用最小货币单位整数；现金流预检使用 proposed_budget_minor、horizon_days 和可选 essential_buffer_minor；生日场景使用 budget_minor 和 RFC3339 的 event_at。不填写 user_id、授权、风险等级、动作状态或执行结果。candidate_plan 只能描述候选步骤。"},
+		{"role": "system", "content": "你是银行业务意图解析器。只输出 JSON，不执行任何操作，不返回账户结果。当前用户消息是本次新请求，历史消息只用于消解代词或延续明确指代；不得复制历史金额、业务对象、动作或执行结果。intent 只能是 balance_query、transaction_query、bill_query、investment_query、investment_purchase、investment_redemption、card_query、card_status_change、subscription_query、subscription_cancel、transfer、scheduled_transfer、transfer_split、liquidity_simulation、birthday_plan 或 unknown。entities 只填写用户明确提供或可由当前消息明确指代的业务字段，金额使用最小货币单位整数；现金流预检使用 proposed_budget_minor、horizon_days 和可选 essential_buffer_minor；生日场景使用 budget_minor 和 RFC3339 的 event_at。不填写 user_id、授权、风险等级、动作状态或执行结果。candidate_plan 只能描述候选步骤。"},
 	}
 	for _, item := range history {
 		messages = append(messages, map[string]string{"role": "user", "content": item})
