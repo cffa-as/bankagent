@@ -463,6 +463,36 @@ func (r *Repository) ExecuteInvestmentRedemption(ctx context.Context, a domain.A
 	return domain.RedemptionResult{HoldingID: holdingID, Principal: principal, ProfitMinor: profit, TotalMinor: total, DaysHeld: daysHeld, AnnualRateBPS: annualRateBPS}, nil
 }
 
+func (r *Repository) ExecuteCardLimit(ctx context.Context, a domain.Action, cardID string, limitMinor int64, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE actions SET status='executing',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), a.ID, a.Status)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE cards SET limit_minor=? WHERE id=? AND user_id=?`, limitMinor, cardID, a.UserID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (r *Repository) ExecuteCardStatus(ctx context.Context, a domain.Action, cardID, status string, now time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

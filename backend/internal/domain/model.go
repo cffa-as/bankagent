@@ -209,6 +209,7 @@ type Repository interface {
 	ExecuteInvestmentPurchase(context.Context, Action, string, int64, time.Time) error
 	ExecuteInvestmentRedemption(context.Context, Action, string, time.Time) (RedemptionResult, error)
 	ExecuteCardStatus(context.Context, Action, string, string, time.Time) error
+	ExecuteCardLimit(context.Context, Action, string, int64, time.Time) error
 	ExecuteSubscriptionCancel(context.Context, Action, string, time.Time) error
 	CancelAction(context.Context, string, time.Time) (bool, error)
 	RecordMFAFailure(context.Context, string, time.Time) (int, bool, error)

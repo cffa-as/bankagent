@@ -24,6 +24,26 @@ func (s *Service) CreateConversation(ctx context.Context, userID string) (Conver
 	return conversation, trace, nil
 }
 
+func (s *Service) CreateCardLimitAction(ctx context.Context, userID, conversationID, cardID string, limitMinor int64) (Action, string, error) {
+	if limitMinor < 0 {
+		return Action{}, "", ErrInvalidArgument
+	}
+	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
+		return Action{}, "", err
+	}
+	cards, err := s.repo.Cards(ctx, userID)
+	if err != nil {
+		return Action{}, "", err
+	}
+	for _, card := range cards {
+		if card.ID == cardID {
+			snapshot := map[string]any{"card_id": card.ID, "previous_limit_minor": card.LimitMinor, "target_limit_minor": limitMinor, "masked_number": card.MaskedNumber}
+			return s.createActionRecord(ctx, userID, conversationID, "card_limit_change", "red", "awaiting_mfa", snapshot)
+		}
+	}
+	return Action{}, "", ErrNotFound
+}
+
 func (s *Service) CreateCardStatusAction(ctx context.Context, userID, conversationID, cardID, targetStatus string) (Action, string, error) {
 	if targetStatus != "active" && targetStatus != "frozen" {
 		return Action{}, "", ErrInvalidArgument
@@ -739,6 +759,19 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
 		return s.audit(ctx, trace, action.ConversationID, action.ID, "investment_purchased", "succeeded", "tool", map[string]any{"product_id": snapshot.ProductID, "amount_minor": snapshot.AmountMinor}, now)
+	case "card_limit_change":
+		var snapshot struct {
+			CardID           string `json:"card_id"`
+			TargetLimitMinor int64  `json:"target_limit_minor"`
+		}
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		if err := s.repo.ExecuteCardLimit(ctx, *action, snapshot.CardID, snapshot.TargetLimitMinor, now); err != nil {
+			return err
+		}
+		action.Status, action.UpdatedAt = "succeeded", now
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "card_limit_changed", "succeeded", "tool", map[string]any{"card_id": snapshot.CardID, "target_limit_minor": snapshot.TargetLimitMinor}, now)
 	case "card_status_change":
 		var snapshot struct {
 			CardID       string `json:"card_id"`

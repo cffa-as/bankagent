@@ -477,6 +477,35 @@ func TestDirectInvestmentRedemptionValidatesHoldingAndCreatesMFAAction(t *testin
 	}
 }
 
+func TestDirectCardLimitRequiresMFA(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	path := server.URL + "/v1/cards/card_demo/limit"
+	resp, body := request(t, http.DefaultClient, http.MethodPost, path, `{"conversation_id":"`+conversationID+`","limit_minor":800000}`, "direct-card-limit")
+	if resp.StatusCode != http.StatusCreated || !bytes.Contains(body, []byte(`"status":"awaiting_mfa"`)) {
+		t.Fatalf("direct card limit: status=%d body=%s", resp.StatusCode, body)
+	}
+	var created envelope
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	var action struct {
+		ID string `json:"action_id"`
+	}
+	if err := json.Unmarshal(created.Data, &action); err != nil {
+		t.Fatal(err)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+action.ID+"/mfa/verify", `{"code":"000000"}`, "direct-card-limit-mfa")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("card limit mfa: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"limit_minor":800000`)) {
+		t.Fatalf("updated card limit: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
 func TestDirectCardAndSubscriptionActionsUseConfirmation(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()

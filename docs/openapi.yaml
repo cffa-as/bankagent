@@ -944,8 +944,9 @@ components:
     CardLimitRequest:
       type: object
       additionalProperties: false
-      required: [limit_minor]
+      required: [conversation_id, limit_minor]
       properties:
+        conversation_id: { type: string, minLength: 1 }
         limit_minor: { type: integer, format: int64, minimum: 0 }
     CreateWorkflowRequest:
       type: object
