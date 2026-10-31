@@ -44,6 +44,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.message(w, r, userID, path)
 		return
 	}
+	if r.Method == http.MethodGet && path == "/v1/investments/products" {
+		h.products(w, r, userID)
+		return
+	}
 	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/accounts/") && strings.HasSuffix(path, "/balance") {
 		h.accountBalance(w, r, userID, path)
 		return
@@ -137,6 +141,20 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID, path s
 	response := envelope(result, trace)
 	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) products(w http.ResponseWriter, r *http.Request, _ string) {
+	page, pageSize, err := queryPage(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "page 和 page_size 参数无效", "tr_invalid")
+		return
+	}
+	result, trace, err := h.service.ListProducts(r.Context(), strings.TrimSpace(r.URL.Query().Get("risk_level")), page, pageSize)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(result, trace))
 }
 
 func (h *Handler) accountBalance(w http.ResponseWriter, r *http.Request, userID, path string) {

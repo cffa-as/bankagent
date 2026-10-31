@@ -56,6 +56,22 @@ type TransactionPage struct {
 	Total    int           `json:"total"`
 }
 
+type Product struct {
+	ID                 string `json:"product_id"`
+	Name               string `json:"name"`
+	RiskLevel          string `json:"risk_level"`
+	MinimumAmountMinor int64  `json:"minimum_amount_minor"`
+	TermDays           int    `json:"term_days"`
+	BenchmarkNote      string `json:"benchmark_note"`
+}
+
+type ProductPage struct {
+	Items    []Product `json:"items"`
+	Page     int       `json:"page"`
+	PageSize int       `json:"page_size"`
+	Total    int       `json:"total"`
+}
+
 type BillCategory struct {
 	Category    string `json:"category"`
 	AmountMinor int64  `json:"amount_minor"`
@@ -131,6 +147,7 @@ type Repository interface {
 	ConversationOwner(context.Context, string) (string, error)
 	Account(context.Context, string) (Account, error)
 	Transactions(context.Context, string) ([]Transaction, error)
+	Products(context.Context, string) ([]Product, error)
 	BillSummary(context.Context, string, time.Time) (BillSummary, error)
 	DailyOutgoing(context.Context, string, time.Time) (int64, error)
 	Beneficiary(context.Context, string, string) (string, error)

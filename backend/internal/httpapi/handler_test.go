@@ -152,6 +152,38 @@ func TestBillSummaryQuery(t *testing.T) {
 	}
 }
 
+func TestInvestmentProductsQuery(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+
+	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/investments/products?risk_level=balanced", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("products: status=%d body=%s", resp.StatusCode, body)
+	}
+	var result envelope
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatal(err)
+	}
+	var page struct {
+		Items []struct {
+			ID        string `json:"product_id"`
+			RiskLevel string `json:"risk_level"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(result.Data, &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != "product_balanced" || page.Items[0].RiskLevel != "balanced" {
+		t.Fatalf("unexpected products: %+v", page)
+	}
+
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/investments/products?risk_level=unknown", "", "")
+	if resp.StatusCode != http.StatusBadRequest || !bytes.Contains(body, []byte("INVALID_ARGUMENT")) {
+		t.Fatalf("invalid risk level: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
 func TestAccountBalanceAndTransactions(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()

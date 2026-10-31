@@ -15,6 +15,7 @@ go test -bench BenchmarkBillSummaryHTTP ./internal/httpapi
 GET /v1/accounts/{account_id}/balance
 GET /v1/accounts/{account_id}/transactions?from=YYYY-MM-DD&to=YYYY-MM-DD&category=food&page=1&page_size=20
 GET /v1/accounts/{account_id}/bills/summary?month=YYYY-MM
+GET /v1/investments/products?risk_level=balanced&page=1&page_size=20
 ```
 
 运行服务：

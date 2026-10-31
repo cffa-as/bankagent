@@ -75,6 +75,14 @@ CREATE TABLE IF NOT EXISTS beneficiaries (
     name TEXT NOT NULL,
     account_id TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS investment_products (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    risk_level TEXT NOT NULL,
+    minimum_amount_minor INTEGER NOT NULL,
+    term_days INTEGER NOT NULL,
+    benchmark_note TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id TEXT PRIMARY KEY,
     account_id TEXT NOT NULL,

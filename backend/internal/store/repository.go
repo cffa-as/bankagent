@@ -28,6 +28,21 @@ func (r *Repository) Seed(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return fmt.Errorf("seed beneficiary: %w", err)
 	}
+	products := []struct {
+		id, name, risk, note string
+		minimum              int64
+		termDays             int
+	}{
+		{"product_conservative", "稳健现金管理", "conservative", "历史业绩不代表未来表现", 10000, 30},
+		{"product_balanced", "均衡增值组合", "balanced", "适合中等风险承受能力用户", 100000, 180},
+		{"product_aggressive", "进取成长组合", "aggressive", "净值可能出现较大波动", 100000, 365},
+	}
+	for _, product := range products {
+		_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO investment_products(id,name,risk_level,minimum_amount_minor,term_days,benchmark_note) VALUES(?,?,?,?,?,?)`, product.id, product.name, product.risk, product.minimum, product.termDays, product.note)
+		if err != nil {
+			return fmt.Errorf("seed investment product: %w", err)
+		}
+	}
 	entries := []struct {
 		id, category, description string
 		amount                    int64
@@ -84,6 +99,30 @@ func (r *Repository) Transactions(ctx context.Context, userID string) ([]domain.
 		result = append(result, t)
 	}
 	return result, rows.Err()
+}
+
+func (r *Repository) Products(ctx context.Context, riskLevel string) ([]domain.Product, error) {
+	query := `SELECT id,name,risk_level,minimum_amount_minor,term_days,benchmark_note FROM investment_products`
+	args := []any{}
+	if riskLevel != "" {
+		query += ` WHERE risk_level=?`
+		args = append(args, riskLevel)
+	}
+	query += ` ORDER BY minimum_amount_minor, id`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var products []domain.Product
+	for rows.Next() {
+		var product domain.Product
+		if err := rows.Scan(&product.ID, &product.Name, &product.RiskLevel, &product.MinimumAmountMinor, &product.TermDays, &product.BenchmarkNote); err != nil {
+			return nil, err
+		}
+		products = append(products, product)
+	}
+	return products, rows.Err()
 }
 
 func (r *Repository) BillSummary(ctx context.Context, userID string, month time.Time) (domain.BillSummary, error) {
