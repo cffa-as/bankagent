@@ -382,6 +382,101 @@ func TestCardStatusActionAndSubscriptionCancellation(t *testing.T) {
 	}
 }
 
+func TestDirectInvestmentPurchaseIsIdempotentAndRequiresRiskAcknowledgement(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	path := server.URL + "/v1/investments/products/product_conservative/subscriptions"
+	body := `{"conversation_id":"` + conversationID + `","amount_minor":10000,"risk_acknowledged":true}`
+	resp, first := request(t, http.DefaultClient, http.MethodPost, path, body, "direct-purchase-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("direct purchase: status=%d body=%s", resp.StatusCode, first)
+	}
+	resp, replay := request(t, http.DefaultClient, http.MethodPost, path, body, "direct-purchase-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("direct purchase replay: status=%d body=%s", resp.StatusCode, replay)
+	}
+	var firstEnvelope, replayEnvelope envelope
+	if err := json.Unmarshal(first, &firstEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(replay, &replayEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	var firstAction, replayAction struct {
+		ID string `json:"action_id"`
+	}
+	if err := json.Unmarshal(firstEnvelope.Data, &firstAction); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(replayEnvelope.Data, &replayAction); err != nil {
+		t.Fatal(err)
+	}
+	if firstAction.ID == "" || firstAction.ID != replayAction.ID {
+		t.Fatalf("direct purchase replay returned a different action: first=%s replay=%s", firstAction.ID, replayAction.ID)
+	}
+	resp, conflict := request(t, http.DefaultClient, http.MethodPost, path, `{"conversation_id":"`+conversationID+`","amount_minor":12000,"risk_acknowledged":true}`, "direct-purchase-1")
+	if resp.StatusCode != http.StatusConflict || !bytes.Contains(conflict, []byte(`IDEMPOTENCY_CONFLICT`)) {
+		t.Fatalf("direct purchase conflict: status=%d body=%s", resp.StatusCode, conflict)
+	}
+	resp, missingBody := request(t, http.DefaultClient, http.MethodPost, path, `{"conversation_id":"`+conversationID+`","amount_minor":10000}`, "direct-purchase-2")
+	if resp.StatusCode != http.StatusBadRequest || !bytes.Contains(missingBody, []byte(`INVALID_ARGUMENT`)) {
+		t.Fatalf("risk acknowledgement: status=%d body=%s", resp.StatusCode, missingBody)
+	}
+}
+
+func TestDirectInvestmentRedemptionValidatesHoldingAndCreatesMFAAction(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	purchasePath := server.URL + "/v1/investments/products/product_conservative/subscriptions"
+	resp, body := request(t, http.DefaultClient, http.MethodPost, purchasePath, `{"conversation_id":"`+conversationID+`","amount_minor":10000,"risk_acknowledged":true}`, "direct-redeem-purchase")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("direct purchase: status=%d body=%s", resp.StatusCode, body)
+	}
+	var created envelope
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	var purchase struct {
+		ID string `json:"action_id"`
+	}
+	if err := json.Unmarshal(created.Data, &purchase); err != nil {
+		t.Fatal(err)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+purchase.ID+"/mfa/verify", `{"code":"000000"}`, "direct-redeem-purchase-mfa")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("purchase mfa: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/investments/holdings", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("holdings: status=%d body=%s", resp.StatusCode, body)
+	}
+	var holdingsEnvelope envelope
+	if err := json.Unmarshal(body, &holdingsEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	var holdings []struct {
+		ID     string `json:"holding_id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(holdingsEnvelope.Data, &holdings); err != nil {
+		t.Fatal(err)
+	}
+	if len(holdings) != 1 || holdings[0].Status != "active" {
+		t.Fatalf("unexpected holdings: %+v", holdings)
+	}
+	redemptionPath := server.URL + "/v1/investments/holdings/" + holdings[0].ID + "/redemptions"
+	resp, body = request(t, http.DefaultClient, http.MethodPost, redemptionPath, `{"conversation_id":"`+conversationID+`"}`, "direct-redeem-1")
+	if resp.StatusCode != http.StatusCreated || !bytes.Contains(body, []byte(`"status":"awaiting_mfa"`)) {
+		t.Fatalf("direct redemption: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/investments/holdings/holding_missing/redemptions", `{"conversation_id":"`+conversationID+`"}`, "direct-redeem-missing")
+	if resp.StatusCode != http.StatusNotFound || !bytes.Contains(body, []byte(`NOT_FOUND`)) {
+		t.Fatalf("missing holding: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
 func TestInvestmentPurchaseRequiresMFAAndCreatesHolding(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()

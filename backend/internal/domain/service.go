@@ -24,6 +24,73 @@ func (s *Service) CreateConversation(ctx context.Context, userID string) (Conver
 	return conversation, trace, nil
 }
 
+func (s *Service) CreateInvestmentPurchaseAction(ctx context.Context, userID, conversationID, productID string, amountMinor int64, riskAcknowledged bool) (Action, string, error) {
+	return s.createInvestmentAction(ctx, userID, conversationID, productID, "", amountMinor, riskAcknowledged)
+}
+
+func (s *Service) CreateInvestmentRedemptionAction(ctx context.Context, userID, conversationID, holdingID string) (Action, string, error) {
+	return s.createInvestmentAction(ctx, userID, conversationID, "", holdingID, 0, false)
+}
+
+func (s *Service) createInvestmentAction(ctx context.Context, userID, conversationID, productID, holdingID string, amountMinor int64, riskAcknowledged bool) (Action, string, error) {
+	owner, err := s.repo.ConversationOwner(ctx, conversationID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Action{}, "", ErrNotFound
+		}
+		return Action{}, "", err
+	}
+	if owner != userID {
+		return Action{}, "", ErrForbidden
+	}
+	if productID != "" {
+		if amountMinor <= 0 || !riskAcknowledged {
+			return Action{}, "", ErrInvalidArgument
+		}
+		product, err := s.repo.Product(ctx, productID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return Action{}, "", ErrNotFound
+			}
+			return Action{}, "", err
+		}
+		if amountMinor < product.MinimumAmountMinor {
+			return Action{}, "", ErrInvalidArgument
+		}
+		snapshot := map[string]any{"product_id": product.ID, "product_name": product.Name, "amount_minor": amountMinor, "currency": "CNY", "risk_acknowledged": true}
+		return s.createInvestmentActionRecord(ctx, userID, conversationID, "investment_purchase", snapshot)
+	}
+	if holdingID == "" {
+		return Action{}, "", ErrInvalidArgument
+	}
+	holding, err := s.repo.ActiveHolding(ctx, userID, holdingID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Action{}, "", ErrNotFound
+		}
+		return Action{}, "", err
+	}
+	snapshot := map[string]any{"holding_id": holding.ID, "product_id": holding.ProductID, "product_name": holding.ProductName, "principal_minor": holding.AmountMinor, "currency": "CNY"}
+	return s.createInvestmentActionRecord(ctx, userID, conversationID, "investment_redemption", snapshot)
+}
+
+func (s *Service) createInvestmentActionRecord(ctx context.Context, userID, conversationID, kind string, snapshot map[string]any) (Action, string, error) {
+	now := s.now()
+	trace := NewID("tr")
+	snapshotJSON, err := json.Marshal(snapshot)
+	if err != nil {
+		return Action{}, trace, err
+	}
+	action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: kind, RiskLevel: "red", Status: "awaiting_mfa", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+	if err := s.repo.CreateAction(ctx, action); err != nil {
+		return Action{}, trace, err
+	}
+	if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
+		return Action{}, trace, err
+	}
+	return action.Public(), trace, nil
+}
+
 func (s *Service) Message(ctx context.Context, userID, conversationID, text string) (MessageResult, string, error) {
 	if strings.TrimSpace(text) == "" || len([]rune(text)) > 500 {
 		return MessageResult{}, "", ErrInvalidArgument

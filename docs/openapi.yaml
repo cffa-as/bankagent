@@ -253,7 +253,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/InvestmentOrderRequest'
+              $ref: '#/components/schemas/InvestmentRedemptionRequest'
       responses:
         '201':
           description: 赎回动作已创建
@@ -930,10 +930,17 @@ components:
     InvestmentOrderRequest:
       type: object
       additionalProperties: false
-      required: [amount_minor]
+      required: [conversation_id, amount_minor, risk_acknowledged]
       properties:
+        conversation_id: { type: string, minLength: 1 }
         amount_minor: { type: integer, format: int64, minimum: 1 }
-        risk_acknowledged: { type: boolean, description: 红色理财动作必须明确确认风险提示 }
+        risk_acknowledged: { type: boolean, enum: [true], description: 红色理财动作必须明确确认风险提示 }
+    InvestmentRedemptionRequest:
+      type: object
+      additionalProperties: false
+      required: [conversation_id]
+      properties:
+        conversation_id: { type: string, minLength: 1 }
     CardLimitRequest:
       type: object
       additionalProperties: false

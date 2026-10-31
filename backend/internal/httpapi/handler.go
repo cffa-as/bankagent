@@ -52,6 +52,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.holdings(w, r, userID)
 		return
 	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/investments/products/") && strings.HasSuffix(path, "/subscriptions") {
+		h.createInvestmentPurchase(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/investments/holdings/") && strings.HasSuffix(path, "/redemptions") {
+		h.createInvestmentRedemption(w, r, userID, path)
+		return
+	}
 	if r.Method == http.MethodGet && path == "/v1/cards" {
 		h.cards(w, r, userID)
 		return
@@ -153,6 +161,58 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID, path s
 	response := envelope(result, trace)
 	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) createInvestmentPurchase(w http.ResponseWriter, r *http.Request, userID, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var request struct {
+		ConversationID   string `json:"conversation_id"`
+		AmountMinor      int64  `json:"amount_minor"`
+		RiskAcknowledged bool   `json:"risk_acknowledged"`
+	}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, path, fp) {
+		return
+	}
+	action, trace, err := h.service.CreateInvestmentPurchaseAction(r.Context(), userID, request.ConversationID, segment(path, 3), request.AmountMinor, request.RiskAcknowledged)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(action, trace)
+	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
+	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) createInvestmentRedemption(w http.ResponseWriter, r *http.Request, userID, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var request struct {
+		ConversationID string `json:"conversation_id"`
+	}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, path, fp) {
+		return
+	}
+	action, trace, err := h.service.CreateInvestmentRedemptionAction(r.Context(), userID, request.ConversationID, segment(path, 3))
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(action, trace)
+	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
+	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) products(w http.ResponseWriter, r *http.Request, _ string) {
