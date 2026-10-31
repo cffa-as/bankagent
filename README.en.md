@@ -2,7 +2,9 @@
   <a href="README.md">中文</a> · English
 </p>
 
-<h1 align="center">VAULTLINE</h1>
+<p align="center">
+  <img src="frontend/public/brand/vaultline-readme-banner.png" width="100%" alt="Vaultline — secure AI banking workspace" />
+</p>
 
 <h3 align="center">Banking starts with a sentence.</h3>
 
@@ -12,11 +14,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-MVP-4D72FF?style=flat-square" alt="MVP" />
-  <img src="https://img.shields.io/badge/frontend-Next.js%2016-111C2E?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
-  <img src="https://img.shields.io/badge/backend-Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
-  <img src="https://img.shields.io/badge/API-OpenAPI%203.1-6BA539?style=flat-square&logo=openapiinitiative&logoColor=white" alt="OpenAPI 3.1" />
-  <img src="https://img.shields.io/badge/security-server%20governed-111C2E?style=flat-square" alt="Server governed" />
+  <img src="https://img.shields.io/badge/status-MVP-315BFF?style=flat-square" alt="MVP" />
+  <img src="https://img.shields.io/badge/Next.js-16-07111F?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
+  <img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Go-1.27-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/SQLite-WAL-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite" />
+  <img src="https://img.shields.io/badge/security-server%20governed-0B1423?style=flat-square" alt="Server governed" />
   <img src="https://img.shields.io/badge/data-synthetic%20only-8A6726?style=flat-square" alt="Synthetic data" />
 </p>
 
@@ -33,19 +36,19 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-preview.mp4">
-    <img src="frontend/public/demo/vaultline-preview-cover.png" width="960" alt="Vaultline product preview — real UI and server-controlled transfer flow" />
+  <a href="frontend/public/demo/vaultline-product.mp4">
+    <img src="frontend/public/demo/vaultline-product-cover.png" width="100%" alt="Vaultline full product film — real UI, server authorization, and audit" />
   </a>
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-preview.mp4"><strong>▶ Watch the 22-second product preview</strong></a>
+  <a href="frontend/public/demo/vaultline-product.mp4"><strong>▶ Watch the 3-minute product film</strong></a>
   <br />
-  <sub>Real UI · Local mock ledger · Synthetic data only</sub>
+  <sub>Full product film · Real UI · Server-governed actions · Synthetic data only</sub>
 </p>
 
 > [!NOTE]
-> This is a single-scenario test film for validating the real capture, camera, caption, and sound workflow. The complete 3–5 minute film will cover all six banking scenarios and failure paths after the backend stabilizes.
+> The film is captured from the real Next.js frontend and Go API with Playwright. Remotion adds the branded intro, camera motion, chapters, captions, and outro. All accounts, balances, actions, and receipts are synthetic demo data.
 
 ## Product
 
@@ -106,13 +109,13 @@ The product is designed as a regulated banking control surface, not a generic AI
 
 ## Product film
 
-The current preview demonstrates one complete real flow:
+The full film covers the primary path from query to execution:
 
-`natural-language request → server risk review → immutable action snapshot → explicit confirmation → server-issued receipt`
+`natural language → read-only query → liquidity preflight → workflow planning → confirmation / MFA → server receipt → audit trail`
 
-The UI is recorded through Playwright from the real Next.js application and Go API. Remotion adds the branded intro, camera movement, bilingual chapters, captions, and outro. Narration uses MiniMax `speech-2.8-hd` with the “Reliable Executive” voice. The test film contains no fabricated interface, fake progress, or invented success state.
+The UI is recorded through Playwright from the real Next.js application and Go API. Remotion adds the branded intro, camera movement, chapters, captions, and outro. Narration uses MiniMax `speech-2.8-hd` with the “Reliable Executive” voice. The film contains no fabricated interface, fake progress, or invented success state.
 
-The full 3–5 minute film will cover all six capabilities, failure paths, prompt-injection rejection, and audit replay. See the [production plan](docs/demo-video-production.md) and the reusable [video pipeline](video/README.md).
+See the [production plan](docs/demo-video-production.md) and the reusable [video pipeline](video/README.md).
 
 <details>
 <summary><strong>Architecture</strong></summary>

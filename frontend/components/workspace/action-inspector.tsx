@@ -104,10 +104,11 @@ function MfaStep({
       </label>
       <input
         id={inputId}
+        name="mfa_code"
         value={code}
         onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
         inputMode="numeric"
-        autoComplete="off"
+        autoComplete="one-time-code"
         spellCheck={false}
         maxLength={6}
         placeholder="••••••"

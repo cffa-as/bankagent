@@ -1,6 +1,6 @@
 # Vaultline 产品演示视频制作方案
 
-> 状态：暂缓，不属于当前代码仓库评审范围。
+> 状态：首版已完成。成片、封面、录制脚本和 Remotion 渲染流程均已进入仓库。
 
 ## 目标
 
@@ -14,7 +14,7 @@
 
 Playwright 自动驱动生产构建的真实 Next.js 页面和 Go API，并把浏览器视口录成 WebM；脚本同时记录输入、动作生成和回执时间点，供 Remotion 对齐镜头与字幕。Remotion 负责品牌片头、章节标题、状态卡片、Action ID、Trace ID、风险颜色、镜头推进和结尾。
 
-当前仓库已经实现单场景测试链路：真实转账录制、MiniMax `speech-2.8-hd`「沉稳高管」中文旁白、Remotion 包装、1080p MP4 输出。工程位于 `video/`，产物为 `frontend/public/demo/vaultline-preview.mp4`。
+当前仓库已经实现完整产品片：Playwright 自动录制 11 个真实业务与安全场景，MiniMax `speech-2.8-hd`「沉稳高管」中文旁白，Remotion 完成品牌片头、镜头、章节、字幕和结尾。工程位于 `video/`，产物为 `frontend/public/demo/vaultline-product.mp4`。
 
 手工精修时，可以使用 Screen Studio 替换 Playwright 素材：它更适合真人操作、平滑光标和自动缩放，但录制后仍应回到 Remotion 统一品牌字幕与章节。
 
@@ -53,9 +53,9 @@ Playwright 自动驱动生产构建的真实 Next.js 页面和 Go API，并把�
 ## 当前可复用流程
 
 1. 使用生产构建启动前端，隐藏 Next.js 开发工具。
-2. 使用 `video/scripts/record-preview.mjs` 自动操作真实页面，并记录事件时间。
-3. 使用 macOS `say` 生成中文旁白，`afconvert` 转为 WAV。
-4. 使用 Remotion 读取录屏和 `timeline.json`，输出 1920×1080 H.264。
+2. 使用 `video/scripts/record-demo.mjs` 自动操作真实页面，并把裁切点写入 `video/src/timeline.json`。
+3. 使用 `video/scripts/generate-narration.py` 调用 MiniMax 生成分章节中文旁白。
+4. 使用 Remotion 读取录屏、旁白和场景时间线，输出 1920×1080 H.264/AAC。
 5. 生成带播放入口的静态封面，README 链接到 MP4。
 
 完整命令和目录说明见 [`video/README.md`](../video/README.md)。
@@ -83,12 +83,10 @@ Playwright 自动驱动生产构建的真实 Next.js 页面和 Go API，并把�
 ## 交付文件
 
 ```text
-public/demo/vaultline-demo.gif       # 首页首屏轻量循环素材
-public/demo/vaultline-preview.mp4   # 已产出的 22 秒真实操作测试片
-public/demo/vaultline-preview-cover.png # README 视频封面
-public/demo/vaultline-product.mp4   # 3–5 分钟产品主片
-public/demo/vaultline-pitch.mp4     # 60–90 秒答辩版
-public/demo/vaultline-cover.png     # README / 视频封面
+public/demo/vaultline-product.mp4        # 3:02 完整产品主片
+public/demo/vaultline-product-cover.png  # README 视频封面
+public/demo/vaultline-product-poster.png # 视频海报帧
+public/demo/vaultline-pitch.mp4          # 后续 60–90 秒答辩剪辑
 ```
 
 ## 官方参考

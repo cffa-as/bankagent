@@ -9,16 +9,31 @@ const PRINCIPLES = [
 
 export function Principles() {
   return (
-    <section id="principles" aria-labelledby="principles-title" className="scroll-mt-16 border-t border-border bg-surface py-20 md:py-28">
-      <div className="mx-auto flex max-w-[1200px] flex-col gap-10 px-5 md:px-8">
-        <h2 id="principles-title" className="max-w-2xl text-balance text-3xl font-semibold tracking-tight md:text-4xl">
-          安全原则
-        </h2>
-        <ul className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
-          {PRINCIPLES.map((p) => (
-            <li key={p.title} className="flex flex-col gap-2 bg-card p-6">
-              <h3 className="font-medium">{p.title}</h3>
-              <p className="text-pretty text-sm leading-relaxed text-muted-foreground">{p.body}</p>
+    <section id="principles" aria-labelledby="principles-title" className="scroll-mt-16 bg-navy py-20 text-rail-foreground md:py-28">
+      <div className="mx-auto grid max-w-[1200px] gap-12 px-5 md:px-8 lg:grid-cols-[0.72fr_1.28fr] lg:gap-20">
+        <div className="flex flex-col gap-5">
+          <h2 id="principles-title" className="font-display text-4xl font-semibold leading-tight tracking-[-0.04em] md:text-5xl">
+            把可控性
+            <br />
+            做进每一步。
+          </h2>
+          <p className="max-w-sm text-pretty text-[15px] leading-7 text-rail-muted">
+            助理可以理解、整理和提出建议，但不能越过银行的风险、授权与执行边界。
+          </p>
+          <p className="mt-4 border-l-2 border-cobalt pl-4 font-mono text-xs leading-6 text-rail-muted">
+            MODEL PROPOSES
+            <br />
+            BANK SERVER DECIDES
+          </p>
+        </div>
+        <ul className="border-t border-white/10">
+          {PRINCIPLES.map((p, index) => (
+            <li key={p.title} className="grid gap-2 border-b border-white/10 py-5 sm:grid-cols-[44px_180px_1fr] sm:items-baseline sm:gap-5">
+              <span className={`font-mono text-[12px] ${index < 2 ? 'text-teal' : index < 4 ? 'text-amber' : 'text-rail-muted'}`}>
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <h3 className="text-[15px] font-medium">{p.title}</h3>
+              <p className="text-pretty text-[13px] leading-6 text-rail-muted">{p.body}</p>
             </li>
           ))}
         </ul>

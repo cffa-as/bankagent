@@ -27,6 +27,6 @@ config.local.json
 /frontend/public/demo/*.mp4
 /frontend/public/demo/vaultline-preview-*
 /frontend/public/demo/vaultline-product-*
-!/frontend/public/demo/vaultline-preview.mp4
-!/frontend/public/demo/vaultline-preview-cover.png
-!/frontend/public/demo/vaultline-preview-poster.png
+!/frontend/public/demo/vaultline-product.mp4
+!/frontend/public/demo/vaultline-product-cover.png
+!/frontend/public/demo/vaultline-product-poster.png

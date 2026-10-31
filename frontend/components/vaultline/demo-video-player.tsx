@@ -32,7 +32,7 @@ export function DemoVideoPlayer({ src, poster, showSetupHint }: DemoVideoPlayerP
         </Link>
         {showSetupHint && (
           <p className="font-mono text-xs text-muted-foreground">
-            {failed ? '视频文件无法播放 · ' : ''}放置 public/demo/vaultline-preview.mp4 后自动启用
+            {failed ? '视频文件无法播放 · ' : ''}放置 public/demo/vaultline-product.mp4 后自动启用
           </p>
         )}
       </div>
@@ -52,6 +52,7 @@ export function DemoVideoPlayer({ src, poster, showSetupHint }: DemoVideoPlayerP
         ref={videoRef}
         src={src}
         poster={poster ?? undefined}
+        aria-label="Vaultline 完整产品演示"
         controls={started}
         playsInline
         preload="metadata"

@@ -33,8 +33,10 @@ export function AuditView({ session }: { session: WorkspaceSession }) {
         </label>
         <input
           id={inputId}
+          name="trace_id"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          autoComplete="off"
           placeholder="输入 Trace ID"
           spellCheck={false}
           className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 font-mono text-[13.5px] outline-none focus:border-cobalt"

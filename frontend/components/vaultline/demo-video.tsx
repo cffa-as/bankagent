@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { DemoVideoPlayer } from './demo-video-player'
 
-const VIDEO_PATH = '/demo/vaultline-preview.mp4'
-const POSTER_PATH = '/demo/vaultline-preview-poster.png'
+const VIDEO_PATH = '/demo/vaultline-product.mp4'
+const POSTER_PATH = '/demo/vaultline-product-poster.png'
 
 function publicFileExists(publicPath: string) {
   return existsSync(path.join(process.cwd(), 'public', publicPath))

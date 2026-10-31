@@ -12,7 +12,7 @@ export function LiquiditySection() {
       <div className="mx-auto flex max-w-[1200px] flex-col gap-12 px-5 md:flex-row md:items-center md:gap-16 md:px-8">
         <div className="flex flex-col gap-8 md:w-5/12">
           <div className="flex flex-col gap-4">
-            <h2 id="liquidity-title" className="text-balance text-3xl font-semibold tracking-tight md:text-4xl">
+            <h2 id="liquidity-title" className="font-display text-balance text-4xl font-semibold leading-tight tracking-[-0.04em] md:text-5xl">
               锁定预算之前，先做流动性预检
             </h2>
             <p className="text-pretty leading-relaxed text-muted-foreground">
@@ -28,7 +28,7 @@ export function LiquiditySection() {
             ))}
           </dl>
         </div>
-        <figure className="relative aspect-[16/7] overflow-hidden rounded-xl border border-border bg-card shadow-[0_24px_60px_-30px_rgb(15_23_42/0.35)] md:w-7/12">
+        <figure className="relative aspect-[16/7] overflow-hidden rounded-sm border border-border bg-card shadow-[0_24px_60px_-30px_rgb(15_23_42/0.28)] md:w-7/12">
           <Image
             src="/product/workspace-liquidity.png"
             alt="工作台中打开的流动性预检抽屉，用于输入计划支出并请求服务端推演"

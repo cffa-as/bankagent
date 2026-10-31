@@ -58,8 +58,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         </label>
         <textarea
           id="ws-composer"
+          name="message"
           ref={textareaRef}
           value={value}
+          autoComplete="off"
+          enterKeyHint="send"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
           rows={1}

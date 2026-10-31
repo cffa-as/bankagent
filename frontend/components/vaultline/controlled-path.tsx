@@ -10,15 +10,15 @@ export function ControlledPath() {
     <section id="path" aria-labelledby="path-title" className="scroll-mt-16 bg-surface py-20 md:py-28">
       <div className="mx-auto flex max-w-[1200px] flex-col gap-10 px-5 md:px-8">
         <div className="flex max-w-2xl flex-col gap-4">
-          <h2 id="path-title" className="text-balance text-3xl font-semibold tracking-tight md:text-4xl">
+          <h2 id="path-title" className="font-display text-balance text-4xl font-semibold leading-tight tracking-[-0.04em] md:text-5xl">
             每一笔资金动作，都走同一条受控路径
           </h2>
-          <p className="text-pretty leading-relaxed text-muted-foreground">
+          <p className="max-w-xl text-pretty leading-7 text-muted-foreground">
             助理只负责第一步。之后的每一个关口都由银行服务端裁决，助理无法跳过，也无法代为完成。
           </p>
         </div>
 
-        <div className="overflow-hidden rounded-xl bg-rail text-rail-foreground">
+        <div className="overflow-hidden rounded-sm border border-rail-line bg-rail text-rail-foreground shadow-[0_24px_70px_-45px_rgb(11_20_35/0.7)]">
           <div className="flex items-center justify-between border-b border-rail-line px-5 py-4 md:px-8">
             <p className="text-sm font-medium">转账给张三 · 300.00 元 · 备注 项目款</p>
             <p className="hidden text-sm text-rail-muted sm:block">示意流程</p>
@@ -30,7 +30,7 @@ export function ControlledPath() {
                 className="flex flex-col gap-3 border-rail-line px-5 py-6 not-last:border-b md:px-8 md:py-8 md:not-last:border-r md:not-last:border-b-0"
               >
                 <div className="flex items-center gap-3">
-                  <span className="flex size-7 items-center justify-center rounded-full border border-rail-accent/60 font-mono text-xs text-rail-accent">
+                  <span className="flex size-7 items-center justify-center rounded-full border border-current font-mono text-xs text-rail-accent">
                     {i + 1}
                   </span>
                   <span className="text-lg font-semibold">{stage.label}</span>

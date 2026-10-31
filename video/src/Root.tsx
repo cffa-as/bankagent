@@ -1,13 +1,14 @@
 import {Composition} from 'remotion'
-import {ProductFilm} from './ProductFilm'
+import {PRODUCT_FILM_SECONDS, VaultlineProduct} from './VaultlineProduct'
+import {FPS, HEIGHT, WIDTH} from './theme'
 
 export const RemotionRoot = () => (
   <Composition
-    id="VaultlinePreview"
-    component={ProductFilm}
-    durationInFrames={660}
-    fps={30}
-    width={1920}
-    height={1080}
+    id="VaultlineProduct"
+    component={VaultlineProduct}
+    durationInFrames={Math.round(PRODUCT_FILM_SECONDS * FPS)}
+    fps={FPS}
+    width={WIDTH}
+    height={HEIGHT}
   />
 )

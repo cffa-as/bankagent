@@ -6,6 +6,7 @@
 
 @theme inline {
   --font-sans: var(--font-instrument), var(--font-noto-sans), 'PingFang SC', 'Hiragino Sans GB', system-ui, sans-serif;
+  --font-display: var(--font-noto-serif), var(--font-noto-sans), 'Songti SC', 'STSong', serif;
   --font-mono: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, var(--font-noto-sans), 'PingFang SC', monospace;
   --font-wordmark: var(--font-instrument), 'Helvetica Neue', Arial, sans-serif;
 
@@ -68,8 +69,8 @@
 :root {
   color-scheme: light;
   --navy: #0b1423;
-  --platinum: #f7f9fc;
-  --surface: #f1f4f8;
+  --platinum: #f5f7fb;
+  --surface: #edf1f7;
   --ice: #eaf0ff;
   --cobalt: #315bff;
   --cobalt-ink: #2343d6;
@@ -124,6 +125,13 @@
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: 'tnum' 1;
+  }
+  a,
+  button,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
   }
   :focus-visible {
     outline: 2px solid var(--cobalt);

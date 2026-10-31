@@ -28,6 +28,9 @@
 - `.agents/skills/bankagent-design/SKILL.md`：编写或评审上述设计文档时必须遵循。
 - `.agents/skills/bankagent-test-engineering/SKILL.md`：编写或评审测试时必须遵循。
 - `.agents/skills/bankagent-go-engineering/SKILL.md`：编写或评审 Go 后端时必须遵循。
+- `.agents/skills/bankagent-frontend/SKILL.md`：设计或评审前端页面与交互时必须遵循。
+- `.agents/skills/frontend-design/SKILL.md`：用于避免模板化视觉、建立字体/色彩/版式方向。
+- `.agents/skills/web-design-guidelines/SKILL.md`：用于复核可访问性、键盘操作和 Web 界面规范。
 
 新增需求先写用户故事和验收标准；涉及多个模块、公开 API、数据模型、权限或状态流转时，先补概要设计和影响评估。
 

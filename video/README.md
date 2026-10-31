@@ -1,92 +1,105 @@
-# Vaultline video pipeline
+# Vaultline product film
 
-This directory builds the Vaultline product preview from the real frontend and Go API. It is separate from the application dependencies so recording and rendering tools do not enter the production bundle.
+This directory produces the full Vaultline product film from the real Next.js frontend and Go API. Recording and rendering tools stay outside the frontend bundle.
 
 ## Current output
 
-- `frontend/public/demo/vaultline-preview.mp4` — 22-second, 1920×1080 H.264 product test film
-- `frontend/public/demo/vaultline-preview-cover.png` — README video cover
-- `frontend/public/demo/vaultline-preview-poster.png` — clean frame for other materials
+- `frontend/public/demo/vaultline-product.mp4` — 3:02, 1920×1080, H.264/AAC product film
+- `frontend/public/demo/vaultline-product-cover.png` — README cover
+- `frontend/public/demo/vaultline-product-poster.png` — clean still for other materials
 
-The current test film covers one real transfer flow:
+The film covers:
 
-`intent → server risk review → action snapshot → explicit confirmation → server receipt`
+1. unified workspace;
+2. transaction and bill queries;
+3. investment products;
+4. card controls;
+5. subscription reminders;
+6. 30-day liquidity preflight;
+7. multi-step workflow orchestration;
+8. yellow confirmation;
+9. red Action-bound MFA;
+10. audit replay;
+11. prompt-injection resistance.
 
 ## Pipeline
 
-1. Playwright drives the production Next.js UI and records the browser viewport as WebM.
-2. The recording script writes event timestamps to `public/timeline.json`.
-3. MiniMax `speech-2.8-hd` produces the Chinese narration with the selected “Reliable Executive” voice.
-4. Remotion adds the brand intro, camera movement, bilingual chapter titles, progress treatment, and outro.
-5. Remotion renders the final MP4 and still frames.
-
-The recording and audio files are intentionally ignored. They can be regenerated and should be reviewed before publishing.
+1. Playwright drives the production frontend and records the real browser viewport as WebM.
+2. `scripts/record-demo.mjs` stores trim points in `src/timeline.json`.
+3. MiniMax `speech-2.8-hd` generates the professional Mandarin narration.
+4. Remotion adds the brand intro, camera movement, chapter treatment, captions, evidence tags and outro.
+5. Remotion renders the MP4 and poster; `scripts/make-cover.py` builds the README cover.
 
 ## Requirements
 
+- Apple Silicon with arm64 Node.js 24.13
+- pnpm 11
 - Google Chrome
-- Node.js 20+
-- Playwright's FFmpeg helper: `npx playwright install ffmpeg`
-- A local MiniMax TTS config containing `tts.api_key`
-- Go backend on `http://localhost:8080`
-- Production frontend on `http://localhost:3001`
+- Go backend on `http://localhost:8090`
+- MiniMax TTS config containing `tts.api_key`
 
-Use the same Node architecture for `npm install` and rendering. On Apple Silicon, install and render with an arm64 Node binary.
+## Record from a fresh ledger
 
-## Build
+The yellow/red risk scenes depend on the daily transfer total, so always start from a new database.
 
-Start a fresh mock backend:
+Start the backend:
 
 ```bash
 cd backend
-BANKAGENT_DATABASE=/tmp/vaultline-video.db go run ./cmd/bankagent
+BANKAGENT_ADDR=:8090 \
+BANKAGENT_DATABASE=/tmp/vaultline-film.db \
+go run ./cmd/bankagent
 ```
 
-Build and start the frontend without the development toolbar:
+The frontend proxy target is embedded during `next build`. Build and start the production frontend:
 
 ```bash
 cd frontend
-npm run build
-npm run start -- -p 3001
+BANKAGENT_API_PROXY_TARGET=http://localhost:8090 pnpm build
+pnpm exec next start -p 3001
 ```
 
-Install the video tools and record the real interaction:
+Install video tools and record:
 
 ```bash
 cd video
-npm install
-npx playwright install ffmpeg
-npm run record
+pnpm install
+pnpm exec playwright install ffmpeg
+VAULTLINE_DEMO_URL=http://localhost:3001/workspace pnpm record
 ```
 
-Generate narration with the recommended executive voice, render the cover, and render the film:
+## Narration and render
+
+Generate all narration segments:
 
 ```bash
 export MINIMAX_CONFIG=/path/to/config.local.json
-python3 scripts/minimax-tts.py \
-  --voice "Chinese (Mandarin)_Reliable_Executive" \
-  --text "Vaultline，让银行业务，一句话开始。用户说出转账需求，模型准备候选操作，服务端判定风险并锁定动作快照。确认之后，一次性执行门才允许执行。成功状态和业务回执，只来自银行服务端。" \
-  --output public/audio/preview-minimax-executive.mp3
-npm run poster
-python3 scripts/make-cover.py
-npm run render
+python3 scripts/generate-narration.py
 ```
+
+Render the film and stills:
+
+```bash
+pnpm render
+pnpm poster
+```
+
+`pnpm poster` generates both the player poster and README cover from the current real workspace screenshot.
 
 Open Remotion Studio while editing:
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
-## Scene recording rules
+## Recording rules
 
-- Use synthetic accounts and a fresh mock ledger.
-- Record one business action per clip while the film is still being validated.
-- Wait long enough after a server response for viewers to read the receipt.
-- Never replace a failed server response with a successful UI state.
-- Keep passwords, tokens, complete account numbers, and real personal data out of frame.
-- Use a real mouse path, real server state, and real response timestamps.
+- Use synthetic accounts and a fresh local ledger.
+- Keep every successful state tied to a real Go API response.
+- Never put password, OTP, token, complete account number, or real personal data in frame.
+- Preserve enough pause after each result for the narration and viewer to read it.
+- Re-record after any material workspace UI change; do not reuse clips from an older design.
 
-## Production limits
+## Repository policy
 
-The test film has MiniMax TTS narration but only one scenario, no licensed music, and no final sound mix. The 3–5 minute release should add the remaining business scenarios, negative security paths, human-reviewed narration, loudness normalization, captions, and the selected logo direction.
+Raw recordings, narration, and Remotion caches are intentionally ignored. The final MP4, cover and poster are committed so GitHub README links and clones remain usable.

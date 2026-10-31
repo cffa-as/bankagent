@@ -1,6 +1,6 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Instrument_Sans, JetBrains_Mono, Noto_Sans_SC } from 'next/font/google'
+import { Instrument_Sans, JetBrains_Mono, Noto_Sans_SC, Noto_Serif_SC } from 'next/font/google'
 import './globals.css'
 
 const jetbrainsMono = JetBrains_Mono({
@@ -24,6 +24,13 @@ const notoSans = Noto_Sans_SC({
   preload: false,
 })
 
+const notoSerif = Noto_Serif_SC({
+  weight: ['500', '600', '700'],
+  variable: '--font-noto-serif',
+  display: 'swap',
+  preload: false,
+})
+
 export const metadata: Metadata = {
   title: 'Vaultline · 银行智能工作台',
   description:
@@ -42,10 +49,13 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="zh-CN" className={`${notoSans.variable} ${instrumentSans.variable} ${jetbrainsMono.variable} bg-background`}>
+    <html
+      lang="zh-CN"
+      className={`${notoSans.variable} ${notoSerif.variable} ${instrumentSans.variable} ${jetbrainsMono.variable} bg-background`}
+    >
       <body className="antialiased">
         {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        {process.env.VERCEL === '1' && <Analytics />}
       </body>
     </html>
   )

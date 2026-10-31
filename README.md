@@ -2,7 +2,9 @@
   <a href="README.md">中文</a> · <a href="README.en.md">English</a>
 </p>
 
-<h1 align="center">VAULTLINE</h1>
+<p align="center">
+  <img src="frontend/public/brand/vaultline-readme-banner.png" width="100%" alt="Vaultline — 安全 AI 银行工作台" />
+</p>
 
 <h3 align="center">让银行业务，一句话开始。</h3>
 
@@ -12,11 +14,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-MVP-4D72FF?style=flat-square" alt="MVP" />
-  <img src="https://img.shields.io/badge/frontend-Next.js%2016-111C2E?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
-  <img src="https://img.shields.io/badge/backend-Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
-  <img src="https://img.shields.io/badge/API-OpenAPI%203.1-6BA539?style=flat-square&logo=openapiinitiative&logoColor=white" alt="OpenAPI 3.1" />
-  <img src="https://img.shields.io/badge/security-server%20governed-111C2E?style=flat-square" alt="Server governed" />
+  <img src="https://img.shields.io/badge/status-MVP-315BFF?style=flat-square" alt="MVP" />
+  <img src="https://img.shields.io/badge/Next.js-16-07111F?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
+  <img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Go-1.27-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/SQLite-WAL-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite" />
+  <img src="https://img.shields.io/badge/security-server%20governed-0B1423?style=flat-square" alt="Server governed" />
   <img src="https://img.shields.io/badge/data-synthetic%20only-8A6726?style=flat-square" alt="Synthetic data" />
 </p>
 
@@ -33,19 +36,19 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-preview.mp4">
-    <img src="frontend/public/demo/vaultline-preview-cover.png" width="960" alt="Vaultline product preview — real UI and server-controlled transfer flow" />
+  <a href="frontend/public/demo/vaultline-product.mp4">
+    <img src="frontend/public/demo/vaultline-product-cover.png" width="100%" alt="Vaultline 完整产品演示 — 真实前端、服务端授权与审计" />
   </a>
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-preview.mp4"><strong>▶ 观看 22 秒产品测试片</strong></a>
+  <a href="frontend/public/demo/vaultline-product.mp4"><strong>▶ 观看 3 分钟完整产品演示</strong></a>
   <br />
-  <sub>Watch the 22-second preview · Real UI · Local mock ledger · Synthetic data only</sub>
+  <sub>Full product film · Real UI · Server-governed actions · Synthetic data only</sub>
 </p>
 
 > [!NOTE]
-> 当前视频是真实 UI 的单场景测试片，用于验证录屏、镜头、字幕和声音设计流程。完整 3–5 分钟产品片将在后端功能稳定后覆盖六类业务和异常路径。
+> 视频由 Playwright 驱动真实前端和 Go API 录制，Remotion 完成品牌片头、镜头推进、章节、字幕和结尾。所有账户、金额、动作与回执均为合成演示数据。
 
 <a id="product"></a>
 
@@ -112,15 +115,15 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 
 ## 产品视频 / Product film
 
-当前测试片展示了一条完整的真实链路：
+完整演示覆盖从查询到执行的主要链路：
 
-`自然语言输入 → 服务端风险判定 → 不可变动作快照 → 显式确认 → 服务端业务回执`
+`自然语言输入 → 只读查询 → 流动性预检 → 工作流编排 → 显式确认 / MFA → 服务端回执 → 审计追踪`
 
 画面由 Playwright 驱动真实前端录制，Remotion 负责品牌片头、镜头推进、双语章节、字幕和结尾；旁白由 MiniMax `speech-2.8-hd` 的「沉稳高管」音色生成。没有使用假界面、假进度或伪造成功状态。
 
-The preview is captured from the real Next.js UI and Go API. Remotion adds the branded intro, camera motion, bilingual chapters, captions, and outro. All funds, balances, and receipts are synthetic.
+The product film is captured from the real Next.js UI and Go API. Remotion adds the branded intro, camera motion, chapters, captions, and outro. All funds, balances, and receipts are synthetic.
 
-完整的 3–5 分钟产品片会覆盖六类业务、异常路径、安全拒绝和审计回放。制作流程见 [产品演示视频方案](docs/demo-video-production.md)，可复用工程见 [`video/`](video/README.md)。
+制作流程见 [产品演示视频方案](docs/demo-video-production.md)，可复用工程见 [`video/`](video/README.md)。
 
 <details>
 <summary><strong>Architecture / 架构</strong></summary>

@@ -56,8 +56,10 @@ function RequestForm({ session }: { session: WorkspaceSession }) {
       <div className="flex gap-2">
         <input
           id={inputId}
+          name="budget_amount"
           value={budget}
           onChange={(e) => setBudget(e.target.value.replace(/[^\d.]/g, ''))}
+          autoComplete="off"
           inputMode="decimal"
           placeholder="例如 5000"
           className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 font-mono text-[15px] outline-none focus:border-cobalt"

@@ -1,6 +1,6 @@
 # Vaultline Demo Animation Plan
 
-> 状态：暂缓，不属于当前代码仓库评审范围。
+> 状态：首版已按本方案落地。完整 3:02 成片位于 `frontend/public/demo/vaultline-product.mp4`。
 
 ## 目标
 
@@ -36,7 +36,7 @@ remotion/
     frontend/app/icon.svg
 ```
 
-第一版只做一个 16:9、60 秒、30 fps 的 MP4；需要在 GitHub README 首屏加载时，再从同一时间线导出 6–10 秒循环 GIF。
+首版成片为 16:9、3 分 02 秒、30 fps 的 MP4；README 使用封面链接到完整视频。后续答辩版可从同一时间线裁出 60–90 秒短片。
 
 ### 3. 真实交互录制：Screen Studio 或 OBS
 

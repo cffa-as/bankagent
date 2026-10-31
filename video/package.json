@@ -3,12 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11 <12"
+  },
   "scripts": {
-    "record": "node scripts/record-preview.mjs",
-    "audio": "node scripts/generate-audio.mjs",
-    "dev": "remotion studio src/index.ts",
-    "render": "remotion render src/index.ts VaultlinePreview ../frontend/public/demo/vaultline-preview.mp4 --codec=h264 --crf=20 --pixel-format=yuv420p",
-    "poster": "remotion still src/index.ts VaultlinePreview ../frontend/public/demo/vaultline-preview-poster.png --frame=240"
+    "record": "node scripts/check-runtime.mjs && node scripts/record-demo.mjs",
+    "dev": "node scripts/check-runtime.mjs && remotion studio src/index.ts",
+    "render": "node scripts/check-runtime.mjs && remotion render src/index.ts VaultlineProduct ../frontend/public/demo/vaultline-product.mp4 --codec=h264 --crf=20 --pixel-format=yuv420p",
+    "poster": "node scripts/check-runtime.mjs && python3 scripts/make-cover.py",
+    "typecheck": "node scripts/check-runtime.mjs && tsc --noEmit"
   },
   "dependencies": {
     "@remotion/cli": "4.0.539",
