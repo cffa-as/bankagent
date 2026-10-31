@@ -20,11 +20,11 @@ func (r *Repository) Seed(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return fmt.Errorf("seed account: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO beneficiaries(id,user_id,name,account_id) VALUES(?,?,?,?)`, "beneficiary_zhangsan", domain.DemoUserID, "张三", "acct_zhangsan")
+	_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO beneficiaries(id,user_id,name,phone,account_id) VALUES(?,?,?,?,?)`, "beneficiary_zhangsan", domain.DemoUserID, "张三", "13800000001", "acct_zhangsan")
 	if err != nil {
 		return fmt.Errorf("seed beneficiary: %w", err)
 	}
-	_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO beneficiaries(id,user_id,name,account_id) VALUES(?,?,?,?)`, "beneficiary_lisi", domain.DemoUserID, "李四", "acct_lisi")
+	_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO beneficiaries(id,user_id,name,phone,account_id) VALUES(?,?,?,?,?)`, "beneficiary_lisi", domain.DemoUserID, "李四", "13800000002", "acct_lisi")
 	if err != nil {
 		return fmt.Errorf("seed beneficiary: %w", err)
 	}
@@ -92,7 +92,8 @@ func (r *Repository) ConversationOwner(ctx context.Context, id string) (string, 
 
 func (r *Repository) Account(ctx context.Context, userID string) (domain.Account, error) {
 	var a domain.Account
-	err := r.db.QueryRowContext(ctx, `SELECT id,user_id,currency,balance_minor FROM accounts WHERE user_id=?`, userID).Scan(&a.ID, &a.UserID, &a.Currency, &a.BalanceMinor)
+	err := r.db.QueryRowContext(ctx, `SELECT id,user_id,currency,balance_minor,reserved_minor FROM accounts WHERE user_id=?`, userID).Scan(&a.ID, &a.UserID, &a.Currency, &a.BalanceMinor, &a.ReservedMinor)
+	a.AvailableMinor = a.BalanceMinor - a.ReservedMinor
 	return a, err
 }
 
@@ -241,13 +242,21 @@ func (r *Repository) BillSummary(ctx context.Context, userID string, month time.
 	}
 	month = month.In(loc)
 	start := time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, loc)
-	end := start.AddDate(0, 1, 0)
+	return r.BillSummaryRange(ctx, userID, start, start.AddDate(0, 1, 0), start.Format("2006-01"))
+}
+
+func (r *Repository) BillSummaryRange(ctx context.Context, userID string, start, end time.Time, period string) (domain.BillSummary, error) {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return domain.BillSummary{}, err
+	}
+	start, end = start.In(loc), end.In(loc)
 	rows, err := r.db.QueryContext(ctx, `SELECT l.category, COALESCE(SUM(l.amount_minor),0), COUNT(*) FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.created_at>=? AND l.created_at<? GROUP BY l.category ORDER BY SUM(l.amount_minor) DESC`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
 	if err != nil {
 		return domain.BillSummary{}, err
 	}
 	defer rows.Close()
-	summary := domain.BillSummary{Month: start.Format("2006-01"), Currency: "CNY"}
+	summary := domain.BillSummary{Month: period, Period: period, Currency: "CNY"}
 	for rows.Next() {
 		var item domain.BillCategory
 		if err := rows.Scan(&item.Category, &item.AmountMinor, &item.Count); err != nil {
@@ -265,7 +274,20 @@ func (r *Repository) BillSummary(ctx context.Context, userID string, month time.
 			summary.Categories[i].ShareBPS = summary.Categories[i].AmountMinor * 10000 / summary.TotalMinor
 		}
 	}
-	return summary, nil
+	anomalyRows, err := r.db.QueryContext(ctx, `SELECT l.id,l.amount_minor,l.category,l.description FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.amount_minor>=? AND l.created_at>=? AND l.created_at<? ORDER BY l.amount_minor DESC`, userID, int64(10000), start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
+	if err != nil {
+		return domain.BillSummary{}, err
+	}
+	defer anomalyRows.Close()
+	for anomalyRows.Next() {
+		var item domain.BillAnomaly
+		if err := anomalyRows.Scan(&item.TransactionID, &item.AmountMinor, &item.Category, &item.Description); err != nil {
+			return domain.BillSummary{}, err
+		}
+		item.Reason = "金额超过演示异常阈值"
+		summary.Anomalies = append(summary.Anomalies, item)
+	}
+	return summary, anomalyRows.Err()
 }
 
 func (r *Repository) DailyOutgoing(ctx context.Context, userID string, day time.Time) (int64, error) {
@@ -285,6 +307,12 @@ func (r *Repository) Beneficiary(ctx context.Context, userID, name string) (stri
 	var accountID string
 	err := r.db.QueryRowContext(ctx, `SELECT account_id FROM beneficiaries WHERE user_id=? AND name=?`, userID, name).Scan(&accountID)
 	return accountID, err
+}
+
+func (r *Repository) BeneficiaryByPhone(ctx context.Context, userID, phone string) (string, string, error) {
+	var name, accountID string
+	err := r.db.QueryRowContext(ctx, `SELECT name,account_id FROM beneficiaries WHERE user_id=? AND phone=?`, userID, phone).Scan(&name, &accountID)
+	return name, accountID, err
 }
 
 func (r *Repository) CreateAction(ctx context.Context, a domain.Action) error {
@@ -333,11 +361,11 @@ func (r *Repository) ExecuteTransfer(ctx context.Context, a domain.Action, amoun
 		return domain.ErrActionStateConflict
 	}
 	var accountID string
-	var balance int64
-	if err := tx.QueryRowContext(ctx, `SELECT id,balance_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &balance); err != nil {
+	var balance, reserved int64
+	if err := tx.QueryRowContext(ctx, `SELECT id,balance_minor,reserved_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &balance, &reserved); err != nil {
 		return err
 	}
-	if balance < amount {
+	if balance-reserved < amount {
 		if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='failed',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
 			return err
 		}
@@ -374,11 +402,11 @@ func (r *Repository) ExecuteInvestmentPurchase(ctx context.Context, a domain.Act
 		return domain.ErrActionStateConflict
 	}
 	var accountID, currency string
-	var balance int64
-	if err := tx.QueryRowContext(ctx, `SELECT id,currency,balance_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &currency, &balance); err != nil {
+	var balance, reserved int64
+	if err := tx.QueryRowContext(ctx, `SELECT id,currency,balance_minor,reserved_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &currency, &balance, &reserved); err != nil {
 		return err
 	}
-	if currency != "CNY" || balance < amount {
+	if currency != "CNY" || balance-reserved < amount {
 		_, _ = tx.ExecContext(ctx, `UPDATE actions SET status='failed',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID)
 		if err := tx.Commit(); err != nil {
 			return err
@@ -582,8 +610,63 @@ func (r *Repository) ExecuteSubscriptionCancel(ctx context.Context, a domain.Act
 	return tx.Commit()
 }
 
+func (r *Repository) ExecuteTransferSplit(ctx context.Context, a domain.Action, split domain.TransferSplitSnapshot, now time.Time) (domain.TransferSplit, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.TransferSplit{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE actions SET status='executing',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), a.ID, a.Status)
+	if err != nil {
+		return domain.TransferSplit{}, err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return domain.TransferSplit{}, err
+	} else if affected != 1 {
+		return domain.TransferSplit{}, domain.ErrActionStateConflict
+	}
+	var collectible int64
+	for _, participant := range split.Participants {
+		if !participant.IsPayer {
+			collectible += participant.AmountMinor
+		}
+	}
+	participantsJSON, err := json.Marshal(split.Participants)
+	if err != nil {
+		return domain.TransferSplit{}, err
+	}
+	transferSplit := domain.TransferSplit{
+		ID: a.ID, ConversationID: a.ConversationID, TotalAmountMinor: split.TotalAmountMinor,
+		CollectibleMinor: collectible, Currency: split.Currency, Participants: split.Participants,
+		Status: "requested", CreatedAt: now,
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO transfer_splits(id,conversation_id,user_id,total_amount_minor,collectible_minor,currency,participants_json,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, transferSplit.ID, transferSplit.ConversationID, a.UserID, transferSplit.TotalAmountMinor, transferSplit.CollectibleMinor, transferSplit.Currency, string(participantsJSON), transferSplit.Status, now.Format(time.RFC3339Nano)); err != nil {
+		return domain.TransferSplit{}, err
+	}
+	receipt, err := json.Marshal(transferSplit)
+	if err != nil {
+		return domain.TransferSplit{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',result_json=?,updated_at=? WHERE id=?`, string(receipt), now.Format(time.RFC3339Nano), a.ID); err != nil {
+		return domain.TransferSplit{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.TransferSplit{}, err
+	}
+	return transferSplit, nil
+}
+
 func (r *Repository) CancelAction(ctx context.Context, id string, now time.Time) (bool, error) {
-	result, err := r.db.ExecContext(ctx, `UPDATE actions SET status='cancelled',updated_at=? WHERE id=? AND status IN ('awaiting_confirmation','awaiting_mfa')`, now.Format(time.RFC3339Nano), id)
+	result, err := r.db.ExecContext(ctx, `UPDATE actions SET status='cancelled',updated_at=? WHERE id=? AND status IN ('awaiting_confirmation','awaiting_mfa','scheduled')`, now.Format(time.RFC3339Nano), id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected == 1, err
+}
+
+func (r *Repository) ScheduleAction(ctx context.Context, id, currentStatus string, now time.Time) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `UPDATE actions SET status='scheduled',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), id, currentStatus)
 	if err != nil {
 		return false, err
 	}
@@ -690,7 +773,7 @@ func (r *Repository) CreateWorkflow(ctx context.Context, workflow domain.Workflo
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_nodes(workflow_id,node_id,kind,depends_on_json,status,action_id,amount_minor,merchant) VALUES(?,?,?,?,?,?,?,?)`, workflow.ID, node.ID, node.Kind, string(depends), node.Status, node.ActionID, node.AmountMinor, node.Merchant); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_nodes(workflow_id,node_id,kind,depends_on_json,status,action_id,amount_minor,merchant,due_at) VALUES(?,?,?,?,?,?,?,?,?)`, workflow.ID, node.ID, node.Kind, string(depends), node.Status, node.ActionID, node.AmountMinor, node.Merchant, node.DueAt.Format(time.RFC3339Nano)); err != nil {
 			return err
 		}
 	}
@@ -765,7 +848,7 @@ func (r *Repository) Workflow(ctx context.Context, id, userID string) (domain.Wo
 }
 
 func (r *Repository) workflowNodes(ctx context.Context, workflowID string) ([]domain.WorkflowNode, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT node_id,kind,depends_on_json,status,action_id,amount_minor,merchant FROM workflow_nodes WHERE workflow_id=? ORDER BY rowid`, workflowID)
+	rows, err := r.db.QueryContext(ctx, `SELECT node_id,kind,depends_on_json,status,action_id,amount_minor,merchant,due_at FROM workflow_nodes WHERE workflow_id=? ORDER BY rowid`, workflowID)
 	if err != nil {
 		return nil, err
 	}
@@ -773,12 +856,17 @@ func (r *Repository) workflowNodes(ctx context.Context, workflowID string) ([]do
 	var nodes []domain.WorkflowNode
 	for rows.Next() {
 		var node domain.WorkflowNode
-		var depends string
-		if err := rows.Scan(&node.ID, &node.Kind, &depends, &node.Status, &node.ActionID, &node.AmountMinor, &node.Merchant); err != nil {
+		var depends, dueAt string
+		if err := rows.Scan(&node.ID, &node.Kind, &depends, &node.Status, &node.ActionID, &node.AmountMinor, &node.Merchant, &dueAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(depends), &node.DependsOn); err != nil {
 			return nil, err
+		}
+		if dueAt != "" {
+			if node.DueAt, err = time.Parse(time.RFC3339Nano, dueAt); err != nil {
+				return nil, err
+			}
 		}
 		nodes = append(nodes, node)
 	}
@@ -800,7 +888,13 @@ func (r *Repository) CancelWorkflow(ctx context.Context, id, userID string, now 
 	} else if affected != 1 {
 		return domain.ErrActionStateConflict
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='cancelled',updated_at=? WHERE id IN (SELECT action_id FROM workflow_nodes WHERE workflow_id=? AND action_id<>'' AND status='awaiting_authorization') AND status IN ('awaiting_confirmation','awaiting_mfa','scheduled')`, now.Format(time.RFC3339Nano), id); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status='skipped' WHERE workflow_id=? AND status IN ('pending','ready','awaiting_authorization')`, id); err != nil {
+		return err
+	}
+	if err := releaseWorkflowBudget(ctx, tx, id); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -888,6 +982,9 @@ func (r *Repository) CompleteWorkflowNode(ctx context.Context, workflowID, nodeI
 	}
 	workflowStatus := "partially_completed"
 	if allSucceeded {
+		if err := releaseWorkflowBudget(ctx, tx, workflowID); err != nil {
+			return err
+		}
 		workflowStatus = "completed"
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE workflows SET status=?,updated_at=? WHERE id=? AND status IN ('pending','running','partially_completed')`, workflowStatus, now.Format(time.RFC3339Nano), workflowID)
@@ -912,7 +1009,24 @@ func (r *Repository) ExecuteWorkflowBudgetLock(ctx context.Context, a domain.Act
 	} else if affected != 1 {
 		return domain.ErrActionStateConflict
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_budget_locks(id,workflow_id,node_id,user_id,amount_minor,status,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("lock"), workflowID, nodeID, a.UserID, amount, "locked", now.Format(time.RFC3339Nano)); err != nil {
+	var accountID string
+	var balance, reserved int64
+	if err := tx.QueryRowContext(ctx, `SELECT id,balance_minor,reserved_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &balance, &reserved); err != nil {
+		return err
+	}
+	if amount <= 0 || balance-reserved < amount {
+		if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='failed',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		return domain.ErrInsufficientBalance
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET reserved_minor=reserved_minor+? WHERE id=?`, amount, accountID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_budget_locks(id,workflow_id,node_id,user_id,amount_minor,remaining_minor,status,created_at) VALUES(?,?,?,?,?,?,?,?)`, domain.NewID("lock"), workflowID, nodeID, a.UserID, amount, amount, "locked", now.Format(time.RFC3339Nano)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
@@ -936,8 +1050,73 @@ func (r *Repository) ExecuteWorkflowOrder(ctx context.Context, a domain.Action, 
 	} else if affected != 1 {
 		return domain.ErrActionStateConflict
 	}
+	var accountID string
+	var balance, reserved int64
+	if err := tx.QueryRowContext(ctx, `SELECT id,balance_minor,reserved_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &balance, &reserved); err != nil {
+		return err
+	}
+	var availableReserved int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(remaining_minor),0) FROM workflow_budget_locks WHERE workflow_id=? AND status='locked'`, workflowID).Scan(&availableReserved); err != nil {
+		return err
+	}
+	if amount <= 0 || amount > availableReserved || amount > reserved || amount > balance {
+		if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='failed',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		return domain.ErrBudgetNotReserved
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE accounts SET balance_minor=balance_minor-?,reserved_minor=reserved_minor-? WHERE id=? AND balance_minor>=? AND reserved_minor>=?`, amount, amount, accountID, amount, amount)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrInsufficientBalance
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id,remaining_minor FROM workflow_budget_locks WHERE workflow_id=? AND status='locked' ORDER BY rowid`, workflowID)
+	if err != nil {
+		return err
+	}
+	type budgetLock struct {
+		id        string
+		remaining int64
+	}
+	var locks []budgetLock
+	for rows.Next() {
+		var lock budgetLock
+		if err := rows.Scan(&lock.id, &lock.remaining); err != nil {
+			rows.Close()
+			return err
+		}
+		locks = append(locks, lock)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	toConsume := amount
+	for _, lock := range locks {
+		if toConsume == 0 {
+			break
+		}
+		used := min(toConsume, lock.remaining)
+		status := "locked"
+		if used == lock.remaining {
+			status = "consumed"
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE workflow_budget_locks SET remaining_minor=remaining_minor-?,status=? WHERE id=?`, used, status, lock.id); err != nil {
+			return err
+		}
+		toConsume -= used
+	}
 	orderID := domain.NewID("ord")
 	if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_orders(id,workflow_id,node_id,user_id,merchant,amount_minor,status,created_at) VALUES(?,?,?,?,?,?,?,?)`, orderID, workflowID, nodeID, a.UserID, merchant, amount, "confirmed", now.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("txn"), accountID, "out", amount, "workflow_order", "外部订单 "+merchant, now.Format(time.RFC3339Nano)); err != nil {
 		return err
 	}
 	receipt, err := json.Marshal(map[string]any{"order_id": orderID, "merchant": merchant, "amount_minor": amount})
@@ -965,6 +1144,15 @@ func (r *Repository) FailWorkflowNode(ctx context.Context, workflowID, nodeID st
 	} else if affected != 1 {
 		return domain.ErrActionStateConflict
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='cancelled',updated_at=? WHERE id IN (SELECT action_id FROM workflow_nodes WHERE workflow_id=? AND action_id<>'' AND status='awaiting_authorization') AND status IN ('awaiting_confirmation','awaiting_mfa','scheduled')`, now.Format(time.RFC3339Nano), workflowID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status='skipped' WHERE workflow_id=? AND status IN ('pending','ready','awaiting_authorization')`, workflowID); err != nil {
+		return err
+	}
+	if err := releaseWorkflowBudget(ctx, tx, workflowID); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE workflows SET status='failed',updated_at=? WHERE id=? AND status IN ('pending','running','partially_completed')`, now.Format(time.RFC3339Nano), workflowID); err != nil {
 		return err
 	}
@@ -986,8 +1174,38 @@ func (r *Repository) CancelWorkflowNode(ctx context.Context, workflowID, nodeID 
 	} else if affected != 1 {
 		return domain.ErrActionStateConflict
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='cancelled',updated_at=? WHERE id IN (SELECT action_id FROM workflow_nodes WHERE workflow_id=? AND action_id<>'' AND status='awaiting_authorization') AND status IN ('awaiting_confirmation','awaiting_mfa','scheduled')`, now.Format(time.RFC3339Nano), workflowID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status='skipped' WHERE workflow_id=? AND status IN ('pending','ready','awaiting_authorization')`, workflowID); err != nil {
+		return err
+	}
+	if err := releaseWorkflowBudget(ctx, tx, workflowID); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE workflows SET status='cancelled',updated_at=? WHERE id=? AND status IN ('pending','running','partially_completed')`, now.Format(time.RFC3339Nano), workflowID); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+func releaseWorkflowBudget(ctx context.Context, tx *sql.Tx, workflowID string) error {
+	var amount int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(remaining_minor),0) FROM workflow_budget_locks WHERE workflow_id=? AND status='locked'`, workflowID).Scan(&amount); err != nil {
+		return err
+	}
+	if amount == 0 {
+		return nil
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE accounts SET reserved_minor=reserved_minor-? WHERE user_id=(SELECT user_id FROM workflows WHERE id=?) AND reserved_minor>=?`, amount, workflowID, amount)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrInsufficientBalance
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE workflow_budget_locks SET remaining_minor=0,status='released' WHERE workflow_id=? AND status='locked'`, workflowID)
+	return err
 }

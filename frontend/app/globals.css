@@ -12,3 +12,42 @@
 .action-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .mfa-field { display: grid; gap: 6px; margin: 18px 0 0; color: var(--muted); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .mfa-field input { width: 160px; border: 1px solid rgba(190, 205, 221, 0.28); background: rgba(8, 20, 35, 0.62); color: var(--paper); padding: 10px 12px; font: 0.95rem/1 JetBrains Mono, monospace; letter-spacing: 0.18em; }
+
+/* Product surface additions: a focused brand layer around the real API workspace. */
+.capabilities{background:#f1f3f6;color:#101722;display:grid;gap:8vw;grid-template-columns:.8fr 1.2fr;padding:112px clamp(22px,5vw,76px)}
+.capability-grid{border-top:1px solid #cbd2dc;display:grid;grid-template-columns:repeat(2,1fr)}
+.capability-grid article{align-items:start;border-bottom:1px solid #cbd2dc;display:grid;gap:18px;grid-template-columns:34px 1fr 18px;min-height:160px;padding:28px 20px 24px 0}
+.capability-grid article:nth-child(odd){border-right:1px solid #cbd2dc;padding-right:32px}
+.capability-grid article:nth-child(even){padding-left:32px}
+.capability-no,.capability-arrow{color:#4265d5;font-family:var(--mono);font-size:10px}
+.capability-grid h3{font-size:18px;font-weight:600;margin:0 0 10px}
+.capability-grid p{color:#697589;font-size:12px;line-height:1.8;margin:0;max-width:300px}
+.capability-arrow{justify-self:end}
+.demo-film{background:#07101d;color:#eef3f9;padding:112px clamp(22px,5vw,76px) 120px}
+.demo-film-heading{align-items:flex-end;display:flex;justify-content:space-between;margin-bottom:30px}
+.demo-film h2{font-size:clamp(34px,4.5vw,60px);font-weight:500;letter-spacing:-.06em;line-height:1;margin:20px 0 0}
+.film-meta{color:#70829a;font-family:var(--mono);font-size:10px}
+.demo-film-frame{border:1px solid #273b58;box-shadow:0 30px 80px rgba(1,5,14,.36);position:relative}
+.demo-film-frame img{display:block;height:auto;width:100%}
+.film-overlay{align-items:center;background:linear-gradient(transparent,rgba(4,10,18,.82));bottom:0;display:flex;font-family:var(--mono);font-size:10px;justify-content:space-between;left:0;padding:42px 22px 18px;position:absolute;right:0;color:#dbe5f3}
+@media (max-width:900px){.capabilities{gap:50px;grid-template-columns:1fr}.demo-film-heading{align-items:flex-start;display:block}.film-meta{display:block;margin-top:18px}}
+@media (max-width:700px){.capability-grid{display:block}.capability-grid article,.capability-grid article:nth-child(even),.capability-grid article:nth-child(odd){border-right:0;padding:24px 0}.demo-film{padding:82px 18px 90px}.film-overlay{align-items:flex-start;display:block;font-size:8px}.film-overlay span{display:block;margin-top:5px}.demo-film h2{font-size:40px}}
+
+.server-result{border:1px solid #263b58;margin:18px 0 0;padding:13px 14px}.server-result>span{display:block;margin-bottom:10px}.server-result div{align-items:center;border-top:1px solid #1b2d45;display:flex;gap:12px;justify-content:space-between;padding:8px 0}.server-result div span{color:#8091a8;font-family:var(--mono);font-size:9px}.server-result code{color:#e3eaf5;font-family:var(--mono);font-size:10px;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Tighten the security section on wide displays so the Chinese headline stays editorial and readable. */
+.section-intro h2{font-size:clamp(34px,3.2vw,54px);letter-spacing:-.055em;line-height:1.08}
+.principles{background-color:#0a111d;background-image:linear-gradient(rgba(109,137,178,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(109,137,178,.07) 1px,transparent 1px);background-size:64px 64px;color:#eef3f9;gap:7vw;padding-bottom:108px;padding-top:108px}
+.principles .section-intro .eyebrow{color:#8ea8ff}
+.principles .section-intro h2 em{color:#91a3bd}
+.principles .section-intro p{color:#9aa9bc}
+.principle-list{gap:0}
+.principle-list article{border-left:1px solid #2b405e;min-height:210px;padding:0 26px}
+.principle-list article:first-child{border-left-color:#4d72ff}
+.principle-index{color:#8ea8ff}
+.principle-list h3{color:#f1f5fb;font-size:19px;margin:54px 0 13px}
+.principle-list p{color:#9aa9bc}
+@media (max-width:1120px){.principles{padding-bottom:88px;padding-top:88px}}
+@media (max-width:700px){.section-intro h2{font-size:39px}.principles{background-size:44px 44px;padding-bottom:82px;padding-top:82px}.principle-list article{border-left:0;border-top:1px solid #2b405e;min-height:0;padding:25px 0 27px 18px}.principle-list article:first-child{border-top-color:#4d72ff}.principle-list h3{margin:20px 0 10px}}
+
+.terminal-request .live-result,.terminal-request .live-error{font-size:9px;line-height:1.6;margin:10px 0 0}

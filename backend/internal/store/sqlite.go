@@ -105,7 +105,70 @@ func ensureSchema(db *sql.DB) error {
 			return err
 		}
 	}
+	rows, err = db.Query(`PRAGMA table_info(beneficiaries)`)
+	if err != nil {
+		return err
+	}
+	hasPhone := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "phone" {
+			hasPhone = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !hasPhone {
+		if _, err := db.Exec(`ALTER TABLE beneficiaries ADD COLUMN phone TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if err := ensureColumn(db, "accounts", "reserved_minor", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "workflow_nodes", "due_at", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "workflow_budget_locks", "remaining_minor", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE workflow_budget_locks SET remaining_minor=amount_minor WHERE status='locked' AND remaining_minor=0`); err != nil {
+		return err
+	}
 	return nil
+}
+
+func ensureColumn(db *sql.DB, table, column, definition string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		found = found || name == column
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
+	return err
 }
 
 const schema = `
@@ -118,12 +181,14 @@ CREATE TABLE IF NOT EXISTS accounts (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL UNIQUE,
     currency TEXT NOT NULL,
-    balance_minor INTEGER NOT NULL
+    balance_minor INTEGER NOT NULL,
+    reserved_minor INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS beneficiaries (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
+    phone TEXT NOT NULL DEFAULT '',
     account_id TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS investment_products (
@@ -160,6 +225,17 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     currency TEXT NOT NULL,
     billing_cycle TEXT NOT NULL,
     next_charge_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS transfer_splits (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    total_amount_minor INTEGER NOT NULL,
+    collectible_minor INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    participants_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id TEXT PRIMARY KEY,
@@ -214,6 +290,7 @@ CREATE TABLE IF NOT EXISTS workflow_nodes (
     action_id TEXT NOT NULL DEFAULT '',
     amount_minor INTEGER NOT NULL DEFAULT 0,
     merchant TEXT NOT NULL DEFAULT '',
+    due_at TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (workflow_id, node_id),
     FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
 );
@@ -224,6 +301,7 @@ CREATE TABLE IF NOT EXISTS workflow_budget_locks (
     node_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
     amount_minor INTEGER NOT NULL,
+    remaining_minor INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
     UNIQUE(workflow_id, node_id),

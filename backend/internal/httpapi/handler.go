@@ -60,6 +60,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.createTransfer(w, r, userID)
 		return
 	}
+	if r.Method == http.MethodPost && path == "/v1/transfer-splits" {
+		h.createTransferSplit(w, r, userID)
+		return
+	}
 	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/investments/holdings/") && strings.HasSuffix(path, "/redemptions") {
 		h.createInvestmentRedemption(w, r, userID, path)
 		return
@@ -72,7 +76,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.createCardLimit(w, r, userID, path)
 		return
 	}
-	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/cards/") && (strings.HasSuffix(path, "/freeze") || strings.HasSuffix(path, "/unfreeze")) {
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/cards/") && (strings.HasSuffix(path, "/freeze") || strings.HasSuffix(path, "/unfreeze") || strings.HasSuffix(path, "/lost") || strings.HasSuffix(path, "/unlost")) {
 		h.createCardStatus(w, r, userID, path)
 		return
 	}
@@ -82,6 +86,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet && path == "/v1/cards" {
 		h.cards(w, r, userID)
+		return
+	}
+	if r.Method == http.MethodGet && path == "/v1/subscriptions/reminders" {
+		h.subscriptionReminders(w, r, userID)
 		return
 	}
 	if r.Method == http.MethodGet && path == "/v1/subscriptions" {
@@ -114,6 +122,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/actions/") && strings.HasSuffix(path, "/cancel") {
 		h.cancel(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/actions/") && strings.HasSuffix(path, "/trigger") {
+		h.trigger(w, r, userID, path)
 		return
 	}
 	if r.Method == http.MethodPost && path == "/v1/workflows" {
@@ -211,6 +223,7 @@ func (h *Handler) createTransfer(w http.ResponseWriter, r *http.Request, userID 
 		BeneficiaryName string `json:"beneficiary_name"`
 		AmountMinor     int64  `json:"amount_minor"`
 		Remark          string `json:"remark"`
+		ScheduledAt     string `json:"scheduled_at"`
 	}
 	body, err := decodeJSON(r, &request)
 	if err != nil {
@@ -221,7 +234,45 @@ func (h *Handler) createTransfer(w http.ResponseWriter, r *http.Request, userID 
 	if h.replay(w, r, userID, r.URL.Path, fp) {
 		return
 	}
-	action, trace, err := h.service.CreateTransferAction(r.Context(), userID, request.ConversationID, request.BeneficiaryName, request.AmountMinor, request.Remark)
+	var action domain.Action
+	var trace string
+	if request.ScheduledAt == "" {
+		action, trace, err = h.service.CreateTransferAction(r.Context(), userID, request.ConversationID, request.BeneficiaryName, request.AmountMinor, request.Remark)
+	} else {
+		scheduledAt, parseErr := time.Parse(time.RFC3339, request.ScheduledAt)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "scheduled_at 必须是 RFC3339 时间", "tr_invalid")
+			return
+		}
+		action, trace, err = h.service.CreateScheduledTransferAction(r.Context(), userID, request.ConversationID, request.BeneficiaryName, request.AmountMinor, request.Remark, scheduledAt)
+	}
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(action, trace)
+	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
+	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) createTransferSplit(w http.ResponseWriter, r *http.Request, userID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var request struct {
+		ConversationID   string                    `json:"conversation_id"`
+		TotalAmountMinor int64                     `json:"total_amount_minor"`
+		Participants     []domain.SplitParticipant `json:"participants"`
+	}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, r.URL.Path, fp) {
+		return
+	}
+	action, trace, err := h.service.CreateTransferSplitAction(r.Context(), userID, request.ConversationID, request.TotalAmountMinor, request.Participants)
 	if err != nil {
 		writeServiceError(w, err, trace)
 		return
@@ -350,8 +401,11 @@ func (h *Handler) createCardStatus(w http.ResponseWriter, r *http.Request, userI
 		return
 	}
 	target := "frozen"
-	if strings.HasSuffix(path, "/unfreeze") {
+	if strings.HasSuffix(path, "/unfreeze") || strings.HasSuffix(path, "/unlost") {
 		target = "active"
+	}
+	if strings.HasSuffix(path, "/lost") {
+		target = "lost"
 	}
 	action, trace, err := h.service.CreateCardStatusAction(r.Context(), userID, request.ConversationID, segment(path, 2), target)
 	if err != nil {
@@ -433,6 +487,24 @@ func (h *Handler) subscriptions(w http.ResponseWriter, r *http.Request, userID s
 	writeJSON(w, http.StatusOK, envelope(subscriptions, trace))
 }
 
+func (h *Handler) subscriptionReminders(w http.ResponseWriter, r *http.Request, userID string) {
+	days := 7
+	if value := strings.TrimSpace(r.URL.Query().Get("days")); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "days 参数无效", "tr_invalid")
+			return
+		}
+		days = parsed
+	}
+	reminders, trace, err := h.service.SubscriptionReminders(r.Context(), userID, days)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(reminders, trace))
+}
+
 func (h *Handler) accountBalance(w http.ResponseWriter, r *http.Request, userID, path string) {
 	account, trace, err := h.service.AccountBalance(r.Context(), userID, segment(path, 2))
 	if err != nil {
@@ -463,6 +535,24 @@ func (h *Handler) transactions(w http.ResponseWriter, r *http.Request, userID, p
 
 func (h *Handler) billSummary(w http.ResponseWriter, r *http.Request, userID, path string) {
 	accountID := segment(path, 2)
+	if strings.TrimSpace(r.URL.Query().Get("year")) != "" && strings.TrimSpace(r.URL.Query().Get("month")) != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "year 和 month 不能同时使用", "tr_invalid")
+		return
+	}
+	if value := strings.TrimSpace(r.URL.Query().Get("year")); value != "" {
+		year, err := strconv.Atoi(value)
+		if err != nil || year < 2000 || year > 2100 {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "year 参数无效", "tr_invalid")
+			return
+		}
+		summary, trace, err := h.service.BillReport(r.Context(), userID, accountID, "year", year)
+		if err != nil {
+			writeServiceError(w, err, trace)
+			return
+		}
+		writeJSON(w, http.StatusOK, envelope(summary, trace))
+		return
+	}
 	month := time.Now()
 	if value := strings.TrimSpace(r.URL.Query().Get("month")); value != "" {
 		parsed, err := time.ParseInLocation("2006-01", value, time.FixedZone("CST", 8*60*60))
@@ -554,6 +644,30 @@ func (h *Handler) cancel(w http.ResponseWriter, r *http.Request, userID, path st
 		return
 	}
 	action, trace, err := h.service.Cancel(r.Context(), userID, actionID)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(action, trace)
+	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) trigger(w http.ResponseWriter, r *http.Request, userID, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	actionID := segment(path, 2)
+	var request struct{}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fingerprint := fingerprint(body)
+	if h.replay(w, r, userID, path, fingerprint) {
+		return
+	}
+	action, trace, err := h.service.TriggerScheduled(r.Context(), userID, actionID)
 	if err != nil {
 		writeServiceError(w, err, trace)
 		return
@@ -710,8 +824,10 @@ func (h *Handler) advanceWorkflow(w http.ResponseWriter, r *http.Request, userID
 	if len(bytes.TrimSpace(body)) == 0 {
 		body = []byte("{}")
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
+	var request struct {
+		VirtualNow string `json:"virtual_now"`
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
 		return
 	}
@@ -719,7 +835,15 @@ func (h *Handler) advanceWorkflow(w http.ResponseWriter, r *http.Request, userID
 	if h.replay(w, r, userID, path, fp) {
 		return
 	}
-	result, trace, err := h.service.AdvanceWorkflow(r.Context(), userID, segment(path, 2))
+	var virtualNow time.Time
+	if request.VirtualNow != "" {
+		virtualNow, err = time.Parse(time.RFC3339, request.VirtualNow)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "virtual_now 必须是 RFC3339 时间", "tr_invalid")
+			return
+		}
+	}
+	result, trace, err := h.service.AdvanceWorkflow(r.Context(), userID, segment(path, 2), virtualNow)
 	if err != nil {
 		writeServiceError(w, err, trace)
 		return
@@ -818,6 +942,8 @@ func writeServiceError(w http.ResponseWriter, err error, trace string) {
 		writeError(w, http.StatusConflict, "ACTION_STATE_CONFLICT", "动作当前状态不允许此操作", trace)
 	case errors.Is(err, domain.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "幂等键已用于不同请求", trace)
+	case errors.Is(err, domain.ErrBudgetNotReserved):
+		writeError(w, http.StatusConflict, "BUDGET_NOT_RESERVED", "预算未锁定或锁定额度不足", trace)
 	case errors.Is(err, domain.ErrMFAInvalid):
 		writeError(w, http.StatusUnprocessableEntity, "MFA_INVALID", "验证码错误", trace)
 	case errors.Is(err, domain.ErrMFALocked):

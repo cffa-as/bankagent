@@ -34,6 +34,7 @@ export type ToolReceipt = {
 
 export type Action = {
   action_id: string
+  conversation_id?: string
   kind: string
   risk_level: 'green' | 'yellow' | 'red'
   status:
@@ -60,8 +61,9 @@ export type MessageResult = {
   reply_type: 'question' | 'query_result' | 'action_required' | 'workflow_created' | 'rejected'
   text?: string
   action?: Action
-  query_result?: Record<string, unknown>
-  workflow?: Record<string, unknown>
+  balance?: Record<string, unknown>
+  transactions?: Array<Record<string, unknown>>
+  bill?: Record<string, unknown>
 }
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? '/backend'

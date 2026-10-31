@@ -26,6 +26,7 @@ var (
 	ErrMFAInvalid          = errors.New("mfa invalid")
 	ErrMFALocked           = errors.New("mfa locked")
 	ErrInsufficientBalance = errors.New("insufficient balance")
+	ErrBudgetNotReserved   = errors.New("workflow budget not reserved")
 	ErrIdempotencyConflict = errors.New("idempotency conflict")
 )
 
@@ -36,10 +37,12 @@ type Conversation struct {
 }
 
 type Account struct {
-	ID           string `json:"account_id"`
-	UserID       string `json:"-"`
-	Currency     string `json:"currency"`
-	BalanceMinor int64  `json:"balance_minor"`
+	ID             string `json:"account_id"`
+	UserID         string `json:"-"`
+	Currency       string `json:"currency"`
+	BalanceMinor   int64  `json:"balance_minor"`
+	ReservedMinor  int64  `json:"reserved_minor"`
+	AvailableMinor int64  `json:"available_minor"`
 }
 
 type Transaction struct {
@@ -118,12 +121,49 @@ type BillCategory struct {
 	ShareBPS    int64  `json:"share_bps"`
 }
 
+type BillAnomaly struct {
+	TransactionID string `json:"transaction_id"`
+	AmountMinor   int64  `json:"amount_minor"`
+	Category      string `json:"category"`
+	Description   string `json:"description"`
+	Reason        string `json:"reason"`
+}
+
 type BillSummary struct {
 	Month            string         `json:"month"`
+	Period           string         `json:"period,omitempty"`
 	TotalMinor       int64          `json:"total_minor"`
 	Currency         string         `json:"currency"`
 	TransactionCount int64          `json:"transaction_count"`
 	Categories       []BillCategory `json:"categories"`
+	Anomalies        []BillAnomaly  `json:"anomalies,omitempty"`
+}
+
+type SubscriptionReminder struct {
+	SubscriptionID string    `json:"subscription_id"`
+	MerchantRef    string    `json:"merchant_ref"`
+	AmountMinor    int64     `json:"amount_minor"`
+	Currency       string    `json:"currency"`
+	NextChargeAt   time.Time `json:"next_charge_at"`
+	DaysUntil      int       `json:"days_until"`
+}
+
+type SplitParticipant struct {
+	Name        string `json:"name,omitempty"`
+	Phone       string `json:"phone,omitempty"`
+	IsPayer     bool   `json:"is_payer,omitempty"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+type TransferSplit struct {
+	ID               string             `json:"transfer_split_id"`
+	ConversationID   string             `json:"conversation_id"`
+	TotalAmountMinor int64              `json:"total_amount_minor"`
+	CollectibleMinor int64              `json:"collectible_minor"`
+	Currency         string             `json:"currency"`
+	Participants     []SplitParticipant `json:"participants"`
+	Status           string             `json:"status"`
+	CreatedAt        time.Time          `json:"created_at"`
 }
 
 type Action struct {
@@ -178,6 +218,7 @@ type MessageResult struct {
 	Balance   *Account      `json:"balance,omitempty"`
 	Records   []Transaction `json:"transactions,omitempty"`
 	Bill      *BillSummary  `json:"bill,omitempty"`
+	Data      any           `json:"data,omitempty"`
 }
 
 type Service struct {
@@ -200,8 +241,10 @@ type Repository interface {
 	Cards(context.Context, string) ([]Card, error)
 	Subscriptions(context.Context, string, string) ([]Subscription, error)
 	BillSummary(context.Context, string, time.Time) (BillSummary, error)
+	BillSummaryRange(context.Context, string, time.Time, time.Time, string) (BillSummary, error)
 	DailyOutgoing(context.Context, string, time.Time) (int64, error)
 	Beneficiary(context.Context, string, string) (string, error)
+	BeneficiaryByPhone(context.Context, string, string) (string, string, error)
 	CreateAction(context.Context, Action) error
 	Action(context.Context, string) (Action, error)
 	UpdateAction(context.Context, Action) error
@@ -212,7 +255,9 @@ type Repository interface {
 	ExecuteCardApplication(context.Context, Action, string, time.Time) (Card, error)
 	ExecuteCardLimit(context.Context, Action, string, int64, time.Time) error
 	ExecuteSubscriptionCancel(context.Context, Action, string, time.Time) error
+	ExecuteTransferSplit(context.Context, Action, TransferSplitSnapshot, time.Time) (TransferSplit, error)
 	CancelAction(context.Context, string, time.Time) (bool, error)
+	ScheduleAction(context.Context, string, string, time.Time) (bool, error)
 	RecordMFAFailure(context.Context, string, time.Time) (int, bool, error)
 	AddAudit(context.Context, AuditEvent) error
 	Audit(context.Context, string) ([]AuditEvent, error)
@@ -229,6 +274,12 @@ type Repository interface {
 	SetWorkflowNodeAction(context.Context, string, string, string, string, time.Time) error
 	ExecuteWorkflowBudgetLock(context.Context, Action, string, string, int64, time.Time) error
 	ExecuteWorkflowOrder(context.Context, Action, string, string, int64, string, time.Time) error
+}
+
+type TransferSplitSnapshot struct {
+	TotalAmountMinor int64              `json:"total_amount_minor"`
+	Currency         string             `json:"currency"`
+	Participants     []SplitParticipant `json:"participants"`
 }
 
 func NewService(repo Repository, now func() time.Time) *Service {
@@ -261,6 +312,19 @@ func parseInvestmentPurchase(text string) (amountMinor int64, ok bool) {
 		return 0, false
 	}
 	return int64(amount*100 + 0.5), true
+}
+
+func parsePhoneTransfer(text string) (phone string, amountMinor int64, remark string, ok bool) {
+	pattern := regexp.MustCompile(`(?:手机号|手机|电话)\s*([0-9]{11}).*?转\s*([0-9]+(?:\.[0-9]{1,2})?)\s*元(?:[，,。 ]*备注\s*(.*))?$`)
+	matches := pattern.FindStringSubmatch(strings.TrimSpace(text))
+	if len(matches) == 0 {
+		return "", 0, "", false
+	}
+	amount, err := strconv.ParseFloat(matches[2], 64)
+	if err != nil || amount <= 0 {
+		return "", 0, "", false
+	}
+	return matches[1], int64(amount*100 + 0.5), strings.TrimSpace(matches[3]), true
 }
 
 func parseTransfer(text string) (name string, amountMinor int64, remark string, ok bool) {

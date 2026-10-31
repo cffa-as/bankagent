@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: bankagent API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     银行 AI 智能体公开 HTTP API。所有业务操作运行在 Mock 银行账本上。
     LLM 只产生结构化意图和候选计划；授权、风险、动作状态和业务结果由 Go 服务端决定。
@@ -205,6 +205,43 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+  /v1/actions/{action_id}/trigger:
+    post:
+      tags: [Actions]
+      summary: 触发已到预约时间的动作
+      description: 仅允许 scheduled 状态且已到达 scheduled_at 的预约动作；仍经过一次性执行门和幂等控制。
+      operationId: triggerScheduledAction
+      parameters:
+        - $ref: '#/components/parameters/ActionID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: 预约动作已执行或已返回幂等结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Expired'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
   /v1/transfers:
     post:
       tags: [Actions]
@@ -229,6 +266,32 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /v1/transfer-splits:
+    post:
+      tags: [Actions]
+      summary: 创建 AA 拆分收款请求动作
+      description: 服务端重新计算每人份额；执行只登记 Mock 收款请求，不替其他参与人扣款。
+      operationId: createTransferSplit
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferSplitRequest'
+      responses:
+        '201':
+          description: AA 收款动作已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAction'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
 
   /v1/investments/products/{product_id}/subscriptions:
     post:
@@ -391,6 +454,62 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+  /v1/cards/{card_id}/lost:
+    post:
+      tags: [Actions]
+      summary: 创建卡片挂失动作
+      description: 卡片挂失属于红色动作，必须完成动作绑定的 MFA。
+      operationId: reportCardLost
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CardApplicationRequest' }
+      responses:
+        '201':
+          description: 卡片挂失动作已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeAction' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+  /v1/cards/{card_id}/unlost:
+    post:
+      tags: [Actions]
+      summary: 创建卡片解挂动作
+      description: 从 lost 恢复 active 属于红色动作，必须完成动作绑定的 MFA。
+      operationId: clearCardLostStatus
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CardApplicationRequest' }
+      responses:
+        '201':
+          description: 卡片解挂动作已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeAction' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
   /v1/subscriptions/{subscription_id}/cancel:
     post:
       tags: [Actions]
@@ -479,8 +598,13 @@ paths:
         - in: query
           name: month
           required: false
-          description: 账单月份；省略时使用 Asia/Shanghai 当前自然月。
+          description: 账单月份；与 year 互斥，省略时使用 Asia/Shanghai 当前自然月。
           schema: { type: string, pattern: '^\\d{4}-\\d{2}$', example: '2026-10' }
+        - in: query
+          name: year
+          required: false
+          description: 年度账单；设置后优先按自然年统计。
+          schema: { type: integer, minimum: 2000, maximum: 2100, example: 2026 }
       responses:
         '200':
           description: 账单分析结果
@@ -570,6 +694,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EnvelopeSubscriptionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/subscriptions/reminders:
+    get:
+      tags: [Queries]
+      summary: 查询即将续费的订阅
+      operationId: listSubscriptionReminders
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 0, maximum: 365, default: 7 }
+      responses:
+        '200':
+          description: 续费提醒列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSubscriptionReminderList'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -673,6 +817,11 @@ paths:
             schema:
               type: object
               additionalProperties: false
+              properties:
+                virtual_now:
+                  type: string
+                  format: date-time
+                  description: 仅用于受控演示；只有 due_at 不晚于该时间的 ready 节点才会推进。
       responses:
         '200':
           description: 节点已自动完成或已生成待授权动作
@@ -817,6 +966,7 @@ components:
             - MFA_INVALID
             - MFA_LOCKED
             - INSUFFICIENT_BALANCE
+            - BUDGET_NOT_RESERVED
             - TOOL_REJECTED
             - TOOL_FAILED
             - PLAN_REJECTED
@@ -853,7 +1003,15 @@ components:
         text: { type: string }
         action:
           $ref: '#/components/schemas/Action'
-        query_result: { type: object, additionalProperties: true }
+        balance:
+          $ref: '#/components/schemas/Balance'
+        transactions:
+          type: array
+          items: { $ref: '#/components/schemas/Transaction' }
+        bill:
+          $ref: '#/components/schemas/BillSummary'
+        data:
+          description: 受控查询结果，例如产品、卡片或订阅列表
         workflow:
           $ref: '#/components/schemas/Workflow'
     ConfirmActionRequest:
@@ -868,48 +1026,31 @@ components:
         code: { type: string, minLength: 4, maxLength: 12, writeOnly: true }
     Action:
       type: object
-      required: [action_id, kind, risk_level, status, expires_at]
+      required: [action_id, conversation_id, kind, risk_level, status, expires_at, created_at, updated_at]
       properties:
         action_id: { type: string }
+        conversation_id: { type: string }
         kind: { type: string }
         risk_level:
           type: string
           enum: [green, yellow, red]
         status:
           type: string
-          enum: [awaiting_confirmation, awaiting_mfa, executing, processing, reconciliation_required, succeeded, failed, cancelled, expired]
-        snapshot_hash: { type: string }
-        summary: { type: object, additionalProperties: true }
-        authorization: { $ref: '#/components/schemas/Authorization' }
-        tool_receipt: { $ref: '#/components/schemas/ToolReceipt' }
+          enum: [awaiting_confirmation, awaiting_mfa, scheduled, executing, processing, reconciliation_required, succeeded, failed, cancelled, expired]
+        snapshot: { type: object, additionalProperties: true, description: 服务端生成的不可变动作快照 }
         result: { type: object, additionalProperties: true, description: 动作成功后的业务回执结果，例如理财赎回本金、收益和到账总额 }
         expires_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
-    Authorization:
-      type: object
-      required: [method, status]
-      properties:
-        method: { type: string, enum: [none, confirmation, mfa] }
-        status: { type: string, enum: [pending, succeeded, failed, expired] }
-        attempts: { type: integer, minimum: 0 }
-        expires_at: { type: string, format: date-time }
-    ToolReceipt:
-      type: object
-      required: [tool_name, status]
-      properties:
-        tool_name: { type: string }
-        status: { type: string, enum: [succeeded, rejected, failed, processing, unknown] }
-        reference: { type: string }
-        result: { type: object, additionalProperties: true }
-        occurred_at: { type: string, format: date-time }
     Balance:
       type: object
-      required: [account_id, currency, balance_minor]
+      required: [account_id, currency, balance_minor, reserved_minor, available_minor]
       properties:
         account_id: { type: string }
         currency: { type: string, minLength: 3, maxLength: 3 }
         balance_minor: { type: integer, format: int64 }
+        reserved_minor: { type: integer, format: int64, minimum: 0, description: 跨场景预算锁占用的金额 }
+        available_minor: { type: integer, format: int64, minimum: 0, description: balance_minor 减去 reserved_minor }
     Transaction:
       type: object
       required: [transaction_id, direction, amount_minor, description, created_at]
@@ -932,7 +1073,13 @@ components:
       type: object
       required: [month, total_minor, currency, categories]
       properties:
-        month: { type: string, pattern: '^\\d{4}-\\d{2}$' }
+        month:
+          type: string
+          pattern: '^\\d{4}(-\\d{2})?$'
+          description: 月度账单为 YYYY-MM，年度账单为 YYYY。
+        period:
+          type: string
+          description: 年度报告期间；月度报告可省略。
         total_minor: { type: integer, format: int64 }
         currency: { type: string }
         transaction_count: { type: integer, format: int64 }
@@ -946,7 +1093,19 @@ components:
               amount_minor: { type: integer, format: int64 }
               count: { type: integer, format: int64 }
               share_bps: { type: integer, format: int64 }
-        anomalies: { type: array, items: { type: object, additionalProperties: true } }
+        anomalies:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillAnomaly'
+    BillAnomaly:
+      type: object
+      required: [transaction_id, amount_minor, category, description, reason]
+      properties:
+        transaction_id: { type: string }
+        amount_minor: { type: integer, format: int64 }
+        category: { type: string }
+        description: { type: string }
+        reason: { type: string }
     Product:
       type: object
       required: [product_id, name, risk_level, minimum_amount_minor]
@@ -988,6 +1147,16 @@ components:
         currency: { type: string }
         billing_cycle: { type: string }
         next_charge_at: { type: string, format: date-time }
+    SubscriptionReminder:
+      type: object
+      required: [subscription_id, merchant_ref, amount_minor, currency, next_charge_at, days_until]
+      properties:
+        subscription_id: { type: string }
+        merchant_ref: { type: string }
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        next_charge_at: { type: string, format: date-time }
+        days_until: { type: integer, minimum: 0 }
     TransferRequest:
       type: object
       additionalProperties: false
@@ -997,6 +1166,47 @@ components:
         beneficiary_name: { type: string, minLength: 1, maxLength: 100 }
         amount_minor: { type: integer, format: int64, minimum: 1 }
         remark: { type: string, maxLength: 200 }
+        scheduled_at:
+          type: string
+          format: date-time
+          description: 可选；设置后授权成功先进入 scheduled，到达时间后调用 trigger。
+    SplitParticipant:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 100 }
+        phone: { type: string, pattern: '^\\d{11}$' }
+        is_payer: { type: boolean }
+        amount_minor: { type: integer, format: int64, readOnly: true, description: 服务端计算并写入快照 }
+      anyOf:
+        - required: [name]
+        - required: [phone]
+    TransferSplitRequest:
+      type: object
+      additionalProperties: false
+      required: [conversation_id, total_amount_minor, participants]
+      properties:
+        conversation_id: { type: string, minLength: 1 }
+        total_amount_minor: { type: integer, format: int64, minimum: 1 }
+        participants:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items: { $ref: '#/components/schemas/SplitParticipant' }
+    TransferSplit:
+      type: object
+      required: [transfer_split_id, conversation_id, total_amount_minor, collectible_minor, currency, participants, status, created_at]
+      properties:
+        transfer_split_id: { type: string }
+        conversation_id: { type: string }
+        total_amount_minor: { type: integer, format: int64 }
+        collectible_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        participants:
+          type: array
+          items: { $ref: '#/components/schemas/SplitParticipant' }
+        status: { type: string, enum: [requested] }
+        created_at: { type: string, format: date-time }
     CardApplicationRequest:
       type: object
       additionalProperties: false
@@ -1046,6 +1256,10 @@ components:
         depends_on: { type: array, items: { type: string } }
         amount_minor: { type: integer, format: int64, minimum: 0 }
         merchant: { type: string }
+        due_at:
+          type: string
+          format: date-time
+          description: 节点最早可推进时间；省略时取创建时间。
     Workflow:
       type: object
       required: [workflow_id, status, nodes]
@@ -1066,6 +1280,7 @@ components:
         action_id: { type: string }
         amount_minor: { type: integer, format: int64, minimum: 0 }
         merchant: { type: string }
+        due_at: { type: string, format: date-time }
     AuditEvent:
       type: object
       required: [event_id, trace_id, event_type, outcome, occurred_at, sequence]
@@ -1135,6 +1350,10 @@ components:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/Subscription' } }
+    EnvelopeSubscriptionReminderList:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/SubscriptionReminder' } }
     EnvelopeWorkflow:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:

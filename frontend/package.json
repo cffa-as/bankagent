@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "demo:render": "python3 scripts/generate-demo-gif.py"
   },
   "dependencies": {
     "next": "^15.5.6",

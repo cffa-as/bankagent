@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/cffa-as/bankagent/internal/agent"
 )
 
 func (s *Service) CreateConversation(ctx context.Context, userID string) (Conversation, string, error) {
@@ -25,17 +28,51 @@ func (s *Service) CreateConversation(ctx context.Context, userID string) (Conver
 }
 
 func (s *Service) CreateTransferAction(ctx context.Context, userID, conversationID, beneficiaryName string, amountMinor int64, remark string) (Action, string, error) {
-	if amountMinor <= 0 || strings.TrimSpace(beneficiaryName) == "" {
-		return Action{}, "", ErrInvalidArgument
+	accountID, err := s.repo.Beneficiary(ctx, userID, strings.TrimSpace(beneficiaryName))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Action{}, "", ErrNotFound
 	}
-	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
+	if err != nil {
 		return Action{}, "", err
+	}
+	return s.createTransferAction(ctx, userID, conversationID, beneficiaryName, "", accountID, amountMinor, remark, nil)
+}
+
+func (s *Service) CreateScheduledTransferAction(ctx context.Context, userID, conversationID, beneficiaryName string, amountMinor int64, remark string, scheduledAt time.Time) (Action, string, error) {
+	now := s.now()
+	if !scheduledAt.After(now) || scheduledAt.After(now.AddDate(1, 0, 0)) {
+		return Action{}, "", ErrInvalidArgument
 	}
 	accountID, err := s.repo.Beneficiary(ctx, userID, strings.TrimSpace(beneficiaryName))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Action{}, "", ErrNotFound
 	}
 	if err != nil {
+		return Action{}, "", err
+	}
+	return s.createTransferAction(ctx, userID, conversationID, beneficiaryName, "", accountID, amountMinor, remark, &scheduledAt)
+}
+
+func (s *Service) CreateTransferActionByPhone(ctx context.Context, userID, conversationID, phone string, amountMinor int64, remark string) (Action, string, error) {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return Action{}, "", ErrInvalidArgument
+	}
+	name, accountID, err := s.repo.BeneficiaryByPhone(ctx, userID, phone)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Action{}, "", ErrNotFound
+	}
+	if err != nil {
+		return Action{}, "", err
+	}
+	return s.createTransferAction(ctx, userID, conversationID, name, phone, accountID, amountMinor, remark, nil)
+}
+
+func (s *Service) createTransferAction(ctx context.Context, userID, conversationID, beneficiaryName, phone, accountID string, amountMinor int64, remark string, scheduledAt *time.Time) (Action, string, error) {
+	if amountMinor <= 0 || strings.TrimSpace(beneficiaryName) == "" {
+		return Action{}, "", ErrInvalidArgument
+	}
+	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
 		return Action{}, "", err
 	}
 	loc, err := time.LoadLocation("Asia/Shanghai")
@@ -51,11 +88,60 @@ func (s *Service) CreateTransferAction(ctx context.Context, userID, conversation
 		risk, status = "red", "awaiting_mfa"
 	}
 	snapshot := map[string]any{
-		"beneficiary_name": beneficiaryName, "beneficiary_account_id": accountID,
+		"beneficiary_name": beneficiaryName, "beneficiary_phone": phone, "beneficiary_account_id": accountID,
 		"amount_minor": amountMinor, "currency": "CNY", "remark": strings.TrimSpace(remark),
 		"daily_outgoing_before_minor": daily,
 	}
+	if scheduledAt != nil {
+		snapshot["scheduled_at"] = scheduledAt.UTC().Format(time.RFC3339)
+	}
 	return s.createActionRecord(ctx, userID, conversationID, "transfer", risk, status, snapshot)
+}
+
+func (s *Service) CreateTransferSplitAction(ctx context.Context, userID, conversationID string, totalAmountMinor int64, participants []SplitParticipant) (Action, string, error) {
+	if totalAmountMinor <= 0 || len(participants) < 2 || len(participants) > 10 {
+		return Action{}, "", ErrInvalidArgument
+	}
+	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
+		return Action{}, "", err
+	}
+	payers, seen := 0, make(map[string]bool, len(participants))
+	normalized := make([]SplitParticipant, len(participants))
+	for i, participant := range participants {
+		name, phone := strings.TrimSpace(participant.Name), strings.TrimSpace(participant.Phone)
+		key := phone
+		if key == "" {
+			key = "name:" + name
+		}
+		if (name == "" && phone == "") || seen[key] {
+			return Action{}, "", ErrInvalidArgument
+		}
+		seen[key] = true
+		if participant.IsPayer {
+			payers++
+		}
+		normalized[i] = participant
+		normalized[i].Name, normalized[i].Phone = name, phone
+	}
+	if payers != 1 {
+		return Action{}, "", ErrInvalidArgument
+	}
+	base, remainder := totalAmountMinor/int64(len(normalized)), totalAmountMinor%int64(len(normalized))
+	var collectible int64
+	for i := range normalized {
+		normalized[i].AmountMinor = base
+		if int64(i) < remainder {
+			normalized[i].AmountMinor++
+		}
+		if !normalized[i].IsPayer {
+			collectible += normalized[i].AmountMinor
+		}
+	}
+	snapshot := map[string]any{
+		"total_amount_minor": totalAmountMinor, "collectible_minor": collectible,
+		"currency": "CNY", "participants": normalized,
+	}
+	return s.createActionRecord(ctx, userID, conversationID, "transfer_split", "yellow", "awaiting_confirmation", snapshot)
 }
 
 func (s *Service) CreateCardApplicationAction(ctx context.Context, userID, conversationID, cardType string) (Action, string, error) {
@@ -91,7 +177,7 @@ func (s *Service) CreateCardLimitAction(ctx context.Context, userID, conversatio
 }
 
 func (s *Service) CreateCardStatusAction(ctx context.Context, userID, conversationID, cardID, targetStatus string) (Action, string, error) {
-	if targetStatus != "active" && targetStatus != "frozen" {
+	if targetStatus != "active" && targetStatus != "frozen" && targetStatus != "lost" {
 		return Action{}, "", ErrInvalidArgument
 	}
 	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
@@ -104,7 +190,11 @@ func (s *Service) CreateCardStatusAction(ctx context.Context, userID, conversati
 	for _, card := range cards {
 		if card.ID == cardID {
 			snapshot := map[string]any{"card_id": card.ID, "target_status": targetStatus, "masked_number": card.MaskedNumber}
-			return s.createActionRecord(ctx, userID, conversationID, "card_status_change", "yellow", "awaiting_confirmation", snapshot)
+			risk, status := "yellow", "awaiting_confirmation"
+			if targetStatus == "lost" || (targetStatus == "active" && card.Status != "active") {
+				risk, status = "red", "awaiting_mfa"
+			}
+			return s.createActionRecord(ctx, userID, conversationID, "card_status_change", risk, status, snapshot)
 		}
 	}
 	return Action{}, "", ErrNotFound
@@ -202,7 +292,13 @@ func (s *Service) createActionRecord(ctx context.Context, userID, conversationID
 	if err != nil {
 		return Action{}, trace, err
 	}
-	action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: kind, RiskLevel: riskLevel, Status: status, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+	expiresAt := now.Add(5 * time.Minute)
+	if value, ok := snapshot["scheduled_at"].(string); ok {
+		if scheduledAt, err := time.Parse(time.RFC3339, value); err == nil {
+			expiresAt = scheduledAt.Add(5 * time.Minute)
+		}
+	}
+	action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: kind, RiskLevel: riskLevel, Status: status, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: expiresAt, CreatedAt: now, UpdatedAt: now}
 	if err := s.repo.CreateAction(ctx, action); err != nil {
 		return Action{}, trace, err
 	}
@@ -237,7 +333,7 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		if err := s.audit(ctx, trace, conversationID, "", "balance_queried", "succeeded", "tool", map[string]any{"account_id": account.ID}, now); err != nil {
 			return MessageResult{}, trace, err
 		}
-		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("当前余额 %s %s。", yuan(account.BalanceMinor), account.Currency), Balance: &account}, trace, nil
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("当前余额 %s %s，可用余额 %s %s。", yuan(account.BalanceMinor), account.Currency, yuan(account.AvailableMinor), account.Currency), Balance: &account}, trace, nil
 	}
 	if strings.Contains(text, "账单") || strings.Contains(text, "消费") {
 		loc, err := time.LoadLocation("Asia/Shanghai")
@@ -334,14 +430,24 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		}
 		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "该理财申购需要完成 MFA 验证。", Action: ptr(action.Public())}, trace, nil
 	}
-	if strings.Contains(text, "卡") && (strings.Contains(text, "冻结") || strings.Contains(text, "解冻")) {
+	if strings.Contains(text, "卡") && (strings.Contains(text, "冻结") || strings.Contains(text, "解冻") || strings.Contains(text, "挂失") || strings.Contains(text, "解挂")) {
 		status, verb := "frozen", "冻结"
 		if strings.Contains(text, "解冻") {
 			status, verb = "active", "解冻"
 		}
+		if strings.Contains(text, "挂失") {
+			status, verb = "lost", "挂失"
+		}
+		if strings.Contains(text, "解挂") {
+			status, verb = "active", "解挂"
+		}
+		risk, actionStatus := "yellow", "awaiting_confirmation"
+		if status == "lost" || strings.Contains(text, "解冻") || strings.Contains(text, "解挂") {
+			risk, actionStatus = "red", "awaiting_mfa"
+		}
 		snapshot := map[string]any{"card_id": "card_demo", "target_status": status, "masked_number": "**** 1234"}
 		snapshotJSON, _ := json.Marshal(snapshot)
-		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "card_status_change", RiskLevel: "yellow", Status: "awaiting_confirmation", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "card_status_change", RiskLevel: risk, Status: actionStatus, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
 		if err := s.repo.CreateAction(ctx, action); err != nil {
 			return MessageResult{}, trace, err
 		}
@@ -367,6 +473,21 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		}
 		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "请确认取消" + merchant + "订阅。", Action: ptr(action.Public())}, trace, nil
 	}
+	phone, phoneAmount, phoneRemark, phoneOK := parsePhoneTransfer(text)
+	if phoneOK {
+		action, actionTrace, err := s.CreateTransferActionByPhone(ctx, userID, conversationID, phone, phoneAmount, phoneRemark)
+		if errors.Is(err, ErrNotFound) {
+			return MessageResult{RunID: runID, ReplyType: "question", Text: "没有找到对应手机号，请提供预置收款人手机号。"}, trace, nil
+		}
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		text := "请确认转账详情。"
+		if action.RiskLevel == "red" {
+			text = "该转账需要完成 MFA 验证。"
+		}
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: text, Action: ptr(action.Public())}, actionTrace, nil
+	}
 	name, amount, remark, ok := parseTransfer(text)
 	if ok {
 		action, actionTrace, err := s.CreateTransferAction(ctx, userID, conversationID, name, amount, remark)
@@ -388,10 +509,198 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 			if len(plan.MissingFields) > 0 {
 				return MessageResult{RunID: runID, ReplyType: "question", Text: "请补充：" + strings.Join(plan.MissingFields, "、")}, trace, nil
 			}
-			return MessageResult{RunID: runID, ReplyType: "question", Text: "我理解你的需求是“" + plan.Intent + "”，请补充具体业务信息。"}, trace, nil
+			result, handled, err := s.handleIntentPlan(ctx, userID, conversationID, runID, plan, trace)
+			if err != nil {
+				return MessageResult{}, trace, err
+			}
+			if handled {
+				return result, trace, nil
+			}
 		}
 	}
-	return MessageResult{RunID: runID, ReplyType: "question", Text: "我可以帮你查询余额、交易记录，或处理预置收款人的转账。"}, trace, nil
+	return MessageResult{RunID: runID, ReplyType: "question", Text: "我可以处理预置账户的转账、AA 收款、账单分析、理财、卡片、订阅和跨场景计划。"}, trace, nil
+}
+
+func (s *Service) handleIntentPlan(ctx context.Context, userID, conversationID, runID string, plan agent.IntentPlan, trace string) (MessageResult, bool, error) {
+	steps := make([]string, 0, len(plan.CandidatePlan))
+	for _, step := range plan.CandidatePlan {
+		steps = append(steps, step.Kind)
+	}
+	if err := s.audit(ctx, trace, conversationID, "", "model_plan_validated", "succeeded", "model", map[string]any{"intent": plan.Intent, "candidate_steps": steps}, s.now()); err != nil {
+		return MessageResult{}, true, err
+	}
+	question := func(message string) (MessageResult, bool, error) {
+		return MessageResult{RunID: runID, ReplyType: "question", Text: message}, true, nil
+	}
+	actionReply := func(action Action, err error) (MessageResult, bool, error) {
+		if errors.Is(err, ErrNotFound) {
+			return question("没有找到对应业务资源，请检查收款人、卡片、产品或持仓。")
+		}
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		if err := s.audit(ctx, trace, conversationID, action.ID, "model_action_candidate_selected", "succeeded", "model", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, s.now()); err != nil {
+			return MessageResult{}, true, err
+		}
+		text := "请确认操作详情。"
+		if action.RiskLevel == "red" {
+			text = "该操作需要完成 MFA 验证。"
+		}
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: text, Action: ptr(action.Public())}, true, nil
+	}
+
+	switch plan.Intent {
+	case "balance_query":
+		account, err := s.repo.Account(ctx, userID)
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "balance_queried", "succeeded", "tool", map[string]any{"account_id": account.ID}, s.now()); err != nil {
+			return MessageResult{}, true, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("当前余额 %s %s，可用余额 %s %s。", yuan(account.BalanceMinor), account.Currency, yuan(account.AvailableMinor), account.Currency), Balance: &account}, true, nil
+	case "transaction_query":
+		records, err := s.repo.Transactions(ctx, userID)
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "transactions_queried", "succeeded", "tool", map[string]any{"count": len(records)}, s.now()); err != nil {
+			return MessageResult{}, true, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("已找到 %d 笔交易记录。", len(records)), Records: records}, true, nil
+	case "bill_query":
+		bill, err := s.repo.BillSummary(ctx, userID, s.now())
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "bill_analyzed", "succeeded", "tool", map[string]any{"month": bill.Month, "transaction_count": bill.TransactionCount}, s.now()); err != nil {
+			return MessageResult{}, true, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("本月消费共 %s，发现 %d 笔异常交易。", yuan(bill.TotalMinor), len(bill.Anomalies)), Bill: &bill}, true, nil
+	case "investment_query":
+		products, err := s.repo.Products(ctx, "")
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "investment_products_queried", "succeeded", "tool", map[string]any{"count": len(products)}, s.now()); err != nil {
+			return MessageResult{}, true, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("找到 %d 款理财产品。", len(products)), Data: products}, true, nil
+	case "card_query":
+		cards, err := s.repo.Cards(ctx, userID)
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "cards_queried", "succeeded", "tool", map[string]any{"count": len(cards)}, s.now()); err != nil {
+			return MessageResult{}, true, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("找到 %d 张卡片。", len(cards)), Data: cards}, true, nil
+	case "subscription_query":
+		subscriptions, err := s.repo.Subscriptions(ctx, userID, "")
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "subscriptions_queried", "succeeded", "tool", map[string]any{"count": len(subscriptions)}, s.now()); err != nil {
+			return MessageResult{}, true, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("找到 %d 项订阅代扣。", len(subscriptions)), Data: subscriptions}, true, nil
+	case "transfer", "scheduled_transfer":
+		name := planString(plan, "beneficiary_name")
+		amount, ok := planInt64(plan, "amount_minor")
+		if name == "" || !ok {
+			return question("请补充收款人姓名和转账金额。")
+		}
+		var action Action
+		var err error
+		if plan.Intent == "scheduled_transfer" {
+			scheduledAt, parseErr := time.Parse(time.RFC3339, planString(plan, "scheduled_at"))
+			if parseErr != nil {
+				return question("请补充 RFC3339 格式的预约时间。")
+			}
+			action, _, err = s.CreateScheduledTransferAction(ctx, userID, conversationID, name, amount, planString(plan, "remark"), scheduledAt)
+		} else {
+			action, _, err = s.CreateTransferAction(ctx, userID, conversationID, name, amount, planString(plan, "remark"))
+		}
+		return actionReply(action, err)
+	case "transfer_split":
+		total, ok := planInt64(plan, "total_amount_minor")
+		participants, participantsOK := planParticipants(plan)
+		if !ok || !participantsOK {
+			return question("请补充 AA 总金额和至少两位参与人，并标明由谁收款。")
+		}
+		action, _, err := s.CreateTransferSplitAction(ctx, userID, conversationID, total, participants)
+		return actionReply(action, err)
+	case "investment_purchase":
+		productID := planString(plan, "product_id")
+		amount, amountOK := planInt64(plan, "amount_minor")
+		riskAcknowledged := planBool(plan, "risk_acknowledged")
+		if productID == "" || !amountOK || !riskAcknowledged {
+			return question("请补充理财产品、申购金额，并确认已阅读风险提示。")
+		}
+		action, _, err := s.CreateInvestmentPurchaseAction(ctx, userID, conversationID, productID, amount, true)
+		return actionReply(action, err)
+	case "investment_redemption":
+		holdingID := planString(plan, "holding_id")
+		if holdingID == "" {
+			return question("请提供要赎回的持仓 ID。")
+		}
+		action, _, err := s.CreateInvestmentRedemptionAction(ctx, userID, conversationID, holdingID)
+		return actionReply(action, err)
+	case "card_status_change":
+		cardID, target := planString(plan, "card_id"), planString(plan, "target_status")
+		if cardID == "" || target == "" {
+			return question("请提供卡片和要执行的状态操作。")
+		}
+		action, _, err := s.CreateCardStatusAction(ctx, userID, conversationID, cardID, target)
+		return actionReply(action, err)
+	case "subscription_cancel":
+		subscriptionID := planString(plan, "subscription_id")
+		if subscriptionID == "" {
+			return question("请提供要取消的订阅 ID。")
+		}
+		action, _, err := s.CreateSubscriptionCancelAction(ctx, userID, conversationID, subscriptionID)
+		return actionReply(action, err)
+	default:
+		return MessageResult{}, false, nil
+	}
+}
+
+func planString(plan agent.IntentPlan, key string) string {
+	value, _ := plan.Entities[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func planInt64(plan agent.IntentPlan, key string) (int64, bool) {
+	value, ok := plan.Entities[key].(float64)
+	if !ok || value <= 0 || value != math.Trunc(value) || value > 1e15 {
+		return 0, false
+	}
+	return int64(value), true
+}
+
+func planBool(plan agent.IntentPlan, key string) bool {
+	value, _ := plan.Entities[key].(bool)
+	return value
+}
+
+func planParticipants(plan agent.IntentPlan) ([]SplitParticipant, bool) {
+	raw, ok := plan.Entities["participants"].([]any)
+	if !ok || len(raw) < 2 || len(raw) > 10 {
+		return nil, false
+	}
+	participants := make([]SplitParticipant, 0, len(raw))
+	for _, item := range raw {
+		object, ok := item.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		participant := SplitParticipant{}
+		participant.Name, _ = object["name"].(string)
+		participant.Phone, _ = object["phone"].(string)
+		participant.IsPayer, _ = object["is_payer"].(bool)
+		participants = append(participants, participant)
+	}
+	return participants, true
 }
 
 func (s *Service) ListProducts(ctx context.Context, riskLevel string, page, pageSize int) (ProductPage, string, error) {
@@ -564,6 +873,69 @@ func (s *Service) BillSummary(ctx context.Context, userID, accountID string, mon
 	return summary, trace, nil
 }
 
+func (s *Service) BillReport(ctx context.Context, userID, accountID, period string, year int) (BillSummary, string, error) {
+	account, err := s.repo.Account(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return BillSummary{}, "", ErrNotFound
+		}
+		return BillSummary{}, "", err
+	}
+	if accountID != "" && account.ID != accountID {
+		return BillSummary{}, "", ErrForbidden
+	}
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return BillSummary{}, "", err
+	}
+	if year <= 0 {
+		year = s.now().In(loc).Year()
+	}
+	if period == "" {
+		period = "year"
+	}
+	if period != "year" {
+		return BillSummary{}, "", ErrInvalidArgument
+	}
+	start := time.Date(year, 1, 1, 0, 0, 0, 0, loc)
+	summary, err := s.repo.BillSummaryRange(ctx, userID, start, start.AddDate(1, 0, 0), fmt.Sprintf("%d", year))
+	trace := NewID("tr")
+	if err != nil {
+		return BillSummary{}, trace, err
+	}
+	if err := s.audit(ctx, trace, "", "", "bill_report_queried", "succeeded", "tool", map[string]any{"period": period, "year": year}, s.now()); err != nil {
+		return BillSummary{}, trace, err
+	}
+	return summary, trace, nil
+}
+
+func (s *Service) SubscriptionReminders(ctx context.Context, userID string, days int) ([]SubscriptionReminder, string, error) {
+	if days < 0 || days > 365 {
+		return nil, "", ErrInvalidArgument
+	}
+	items, err := s.repo.Subscriptions(ctx, userID, "active")
+	if err != nil {
+		return nil, "", err
+	}
+	now := s.now()
+	var reminders []SubscriptionReminder
+	for _, item := range items {
+		delta := item.NextChargeAt.Sub(now)
+		until := int(delta.Hours() / 24)
+		if delta < 0 {
+			until = 0
+		}
+		if until <= days {
+			reminders = append(reminders, SubscriptionReminder{SubscriptionID: item.ID, MerchantRef: item.MerchantRef, AmountMinor: item.AmountMinor, Currency: item.Currency, NextChargeAt: item.NextChargeAt, DaysUntil: until})
+		}
+	}
+	trace := NewID("tr")
+	if err := s.audit(ctx, trace, "", "", "subscription_reminders_queried", "succeeded", "tool", map[string]any{"days": days, "count": len(reminders)}, now); err != nil {
+		return nil, trace, err
+	}
+	return reminders, trace, nil
+}
+
 func (s *Service) GetAction(ctx context.Context, userID, id string) (Action, error) {
 	action, err := s.repo.Action(ctx, id)
 	if err != nil {
@@ -602,13 +974,7 @@ func (s *Service) Confirm(ctx context.Context, userID, id, _ string) (Action, st
 		}
 		return Action{}, trace, ErrActionExpired
 	}
-	if err := s.execute(ctx, &action, trace); err != nil {
-		if workflowErr := s.failWorkflowAction(ctx, &action, s.now()); workflowErr != nil {
-			return Action{}, trace, workflowErr
-		}
-		return Action{}, trace, err
-	}
-	if err := s.finishWorkflowAction(ctx, &action, s.now()); err != nil {
+	if err := s.proceedAuthorized(ctx, &action, trace); err != nil {
 		return Action{}, trace, err
 	}
 	return action.Public(), trace, nil
@@ -649,13 +1015,49 @@ func (s *Service) VerifyMFA(ctx context.Context, userID, id, code string) (Actio
 		}
 		return Action{}, trace, ErrMFAInvalid
 	}
+	if err := s.proceedAuthorized(ctx, &action, trace); err != nil {
+		return Action{}, trace, err
+	}
+	return action.Public(), trace, nil
+}
+
+func (s *Service) TriggerScheduled(ctx context.Context, userID, id string) (Action, string, error) {
+	action, err := s.authorizedAction(ctx, userID, id)
+	if err != nil {
+		return Action{}, "", err
+	}
+	trace := NewID("tr")
+	if action.Status != "scheduled" {
+		return Action{}, trace, ErrActionStateConflict
+	}
+	scheduledAt, ok := actionScheduledAt(action)
+	if !ok {
+		return Action{}, trace, ErrActionStateConflict
+	}
+	now := s.now()
+	if now.Before(scheduledAt) {
+		return Action{}, trace, ErrActionStateConflict
+	}
+	if now.After(action.ExpiresAt) {
+		action.Status, action.UpdatedAt = "expired", now
+		if err := s.repo.UpdateAction(ctx, action); err != nil {
+			return Action{}, trace, err
+		}
+		return Action{}, trace, ErrActionExpired
+	}
+	if err := s.enforceTransferLimit(ctx, &action, trace, now); err != nil {
+		return Action{}, trace, err
+	}
 	if err := s.execute(ctx, &action, trace); err != nil {
-		if workflowErr := s.failWorkflowAction(ctx, &action, s.now()); workflowErr != nil {
+		if workflowErr := s.failWorkflowAction(ctx, &action, now); workflowErr != nil {
 			return Action{}, trace, workflowErr
 		}
 		return Action{}, trace, err
 	}
-	if err := s.finishWorkflowAction(ctx, &action, s.now()); err != nil {
+	if err := s.finishWorkflowAction(ctx, &action, now); err != nil {
+		return Action{}, trace, err
+	}
+	if err := s.audit(ctx, trace, action.ConversationID, action.ID, "scheduled_action_triggered", "succeeded", "system", map[string]any{"scheduled_at": scheduledAt}, now); err != nil {
 		return Action{}, trace, err
 	}
 	return action.Public(), trace, nil
@@ -687,6 +1089,58 @@ func (s *Service) Cancel(ctx context.Context, userID, id string) (Action, string
 		return Action{}, trace, err
 	}
 	return action.Public(), trace, nil
+}
+
+func (s *Service) proceedAuthorized(ctx context.Context, action *Action, trace string) error {
+	now := s.now()
+	if scheduledAt, ok := actionScheduledAt(*action); ok && now.Before(scheduledAt) {
+		scheduled, err := s.repo.ScheduleAction(ctx, action.ID, action.Status, now)
+		if err != nil {
+			return err
+		}
+		if !scheduled {
+			return ErrActionStateConflict
+		}
+		action.Status, action.UpdatedAt = "scheduled", now
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "action_scheduled", "succeeded", "user", map[string]any{"scheduled_at": scheduledAt}, now)
+	}
+	if err := s.enforceTransferLimit(ctx, action, trace, now); err != nil {
+		return err
+	}
+	if err := s.execute(ctx, action, trace); err != nil {
+		if workflowErr := s.failWorkflowAction(ctx, action, now); workflowErr != nil {
+			return workflowErr
+		}
+		return err
+	}
+	return s.finishWorkflowAction(ctx, action, now)
+}
+
+func (s *Service) enforceTransferLimit(ctx context.Context, action *Action, trace string, now time.Time) error {
+	if action.Kind != "transfer" || action.RiskLevel != "yellow" {
+		return nil
+	}
+	var snapshot struct {
+		AmountMinor int64 `json:"amount_minor"`
+	}
+	if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+		return err
+	}
+	daily, err := s.repo.DailyOutgoing(ctx, action.UserID, now)
+	if err != nil {
+		return err
+	}
+	if daily+snapshot.AmountMinor <= 100000 {
+		return nil
+	}
+	action.Status, action.UpdatedAt = "failed", now
+	if err := s.repo.UpdateAction(ctx, *action); err != nil {
+		return err
+	}
+	if err := s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_reauthorization_required", "failed", "system", map[string]any{"daily_outgoing_minor": daily, "amount_minor": snapshot.AmountMinor}, now); err != nil {
+		return err
+	}
+	return ErrActionStateConflict
 }
 
 func (s *Service) Audit(ctx context.Context, userID, traceID string) ([]AuditEvent, error) {
@@ -756,6 +1210,20 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		action.Status = "succeeded"
 		action.UpdatedAt = now
 		return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_succeeded", "succeeded", "tool", map[string]any{"amount_minor": snapshot.AmountMinor}, now)
+	case "transfer_split":
+		var snapshot TransferSplitSnapshot
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		transferSplit, err := s.repo.ExecuteTransferSplit(ctx, *action, snapshot, now)
+		if err != nil {
+			return err
+		}
+		action.Status, action.UpdatedAt, action.Result = "succeeded", now, transferSplit
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_split_requested", "succeeded", "tool", map[string]any{
+			"transfer_split_id": transferSplit.ID, "total_amount_minor": transferSplit.TotalAmountMinor,
+			"collectible_minor": transferSplit.CollectibleMinor,
+		}, now)
 	case "investment_redemption":
 		var snapshot struct {
 			HoldingID string `json:"holding_id"`
@@ -876,6 +1344,12 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		if err := s.repo.ExecuteWorkflowBudgetLock(ctx, *action, snapshot.WorkflowID, snapshot.NodeID, snapshot.AmountMinor, now); err != nil {
+			if errors.Is(err, ErrInsufficientBalance) {
+				action.Status, action.UpdatedAt = "failed", now
+				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "workflow_budget_lock_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
+					return auditErr
+				}
+			}
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
@@ -900,6 +1374,12 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		if err := s.repo.ExecuteWorkflowOrder(ctx, *action, snapshot.WorkflowID, snapshot.NodeID, snapshot.AmountMinor, snapshot.Merchant, now); err != nil {
+			if errors.Is(err, ErrBudgetNotReserved) || errors.Is(err, ErrInsufficientBalance) {
+				action.Status, action.UpdatedAt = "failed", now
+				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "workflow_order_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
+					return auditErr
+				}
+			}
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
@@ -927,6 +1407,18 @@ func parseHoldingID(text string) string {
 }
 
 func isPending(status string) bool {
-	return status == "awaiting_confirmation" || status == "awaiting_mfa"
+	return status == "awaiting_confirmation" || status == "awaiting_mfa" || status == "scheduled"
 }
+
+func actionScheduledAt(action Action) (time.Time, bool) {
+	var snapshot struct {
+		ScheduledAt string `json:"scheduled_at"`
+	}
+	if json.Unmarshal([]byte(action.SnapshotJSON), &snapshot) != nil || snapshot.ScheduledAt == "" {
+		return time.Time{}, false
+	}
+	scheduledAt, err := time.Parse(time.RFC3339, snapshot.ScheduledAt)
+	return scheduledAt, err == nil
+}
+
 func ptr[T any](value T) *T { return &value }

@@ -10,13 +10,14 @@ import (
 )
 
 type WorkflowNode struct {
-	ID          string   `json:"node_id"`
-	Kind        string   `json:"kind"`
-	DependsOn   []string `json:"depends_on,omitempty"`
-	Status      string   `json:"status"`
-	ActionID    string   `json:"action_id,omitempty"`
-	AmountMinor int64    `json:"amount_minor,omitempty"`
-	Merchant    string   `json:"merchant,omitempty"`
+	ID          string    `json:"node_id"`
+	Kind        string    `json:"kind"`
+	DependsOn   []string  `json:"depends_on,omitempty"`
+	Status      string    `json:"status"`
+	ActionID    string    `json:"action_id,omitempty"`
+	AmountMinor int64     `json:"amount_minor,omitempty"`
+	Merchant    string    `json:"merchant,omitempty"`
+	DueAt       time.Time `json:"due_at"`
 }
 
 type Workflow struct {
@@ -31,11 +32,12 @@ type Workflow struct {
 }
 
 type WorkflowNodeInput struct {
-	ID          string   `json:"node_id"`
-	Kind        string   `json:"kind"`
-	DependsOn   []string `json:"depends_on"`
-	AmountMinor int64    `json:"amount_minor"`
-	Merchant    string   `json:"merchant"`
+	ID          string    `json:"node_id"`
+	Kind        string    `json:"kind"`
+	DependsOn   []string  `json:"depends_on"`
+	AmountMinor int64     `json:"amount_minor"`
+	Merchant    string    `json:"merchant"`
+	DueAt       time.Time `json:"due_at"`
 }
 
 func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, deadline time.Time, inputs []WorkflowNodeInput) (Workflow, string, error) {
@@ -47,6 +49,9 @@ func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, de
 	graph := make(map[string][]string, len(inputs))
 	for _, node := range inputs {
 		if node.ID == "" || seen[node.ID] || !validWorkflowKind(node.Kind) || node.AmountMinor < 0 {
+			return Workflow{}, "", ErrInvalidArgument
+		}
+		if !node.DueAt.IsZero() && node.DueAt.After(deadline) {
 			return Workflow{}, "", ErrInvalidArgument
 		}
 		if node.Kind != "reminder" && node.AmountMinor <= 0 {
@@ -94,7 +99,11 @@ func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, de
 		if len(input.DependsOn) == 0 {
 			status = "ready"
 		}
-		workflow.Nodes = append(workflow.Nodes, WorkflowNode{ID: input.ID, Kind: input.Kind, DependsOn: input.DependsOn, Status: status, AmountMinor: input.AmountMinor, Merchant: input.Merchant})
+		dueAt := input.DueAt
+		if dueAt.IsZero() {
+			dueAt = s.now()
+		}
+		workflow.Nodes = append(workflow.Nodes, WorkflowNode{ID: input.ID, Kind: input.Kind, DependsOn: input.DependsOn, Status: status, AmountMinor: input.AmountMinor, Merchant: input.Merchant, DueAt: dueAt})
 	}
 	if err := s.repo.CreateWorkflow(ctx, workflow); err != nil {
 		return Workflow{}, "", err
@@ -155,13 +164,16 @@ type WorkflowAdvanceResult struct {
 	Action   *Action  `json:"action,omitempty"`
 }
 
-func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string) (WorkflowAdvanceResult, string, error) {
+func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string, virtualNow time.Time) (WorkflowAdvanceResult, string, error) {
 	workflow, err := s.repo.Workflow(ctx, id, userID)
 	if err != nil {
 		return WorkflowAdvanceResult{}, "", err
 	}
+	if virtualNow.IsZero() {
+		virtualNow = s.now()
+	}
 	trace := NewID("tr")
-	if workflow.Status == "completed" || workflow.Status == "cancelled" || workflow.Status == "failed" || !s.now().Before(workflow.Deadline) {
+	if workflow.Status == "completed" || workflow.Status == "cancelled" || workflow.Status == "failed" || !virtualNow.Before(workflow.Deadline) {
 		return WorkflowAdvanceResult{}, trace, ErrActionStateConflict
 	}
 	for _, node := range workflow.Nodes {
@@ -175,7 +187,7 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string) (Workf
 	}
 	var node *WorkflowNode
 	for i := range workflow.Nodes {
-		if workflow.Nodes[i].Status == "ready" {
+		if workflow.Nodes[i].Status == "ready" && !workflow.Nodes[i].DueAt.After(virtualNow) {
 			node = &workflow.Nodes[i]
 			break
 		}
@@ -184,14 +196,14 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string) (Workf
 		return WorkflowAdvanceResult{Workflow: workflow}, trace, nil
 	}
 	if node.Kind == "reminder" {
-		if err := s.repo.CompleteWorkflowNode(ctx, workflow.ID, node.ID, s.now()); err != nil {
+		if err := s.repo.CompleteWorkflowNode(ctx, workflow.ID, node.ID, virtualNow); err != nil {
 			return WorkflowAdvanceResult{}, trace, err
 		}
 		updated, err := s.repo.Workflow(ctx, workflow.ID, userID)
 		if err != nil {
 			return WorkflowAdvanceResult{}, trace, err
 		}
-		if err := s.audit(ctx, trace, "", "", "workflow_reminder_completed", "succeeded", "system", map[string]any{"workflow_id": workflow.ID, "node_id": node.ID}, s.now()); err != nil {
+		if err := s.audit(ctx, trace, "", "", "workflow_reminder_completed", "succeeded", "system", map[string]any{"workflow_id": workflow.ID, "node_id": node.ID, "virtual_now": virtualNow}, virtualNow); err != nil {
 			return WorkflowAdvanceResult{}, trace, err
 		}
 		return WorkflowAdvanceResult{Workflow: updated}, trace, nil
@@ -207,13 +219,13 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string) (Workf
 	}
 	snapshot := map[string]any{
 		"workflow_id": workflow.ID, "node_id": node.ID, "amount_minor": node.AmountMinor,
-		"merchant": node.Merchant, "purpose": workflow.Purpose, "currency": "CNY",
+		"merchant": node.Merchant, "purpose": workflow.Purpose, "currency": "CNY", "due_at": node.DueAt,
 	}
 	action, err := s.createWorkflowActionRecord(ctx, workflow.UserID, kind, risk, status, snapshot)
 	if err != nil {
 		return WorkflowAdvanceResult{}, trace, err
 	}
-	if err := s.repo.SetWorkflowNodeAction(ctx, workflow.ID, node.ID, action.ID, "awaiting_authorization", s.now()); err != nil {
+	if err := s.repo.SetWorkflowNodeAction(ctx, workflow.ID, node.ID, action.ID, "awaiting_authorization", virtualNow); err != nil {
 		return WorkflowAdvanceResult{}, trace, err
 	}
 	updated, err := s.repo.Workflow(ctx, workflow.ID, userID)

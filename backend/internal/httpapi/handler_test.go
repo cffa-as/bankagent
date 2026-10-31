@@ -36,7 +36,12 @@ type action struct {
 
 func newServer(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
-	application, err := app.New(app.Config{Database: filepath.Join(t.TempDir(), "bankagent.db")})
+	return newServerWithClock(t, nil)
+}
+
+func newServerWithClock(t *testing.T, now func() time.Time) (*httptest.Server, func()) {
+	t.Helper()
+	application, err := app.New(app.Config{Database: filepath.Join(t.TempDir(), "bankagent.db"), Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +129,45 @@ func TestYellowTransferAndIdempotency(t *testing.T) {
 	resp, secondBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", confirmBody, "confirm-1")
 	if resp.StatusCode != http.StatusOK || !bytes.Equal(bytes.TrimSpace(secondBody), bytes.TrimSpace(body)) {
 		t.Fatalf("idempotent replay: status=%d first=%s second=%s", resp.StatusCode, body, secondBody)
+	}
+}
+
+func TestPendingYellowTransfersCannotExceedDailyLimitAtExecution(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	createAction := func(idem string) string {
+		t.Helper()
+		body := `{"conversation_id":"` + conversationID + `","beneficiary_name":"张三","amount_minor":60000}`
+		resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfers", body, idem)
+		if resp.StatusCode != http.StatusCreated || !bytes.Contains(raw, []byte(`"risk_level":"yellow"`)) {
+			t.Fatalf("create transfer: status=%d body=%s", resp.StatusCode, raw)
+		}
+		var result envelope
+		var action struct {
+			ID string `json:"action_id"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(result.Data, &action); err != nil {
+			t.Fatal(err)
+		}
+		return action.ID
+	}
+	firstID := createAction("daily-limit-create-1")
+	secondID := createAction("daily-limit-create-2")
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+firstID+"/confirm", `{}`, "daily-limit-confirm-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("confirm first transfer: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+secondID+"/confirm", `{}`, "daily-limit-confirm-2")
+	if resp.StatusCode != http.StatusConflict || !bytes.Contains(raw, []byte("ACTION_STATE_CONFLICT")) {
+		t.Fatalf("confirm second transfer: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":940000`)) {
+		t.Fatalf("daily limit bypass changed balance: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
 
@@ -750,7 +794,7 @@ func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()
 	deadline := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
-	body := `{"purpose":"爱人生日","deadline":"` + deadline + `","nodes":[{"node_id":"reserve","kind":"reminder","depends_on":[]},{"node_id":"flowers","kind":"external_order","depends_on":["reserve"],"amount_minor":50000,"merchant":"演示花店"}]}`
+	body := `{"purpose":"爱人生日","deadline":"` + deadline + `","nodes":[{"node_id":"reminder","kind":"reminder","depends_on":[]},{"node_id":"reserve","kind":"budget_lock","depends_on":["reminder"],"amount_minor":100000},{"node_id":"flowers","kind":"external_order","depends_on":["reserve"],"amount_minor":50000,"merchant":"演示花店"}]}`
 	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "workflow-create-1")
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
@@ -772,7 +816,7 @@ func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "workflow-advance-2")
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("advance order: status=%d body=%s", resp.StatusCode, raw)
+		t.Fatalf("advance budget lock: status=%d body=%s", resp.StatusCode, raw)
 	}
 	var advanced envelope
 	if err := json.Unmarshal(raw, &advanced); err != nil {
@@ -788,8 +832,29 @@ func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
 	if err := json.Unmarshal(advanced.Data, &pending); err != nil {
 		t.Fatal(err)
 	}
+	if pending.Action == nil || pending.Action.Risk != "red" || pending.Action.Status != "awaiting_mfa" {
+		t.Fatalf("unexpected budget lock action: %+v", pending)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/mfa/verify", `{"code":"000000"}`, "workflow-lock-mfa-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("verify budget lock: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"reserved_minor":100000`)) || !bytes.Contains(raw, []byte(`"available_minor":900000`)) {
+		t.Fatalf("locked balance: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "workflow-advance-3")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("advance order: status=%d body=%s", resp.StatusCode, raw)
+	}
+	if err := json.Unmarshal(raw, &advanced); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(advanced.Data, &pending); err != nil {
+		t.Fatal(err)
+	}
 	if pending.Action == nil || pending.Action.Risk != "yellow" || pending.Action.Status != "awaiting_confirmation" {
-		t.Fatalf("unexpected workflow action: %+v", pending)
+		t.Fatalf("unexpected workflow order action: %+v", pending)
 	}
 	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/confirm", `{}`, "workflow-confirm-1")
 	if resp.StatusCode != http.StatusOK {
@@ -811,5 +876,362 @@ func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
 	}
 	if final.Status != "completed" {
 		t.Fatalf("workflow not completed: %+v", final)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":950000`)) || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) || !bytes.Contains(raw, []byte(`"available_minor":950000`)) {
+		t.Fatalf("consumed balance: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestPhoneTransferCreatesBoundBeneficiaryAction(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	status, result, body := sendMessage(t, server.URL, conversationID, "给手机号13800000001转300元，备注生日礼物", "phone-transfer-message")
+	if status != http.StatusOK || result.ReplyType != "action_required" || result.Action.Risk != "yellow" {
+		t.Fatalf("phone transfer: status=%d result=%+v body=%s", status, result, body)
+	}
+	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/actions/"+result.Action.ID, "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"beneficiary_phone":"13800000001"`)) {
+		t.Fatalf("phone snapshot: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
+func TestAnnualBillAndSubscriptionReminderQueries(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	year := time.Now().Format("2006")
+	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/bills/summary?year="+year, "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"period":"`+year+`"`)) || !bytes.Contains(body, []byte(`"total_minor":31500`)) || !bytes.Contains(body, []byte(`"transaction_id":"txn_seed_shopping"`)) {
+		t.Fatalf("annual bill: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/subscriptions/reminders?days=11", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"subscription_id":"sub_streaming"`)) {
+		t.Fatalf("subscription reminders: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
+func TestCardLostRequiresMFA(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/cards/card_demo/lost", `{"conversation_id":"`+conversationID+`"}`, "card-lost-action")
+	if resp.StatusCode != http.StatusCreated || !bytes.Contains(body, []byte(`"risk_level":"red"`)) || !bytes.Contains(body, []byte(`"status":"awaiting_mfa"`)) {
+		t.Fatalf("card lost action: status=%d body=%s", resp.StatusCode, body)
+	}
+	var result envelope
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		ID string `json:"action_id"`
+	}
+	if err := json.Unmarshal(result.Data, &created); err != nil {
+		t.Fatal(err)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+created.ID+"/mfa/verify", `{"code":"000000"}`, "card-lost-mfa")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"status":"succeeded"`)) {
+		t.Fatalf("card lost mfa: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"status":"lost"`)) {
+		t.Fatalf("lost card: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/cards/card_demo/unlost", `{"conversation_id":"`+conversationID+`"}`, "card-unlost-action")
+	if resp.StatusCode != http.StatusCreated || !bytes.Contains(body, []byte(`"risk_level":"red"`)) || !bytes.Contains(body, []byte(`"status":"awaiting_mfa"`)) {
+		t.Fatalf("card unlost action: status=%d body=%s", resp.StatusCode, body)
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(result.Data, &created); err != nil {
+		t.Fatal(err)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+created.ID+"/mfa/verify", `{"code":"000000"}`, "card-unlost-mfa")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"status":"succeeded"`)) {
+		t.Fatalf("card unlost mfa: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"status":"active"`)) {
+		t.Fatalf("unlost card: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
+func TestScheduledTransferWaitsForDueTimeAndTriggersOnce(t *testing.T) {
+	base := time.Date(2026, 10, 31, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	now := base
+	server, cleanup := newServerWithClock(t, func() time.Time { return now })
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	scheduledAt := base.Add(time.Hour)
+	body, err := json.Marshal(map[string]any{
+		"conversation_id": conversationID, "beneficiary_name": "张三",
+		"amount_minor": 30000, "remark": "预约房租", "scheduled_at": scheduledAt.Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfers", string(body), "scheduled-transfer-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create scheduled transfer: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created envelope
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	var pending struct {
+		ID     string `json:"action_id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(created.Data, &pending); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.ID+"/confirm", `{}`, "scheduled-transfer-confirm-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"scheduled"`)) {
+		t.Fatalf("schedule authorized transfer: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
+		t.Fatalf("scheduled transfer must not debit early: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.ID+"/trigger", `{}`, "scheduled-transfer-early-1")
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("trigger before due time: status=%d body=%s", resp.StatusCode, raw)
+	}
+	now = scheduledAt
+	resp, firstTrigger := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.ID+"/trigger", `{}`, "scheduled-transfer-trigger-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(firstTrigger, []byte(`"status":"succeeded"`)) {
+		t.Fatalf("trigger scheduled transfer: status=%d body=%s", resp.StatusCode, firstTrigger)
+	}
+	resp, replay := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.ID+"/trigger", `{}`, "scheduled-transfer-trigger-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Equal(bytes.TrimSpace(firstTrigger), bytes.TrimSpace(replay)) {
+		t.Fatalf("scheduled trigger replay: status=%d first=%s replay=%s", resp.StatusCode, firstTrigger, replay)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.ID+"/trigger", `{}`, "scheduled-transfer-trigger-2")
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("second trigger must conflict: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":970000`)) {
+		t.Fatalf("scheduled transfer debited once: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestTransferSplitCreatesConfirmedCollectionRequest(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	body, err := json.Marshal(map[string]any{
+		"conversation_id": conversationID, "total_amount_minor": 10000,
+		"participants": []map[string]any{
+			{"name": "我", "is_payer": true},
+			{"name": "张三", "phone": "13800000001"},
+			{"name": "李四", "phone": "13800000002"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfer-splits", string(body), "transfer-split-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create transfer split: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created envelope
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	var pending struct {
+		ID       string `json:"action_id"`
+		Snapshot struct {
+			Participants []struct {
+				AmountMinor int64 `json:"amount_minor"`
+			} `json:"participants"`
+		} `json:"snapshot"`
+	}
+	if err := json.Unmarshal(created.Data, &pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending.ID == "" || len(pending.Snapshot.Participants) != 3 || pending.Snapshot.Participants[0].AmountMinor != 3334 || pending.Snapshot.Participants[1].AmountMinor != 3333 {
+		t.Fatalf("unexpected split shares: %+v", pending)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.ID+"/confirm", `{}`, "transfer-split-confirm-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"collectible_minor":6666`)) || !bytes.Contains(raw, []byte(`"status":"requested"`)) {
+		t.Fatalf("confirm transfer split: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) {
+		t.Fatalf("split request must not move account funds: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfer-splits", `{"conversation_id":"`+conversationID+`","total_amount_minor":10000,"participants":[{"name":"张三"}]}`, "transfer-split-invalid-1")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid split participants: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestWorkflowBudgetLockFailuresAndCancellationReleaseReservation(t *testing.T) {
+	t.Run("insufficient balance", func(t *testing.T) {
+		server, cleanup := newServer(t)
+		defer cleanup()
+		deadline := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+		body := `{"purpose":"超额锁定","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":1000001}]}`
+		resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "insufficient-lock-create-1")
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
+		}
+		var created envelope
+		if err := json.Unmarshal(raw, &created); err != nil {
+			t.Fatal(err)
+		}
+		var workflow struct {
+			ID string `json:"workflow_id"`
+		}
+		if err := json.Unmarshal(created.Data, &workflow); err != nil {
+			t.Fatal(err)
+		}
+		resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "insufficient-lock-advance-1")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("advance workflow: status=%d body=%s", resp.StatusCode, raw)
+		}
+		var advanced envelope
+		if err := json.Unmarshal(raw, &advanced); err != nil {
+			t.Fatal(err)
+		}
+		var pending struct {
+			Action struct {
+				ID string `json:"action_id"`
+			} `json:"action"`
+		}
+		if err := json.Unmarshal(advanced.Data, &pending); err != nil {
+			t.Fatal(err)
+		}
+		resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/mfa/verify", `{"code":"000000"}`, "insufficient-lock-mfa-1")
+		if resp.StatusCode != http.StatusUnprocessableEntity || !bytes.Contains(raw, []byte("INSUFFICIENT_BALANCE")) {
+			t.Fatalf("lock beyond balance: status=%d body=%s", resp.StatusCode, raw)
+		}
+		resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+		if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) {
+			t.Fatalf("failed lock changed balance: status=%d body=%s", resp.StatusCode, raw)
+		}
+	})
+
+	t.Run("cancel releases remaining reservation", func(t *testing.T) {
+		server, cleanup := newServer(t)
+		defer cleanup()
+		deadline := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+		body := `{"purpose":"生日准备","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":100000},{"node_id":"flowers","kind":"external_order","depends_on":["lock"],"amount_minor":50000,"merchant":"演示花店"}]}`
+		resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "cancel-lock-create-1")
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
+		}
+		var created envelope
+		if err := json.Unmarshal(raw, &created); err != nil {
+			t.Fatal(err)
+		}
+		var workflow struct {
+			ID string `json:"workflow_id"`
+		}
+		if err := json.Unmarshal(created.Data, &workflow); err != nil {
+			t.Fatal(err)
+		}
+		resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "cancel-lock-advance-1")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("advance workflow: status=%d body=%s", resp.StatusCode, raw)
+		}
+		var advanced envelope
+		if err := json.Unmarshal(raw, &advanced); err != nil {
+			t.Fatal(err)
+		}
+		var pending struct {
+			Action struct {
+				ID string `json:"action_id"`
+			} `json:"action"`
+		}
+		if err := json.Unmarshal(advanced.Data, &pending); err != nil {
+			t.Fatal(err)
+		}
+		resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/mfa/verify", `{"code":"000000"}`, "cancel-lock-mfa-1")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("verify lock: status=%d body=%s", resp.StatusCode, raw)
+		}
+		resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/cancel", `{}`, "cancel-lock-workflow-1")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("cancel workflow: status=%d body=%s", resp.StatusCode, raw)
+		}
+		resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+		if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"balance_minor":1000000`)) || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) {
+			t.Fatalf("cancelled workflow did not release reservation: status=%d body=%s", resp.StatusCode, raw)
+		}
+	})
+}
+
+func TestWorkflowVirtualTimeWaitsForNodeDueAt(t *testing.T) {
+	base := time.Date(2026, 10, 31, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	server, cleanup := newServerWithClock(t, func() time.Time { return base })
+	defer cleanup()
+	dueAt := base.Add(time.Hour)
+	body, err := json.Marshal(map[string]any{
+		"purpose": "生日提醒", "deadline": base.Add(24 * time.Hour).Format(time.RFC3339),
+		"nodes": []map[string]any{{"node_id": "reminder", "kind": "reminder", "due_at": dueAt.Format(time.RFC3339)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", string(body), "due-workflow-create-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create due workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created envelope
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	var workflow struct {
+		ID string `json:"workflow_id"`
+	}
+	if err := json.Unmarshal(created.Data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "due-workflow-early-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"ready"`)) {
+		t.Fatalf("advance before due time: status=%d body=%s", resp.StatusCode, raw)
+	}
+	virtualNow := dueAt.Format(time.RFC3339)
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{"virtual_now":"`+virtualNow+`"}`, "due-workflow-due-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"completed"`)) {
+		t.Fatalf("advance at virtual due time: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestModelPlanCreatesValidatedActionWithoutTrustingAuthorizationFields(t *testing.T) {
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plan, err := json.Marshal(map[string]any{
+			"intent": "transfer",
+			"entities": map[string]any{
+				"beneficiary_name": "张三", "amount_minor": 20000, "remark": "房租",
+				"user_id": "attacker", "risk_level": "green", "status": "succeeded",
+			},
+			"missing_fields": []string{},
+			"candidate_plan": []map[string]string{{"kind": "create_transfer_candidate"}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": string(plan)}}}})
+	}))
+	defer modelServer.Close()
+	t.Setenv("BANKAGENT_LLM_BASE_URL", modelServer.URL)
+	t.Setenv("BANKAGENT_LLM_API_KEY", "test-key")
+	t.Setenv("BANKAGENT_LLM_MODEL", "test-model")
+
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	status, result, body := sendMessage(t, server.URL, conversationID, "帮我安排这周给张三的房租", "model-plan-message-1")
+	if status != http.StatusOK || result.ReplyType != "action_required" || result.Action.Risk != "yellow" || result.Action.ID == "" {
+		t.Fatalf("model plan action: status=%d result=%+v body=%s", status, result, body)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/actions/"+result.Action.ID, "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"beneficiary_name":"张三"`)) || !bytes.Contains(raw, []byte(`"amount_minor":20000`)) {
+		t.Fatalf("validated action snapshot: status=%d body=%s", resp.StatusCode, raw)
 	}
 }

@@ -55,7 +55,7 @@ func (c *OpenAICompatibleClient) Plan(ctx context.Context, text string) (IntentP
 		"temperature":     0,
 		"response_format": map[string]string{"type": "json_object"},
 		"messages": []map[string]string{
-			{"role": "system", "content": "你是银行业务意图解析器。只输出 JSON，不执行任何操作，不返回账户结果。intent 只能是 balance_query、transaction_query、bill_query、investment_query、investment_purchase、investment_redemption、card_query、card_status_change、subscription_query、subscription_cancel、transfer 或 unknown。candidate_plan 只能描述候选步骤。"},
+			{"role": "system", "content": "你是银行业务意图解析器。只输出 JSON，不执行任何操作，不返回账户结果。intent 只能是 balance_query、transaction_query、bill_query、investment_query、investment_purchase、investment_redemption、card_query、card_status_change、subscription_query、subscription_cancel、transfer、scheduled_transfer、transfer_split 或 unknown。entities 只填写用户明确提供的业务字段，金额使用最小货币单位整数；不填写 user_id、授权、风险等级、动作状态或执行结果。candidate_plan 只能描述候选步骤。"},
 			{"role": "user", "content": text},
 		},
 	}
@@ -106,6 +106,7 @@ func ValidatePlan(plan IntentPlan) error {
 		"balance_query": true, "transaction_query": true, "bill_query": true, "investment_query": true,
 		"investment_purchase": true, "investment_redemption": true, "card_query": true, "card_status_change": true,
 		"subscription_query": true, "subscription_cancel": true, "transfer": true, "unknown": true,
+		"scheduled_transfer": true, "transfer_split": true,
 	}
 	if !allowed[plan.Intent] || len(plan.CandidatePlan) > 8 || len(plan.MissingFields) > 16 {
 		return ErrInvalidPlan
