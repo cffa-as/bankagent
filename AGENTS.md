@@ -21,9 +21,9 @@
 ## 文档与设计入口
 
 - `docs/赛题解析.md`：赛题要求和范围取舍。
-- `docs/技术方案.md`：系统方案、安全边界和首期验收。
+- `docs/技术方案.md`：系统方案、安全边界、首期验收和待确认决策。
 - `docs/产品需求.md`：用户、场景、功能和交互需求。
-- `docs/概要设计.md`：数据结构、API、数据库和关键业务流程。
+- `docs/概要设计.md`：数据结构、API、数据库和关键业务流程；机器可读契约见 `docs/openapi.yaml`。
 - `.agents/skills/bankagent-design/SKILL.md`：编写或评审上述设计文档时必须遵循。
 - `.agents/skills/bankagent-test-engineering/SKILL.md`：编写或评审测试时必须遵循。
 - `.agents/skills/bankagent-go-engineering/SKILL.md`：编写或评审 Go 后端时必须遵循。
