@@ -821,6 +821,7 @@ components:
         summary: { type: object, additionalProperties: true }
         authorization: { $ref: '#/components/schemas/Authorization' }
         tool_receipt: { $ref: '#/components/schemas/ToolReceipt' }
+        result: { type: object, additionalProperties: true, description: 动作成功后的业务回执结果，例如理财赎回本金、收益和到账总额 }
         expires_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
@@ -895,6 +896,7 @@ components:
         minimum_amount_minor: { type: integer, format: int64 }
         term_days: { type: integer, minimum: 0 }
         benchmark_note: { type: string }
+        annual_rate_bps: { type: integer, format: int64, minimum: 0, description: Mock 演示用年化基准，不能视为收益承诺 }
     Holding:
       type: object
       required: [holding_id, product_id, product_name, amount_minor, status, purchased_at]

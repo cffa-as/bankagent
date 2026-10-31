@@ -54,6 +54,57 @@ func ensureSchema(db *sql.DB) error {
 			return err
 		}
 	}
+	rows, err = db.Query(`PRAGMA table_info(investment_products)`)
+	if err != nil {
+		return err
+	}
+	hasAnnualRate := false
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "annual_rate_bps" {
+			hasAnnualRate = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !hasAnnualRate {
+		if _, err := db.Exec(`ALTER TABLE investment_products ADD COLUMN annual_rate_bps INTEGER NOT NULL DEFAULT 300`); err != nil {
+			return err
+		}
+	}
+	rows, err = db.Query(`PRAGMA table_info(actions)`)
+	if err != nil {
+		return err
+	}
+	hasResult := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "result_json" {
+			hasResult = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !hasResult {
+		if _, err := db.Exec(`ALTER TABLE actions ADD COLUMN result_json TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -81,7 +132,8 @@ CREATE TABLE IF NOT EXISTS investment_products (
     risk_level TEXT NOT NULL,
     minimum_amount_minor INTEGER NOT NULL,
     term_days INTEGER NOT NULL,
-    benchmark_note TEXT NOT NULL
+    benchmark_note TEXT NOT NULL,
+    annual_rate_bps INTEGER NOT NULL DEFAULT 300
 );
 CREATE TABLE IF NOT EXISTS investment_holdings (
     id TEXT PRIMARY KEY,
@@ -126,6 +178,7 @@ CREATE TABLE IF NOT EXISTS actions (
     risk_level TEXT NOT NULL,
     status TEXT NOT NULL,
     snapshot_json TEXT NOT NULL,
+    result_json TEXT NOT NULL DEFAULT '',
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,

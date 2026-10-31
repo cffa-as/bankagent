@@ -400,3 +400,60 @@ func TestInvestmentPurchaseRequiresMFAAndCreatesHolding(t *testing.T) {
 		t.Fatalf("holdings: status=%d body=%s", resp.StatusCode, body)
 	}
 }
+
+func TestInvestmentRedemptionRequiresMFAAndCreditsPrincipal(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+
+	status, purchase, body := sendMessage(t, server.URL, conversationID, "申购稳健理财100元", "redeem-purchase-message")
+	if status != http.StatusOK || purchase.Action.Risk != "red" {
+		t.Fatalf("purchase message: status=%d result=%+v body=%s", status, purchase, body)
+	}
+	resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+purchase.Action.ID+"/mfa/verify", `{"code":"000000"}`, "redeem-purchase-mfa")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("purchase mfa: status=%d body=%s", resp.StatusCode, body)
+	}
+
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/investments/holdings", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("holdings: status=%d body=%s", resp.StatusCode, body)
+	}
+	var holdingsEnvelope envelope
+	if err := json.Unmarshal(body, &holdingsEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	var holdings []struct {
+		ID     string `json:"holding_id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(holdingsEnvelope.Data, &holdings); err != nil {
+		t.Fatal(err)
+	}
+	if len(holdings) != 1 || holdings[0].Status != "active" {
+		t.Fatalf("unexpected holdings: %+v", holdings)
+	}
+
+	status, redemption, body := sendMessage(t, server.URL, conversationID, "赎回我的理财", "redeem-message")
+	if status != http.StatusOK || redemption.ReplyType != "action_required" || redemption.Action.Risk != "red" {
+		t.Fatalf("redemption message: status=%d result=%+v body=%s", status, redemption, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+redemption.Action.ID+"/mfa/verify", `{"code":"000000"}`, "redeem-mfa")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("redemption mfa: status=%d body=%s", resp.StatusCode, body)
+	}
+
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/actions/"+redemption.Action.ID, "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"total_minor":10000`)) || !bytes.Contains(body, []byte(`"profit_minor":0`)) {
+		t.Fatalf("redemption result: status=%d body=%s", resp.StatusCode, body)
+	}
+
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/investments/holdings", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"status":"redeemed"`)) {
+		t.Fatalf("redeemed holdings: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"balance_minor":1000000`)) {
+		t.Fatalf("redeemed balance: status=%d body=%s", resp.StatusCode, body)
+	}
+}

@@ -63,6 +63,7 @@ type Product struct {
 	MinimumAmountMinor int64  `json:"minimum_amount_minor"`
 	TermDays           int    `json:"term_days"`
 	BenchmarkNote      string `json:"benchmark_note"`
+	AnnualRateBPS      int64  `json:"annual_rate_bps"`
 }
 
 type ProductPage struct {
@@ -70,6 +71,15 @@ type ProductPage struct {
 	Page     int       `json:"page"`
 	PageSize int       `json:"page_size"`
 	Total    int       `json:"total"`
+}
+
+type RedemptionResult struct {
+	HoldingID     string
+	Principal     int64
+	ProfitMinor   int64
+	TotalMinor    int64
+	DaysHeld      int64
+	AnnualRateBPS int64
 }
 
 type Holding struct {
@@ -123,6 +133,8 @@ type Action struct {
 	Status         string    `json:"status"`
 	SnapshotJSON   string    `json:"-"`
 	Snapshot       any       `json:"snapshot,omitempty"`
+	ResultJSON     string    `json:"-"`
+	Result         any       `json:"result,omitempty"`
 	ExpiresAt      time.Time `json:"expires_at"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
@@ -131,11 +143,15 @@ type Action struct {
 
 func (a Action) Public() Action {
 	a.UserID = ""
-	a.SnapshotJSON = ""
-	a.MFAAttempts = 0
 	if a.Snapshot == nil && a.SnapshotJSON != "" {
 		_ = json.Unmarshal([]byte(a.SnapshotJSON), &a.Snapshot)
 	}
+	if a.Result == nil && a.ResultJSON != "" {
+		_ = json.Unmarshal([]byte(a.ResultJSON), &a.Result)
+	}
+	a.SnapshotJSON = ""
+	a.ResultJSON = ""
+	a.MFAAttempts = 0
 	return a
 }
 
@@ -177,6 +193,7 @@ type Repository interface {
 	Products(context.Context, string) ([]Product, error)
 	Product(context.Context, string) (Product, error)
 	Holdings(context.Context, string) ([]Holding, error)
+	ActiveHolding(context.Context, string, string) (Holding, error)
 	Cards(context.Context, string) ([]Card, error)
 	Subscriptions(context.Context, string, string) ([]Subscription, error)
 	BillSummary(context.Context, string, time.Time) (BillSummary, error)
@@ -187,6 +204,7 @@ type Repository interface {
 	UpdateAction(context.Context, Action) error
 	ExecuteTransfer(context.Context, Action, int64, string, time.Time) error
 	ExecuteInvestmentPurchase(context.Context, Action, string, int64, time.Time) error
+	ExecuteInvestmentRedemption(context.Context, Action, string, time.Time) (RedemptionResult, error)
 	ExecuteCardStatus(context.Context, Action, string, string, time.Time) error
 	ExecuteSubscriptionCancel(context.Context, Action, string, time.Time) error
 	CancelAction(context.Context, string, time.Time) (bool, error)

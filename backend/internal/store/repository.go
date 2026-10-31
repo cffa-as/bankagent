@@ -29,16 +29,16 @@ func (r *Repository) Seed(ctx context.Context, now time.Time) error {
 		return fmt.Errorf("seed beneficiary: %w", err)
 	}
 	products := []struct {
-		id, name, risk, note string
-		minimum              int64
-		termDays             int
+		id, name, risk, note   string
+		minimum, annualRateBPS int64
+		termDays               int
 	}{
-		{"product_conservative", "稳健现金管理", "conservative", "历史业绩不代表未来表现", 10000, 30},
-		{"product_balanced", "均衡增值组合", "balanced", "适合中等风险承受能力用户", 100000, 180},
-		{"product_aggressive", "进取成长组合", "aggressive", "净值可能出现较大波动", 100000, 365},
+		{"product_conservative", "稳健现金管理", "conservative", "历史业绩不代表未来表现", 10000, 280, 30},
+		{"product_balanced", "均衡增值组合", "balanced", "适合中等风险承受能力用户", 100000, 420, 180},
+		{"product_aggressive", "进取成长组合", "aggressive", "净值可能出现较大波动", 100000, 700, 365},
 	}
 	for _, product := range products {
-		_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO investment_products(id,name,risk_level,minimum_amount_minor,term_days,benchmark_note) VALUES(?,?,?,?,?,?)`, product.id, product.name, product.risk, product.minimum, product.termDays, product.note)
+		_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO investment_products(id,name,risk_level,minimum_amount_minor,term_days,benchmark_note,annual_rate_bps) VALUES(?,?,?,?,?,?,?)`, product.id, product.name, product.risk, product.minimum, product.termDays, product.note, product.annualRateBPS)
 		if err != nil {
 			return fmt.Errorf("seed investment product: %w", err)
 		}
@@ -120,7 +120,7 @@ func (r *Repository) Transactions(ctx context.Context, userID string) ([]domain.
 
 func (r *Repository) Product(ctx context.Context, id string) (domain.Product, error) {
 	var product domain.Product
-	err := r.db.QueryRowContext(ctx, `SELECT id,name,risk_level,minimum_amount_minor,term_days,benchmark_note FROM investment_products WHERE id=?`, id).Scan(&product.ID, &product.Name, &product.RiskLevel, &product.MinimumAmountMinor, &product.TermDays, &product.BenchmarkNote)
+	err := r.db.QueryRowContext(ctx, `SELECT id,name,risk_level,minimum_amount_minor,term_days,benchmark_note,annual_rate_bps FROM investment_products WHERE id=?`, id).Scan(&product.ID, &product.Name, &product.RiskLevel, &product.MinimumAmountMinor, &product.TermDays, &product.BenchmarkNote, &product.AnnualRateBPS)
 	return product, err
 }
 
@@ -147,8 +147,20 @@ func (r *Repository) Holdings(ctx context.Context, userID string) ([]domain.Hold
 	return holdings, rows.Err()
 }
 
+func (r *Repository) ActiveHolding(ctx context.Context, userID, holdingID string) (domain.Holding, error) {
+	var holding domain.Holding
+	var purchased string
+	err := r.db.QueryRowContext(ctx, `SELECT h.id,h.product_id,p.name,h.amount_minor,h.status,h.purchased_at FROM investment_holdings h JOIN investment_products p ON p.id=h.product_id WHERE h.user_id=? AND h.id=? AND h.status='active'`, userID, holdingID).Scan(&holding.ID, &holding.ProductID, &holding.ProductName, &holding.AmountMinor, &holding.Status, &purchased)
+	if err != nil {
+		return holding, err
+	}
+	var parseErr error
+	holding.PurchasedAt, parseErr = time.Parse(time.RFC3339Nano, purchased)
+	return holding, parseErr
+}
+
 func (r *Repository) Products(ctx context.Context, riskLevel string) ([]domain.Product, error) {
-	query := `SELECT id,name,risk_level,minimum_amount_minor,term_days,benchmark_note FROM investment_products`
+	query := `SELECT id,name,risk_level,minimum_amount_minor,term_days,benchmark_note,annual_rate_bps FROM investment_products`
 	args := []any{}
 	if riskLevel != "" {
 		query += ` WHERE risk_level=?`
@@ -163,7 +175,7 @@ func (r *Repository) Products(ctx context.Context, riskLevel string) ([]domain.P
 	var products []domain.Product
 	for rows.Next() {
 		var product domain.Product
-		if err := rows.Scan(&product.ID, &product.Name, &product.RiskLevel, &product.MinimumAmountMinor, &product.TermDays, &product.BenchmarkNote); err != nil {
+		if err := rows.Scan(&product.ID, &product.Name, &product.RiskLevel, &product.MinimumAmountMinor, &product.TermDays, &product.BenchmarkNote, &product.AnnualRateBPS); err != nil {
 			return nil, err
 		}
 		products = append(products, product)
@@ -276,14 +288,14 @@ func (r *Repository) Beneficiary(ctx context.Context, userID, name string) (stri
 }
 
 func (r *Repository) CreateAction(ctx context.Context, a domain.Action) error {
-	_, err := r.db.ExecContext(ctx, `INSERT INTO actions(id,conversation_id,user_id,kind,risk_level,status,snapshot_json,expires_at,created_at,updated_at,mfa_attempts) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.ConversationID, a.UserID, a.Kind, a.RiskLevel, a.Status, a.SnapshotJSON, a.ExpiresAt.Format(time.RFC3339Nano), a.CreatedAt.Format(time.RFC3339Nano), a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts)
+	_, err := r.db.ExecContext(ctx, `INSERT INTO actions(id,conversation_id,user_id,kind,risk_level,status,snapshot_json,result_json,expires_at,created_at,updated_at,mfa_attempts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.ConversationID, a.UserID, a.Kind, a.RiskLevel, a.Status, a.SnapshotJSON, a.ResultJSON, a.ExpiresAt.Format(time.RFC3339Nano), a.CreatedAt.Format(time.RFC3339Nano), a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts)
 	return err
 }
 
 func (r *Repository) Action(ctx context.Context, id string) (domain.Action, error) {
 	var a domain.Action
 	var expires, created, updated string
-	err := r.db.QueryRowContext(ctx, `SELECT id,conversation_id,user_id,kind,risk_level,status,snapshot_json,expires_at,created_at,updated_at,mfa_attempts FROM actions WHERE id=?`, id).Scan(&a.ID, &a.ConversationID, &a.UserID, &a.Kind, &a.RiskLevel, &a.Status, &a.SnapshotJSON, &expires, &created, &updated, &a.MFAAttempts)
+	err := r.db.QueryRowContext(ctx, `SELECT id,conversation_id,user_id,kind,risk_level,status,snapshot_json,result_json,expires_at,created_at,updated_at,mfa_attempts FROM actions WHERE id=?`, id).Scan(&a.ID, &a.ConversationID, &a.UserID, &a.Kind, &a.RiskLevel, &a.Status, &a.SnapshotJSON, &a.ResultJSON, &expires, &created, &updated, &a.MFAAttempts)
 	if err != nil {
 		return a, err
 	}
@@ -301,7 +313,7 @@ func (r *Repository) Action(ctx context.Context, id string) (domain.Action, erro
 }
 
 func (r *Repository) UpdateAction(ctx context.Context, a domain.Action) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE actions SET status=?,updated_at=?,mfa_attempts=? WHERE id=?`, a.Status, a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts, a.ID)
+	_, err := r.db.ExecContext(ctx, `UPDATE actions SET status=?,result_json=?,updated_at=?,mfa_attempts=? WHERE id=?`, a.Status, a.ResultJSON, a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts, a.ID)
 	return err
 }
 
@@ -386,6 +398,69 @@ func (r *Repository) ExecuteInvestmentPurchase(ctx context.Context, a domain.Act
 		return err
 	}
 	return tx.Commit()
+}
+
+func (r *Repository) ExecuteInvestmentRedemption(ctx context.Context, a domain.Action, holdingID string, now time.Time) (domain.RedemptionResult, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE actions SET status='executing',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), a.ID, a.Status)
+	if err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return domain.RedemptionResult{}, err
+	} else if affected != 1 {
+		return domain.RedemptionResult{}, domain.ErrActionStateConflict
+	}
+	var accountID string
+	var principal, annualRateBPS int64
+	var purchased string
+	err = tx.QueryRowContext(ctx, `SELECT h.user_id,h.amount_minor,p.annual_rate_bps,h.purchased_at FROM investment_holdings h JOIN investment_products p ON p.id=h.product_id WHERE h.id=? AND h.user_id=? AND h.status='active'`, holdingID, a.UserID).Scan(new(string), &principal, &annualRateBPS, &purchased)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.RedemptionResult{}, domain.ErrActionStateConflict
+	}
+	if err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	purchasedAt, err := time.Parse(time.RFC3339Nano, purchased)
+	if err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	daysHeld := int64(now.Sub(purchasedAt).Hours() / 24)
+	if daysHeld < 0 {
+		daysHeld = 0
+	}
+	profit := principal * annualRateBPS * daysHeld / (365 * 10000)
+	total := principal + profit
+	var balance int64
+	if err := tx.QueryRowContext(ctx, `SELECT id,balance_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &balance); err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET balance_minor=balance_minor+? WHERE id=?`, total, accountID); err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("txn"), accountID, "in", total, "investment", "理财赎回 "+holdingID, now.Format(time.RFC3339Nano)); err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE investment_holdings SET status='redeemed' WHERE id=? AND user_id=? AND status='active'`, holdingID, a.UserID)
+	if err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return domain.RedemptionResult{}, err
+	} else if affected != 1 {
+		return domain.RedemptionResult{}, domain.ErrActionStateConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.RedemptionResult{}, err
+	}
+	return domain.RedemptionResult{HoldingID: holdingID, Principal: principal, ProfitMinor: profit, TotalMinor: total, DaysHeld: daysHeld, AnnualRateBPS: annualRateBPS}, nil
 }
 
 func (r *Repository) ExecuteCardStatus(ctx context.Context, a domain.Action, cardID, status string, now time.Time) error {

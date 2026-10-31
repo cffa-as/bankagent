@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -73,6 +74,45 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 			return MessageResult{}, trace, err
 		}
 		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("已找到 %d 笔交易记录。", len(records)), Records: records}, trace, nil
+	}
+	if strings.Contains(text, "理财") && strings.Contains(text, "赎回") {
+		holdings, err := s.repo.Holdings(ctx, userID)
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		active := make([]Holding, 0, len(holdings))
+		for _, holding := range holdings {
+			if holding.Status == "active" {
+				active = append(active, holding)
+			}
+		}
+		holdingID := parseHoldingID(text)
+		if holdingID == "" && len(active) == 1 {
+			holdingID = active[0].ID
+		}
+		if holdingID == "" {
+			if len(active) == 0 {
+				return MessageResult{RunID: runID, ReplyType: "question", Text: "当前没有可赎回的理财持仓。"}, trace, nil
+			}
+			return MessageResult{RunID: runID, ReplyType: "question", Text: "你有多笔可赎回持仓，请提供持仓 ID。"}, trace, nil
+		}
+		holding, err := s.repo.ActiveHolding(ctx, userID, holdingID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return MessageResult{RunID: runID, ReplyType: "question", Text: "没有找到可赎回的持仓，请提供有效的持仓 ID。"}, trace, nil
+			}
+			return MessageResult{}, trace, err
+		}
+		snapshot := map[string]any{"holding_id": holding.ID, "product_id": holding.ProductID, "product_name": holding.ProductName, "principal_minor": holding.AmountMinor, "currency": "CNY"}
+		snapshotJSON, _ := json.Marshal(snapshot)
+		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "investment_redemption", RiskLevel: "red", Status: "awaiting_mfa", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+		if err := s.repo.CreateAction(ctx, action); err != nil {
+			return MessageResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "该理财赎回需要完成 MFA 验证。", Action: ptr(action.Public())}, trace, nil
 	}
 	if strings.Contains(text, "理财") && strings.Contains(text, "申购") {
 		amount, ok := parseInvestmentPurchase(text)
@@ -518,6 +558,37 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		action.Status = "succeeded"
 		action.UpdatedAt = now
 		return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_succeeded", "succeeded", "tool", map[string]any{"amount_minor": snapshot.AmountMinor}, now)
+	case "investment_redemption":
+		var snapshot struct {
+			HoldingID string `json:"holding_id"`
+		}
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		result, err := s.repo.ExecuteInvestmentRedemption(ctx, *action, snapshot.HoldingID, now)
+		if err != nil {
+			if errors.Is(err, ErrActionStateConflict) || errors.Is(err, ErrInsufficientBalance) {
+				action.Status, action.UpdatedAt = "failed", now
+				if updateErr := s.repo.UpdateAction(ctx, *action); updateErr != nil {
+					return updateErr
+				}
+				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "investment_redemption_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
+					return auditErr
+				}
+			}
+			return err
+		}
+		action.Status, action.UpdatedAt = "succeeded", now
+		action.Result = map[string]any{"holding_id": result.HoldingID, "principal_minor": result.Principal, "profit_minor": result.ProfitMinor, "total_minor": result.TotalMinor, "days_held": result.DaysHeld, "annual_rate_bps": result.AnnualRateBPS}
+		resultJSON, err := json.Marshal(action.Result)
+		if err != nil {
+			return err
+		}
+		action.ResultJSON = string(resultJSON)
+		if err := s.repo.UpdateAction(ctx, *action); err != nil {
+			return err
+		}
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "investment_redeemed", "succeeded", "tool", action.Result.(map[string]any), now)
 	case "investment_purchase":
 		var snapshot struct {
 			ProductID   string `json:"product_id"`
@@ -569,6 +640,10 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 
 func (s *Service) audit(ctx context.Context, trace, conversation, action, event, outcome, actor string, detail map[string]any, now time.Time) error {
 	return s.repo.AddAudit(ctx, AuditEvent{ID: NewID("evt"), TraceID: trace, ConversationID: conversation, ActionID: action, EventType: event, Outcome: outcome, Actor: actor, Detail: detail, OccurredAt: now, Sequence: 1})
+}
+
+func parseHoldingID(text string) string {
+	return regexp.MustCompile(`holding_[a-zA-Z0-9]+`).FindString(text)
 }
 
 func isPending(status string) bool {
