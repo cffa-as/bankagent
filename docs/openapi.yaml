@@ -493,6 +493,20 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /v1/investments/holdings:
+    get:
+      tags: [Queries]
+      summary: 查询理财持仓
+      operationId: listInvestmentHoldings
+      responses:
+        '200':
+          description: 理财持仓列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeHoldingList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /v1/cards:
     get:
       tags: [Queries]
@@ -881,6 +895,16 @@ components:
         minimum_amount_minor: { type: integer, format: int64 }
         term_days: { type: integer, minimum: 0 }
         benchmark_note: { type: string }
+    Holding:
+      type: object
+      required: [holding_id, product_id, product_name, amount_minor, status, purchased_at]
+      properties:
+        holding_id: { type: string }
+        product_id: { type: string }
+        product_name: { type: string }
+        amount_minor: { type: integer, format: int64 }
+        status: { type: string, enum: [active, redeemed] }
+        purchased_at: { type: string, format: date-time }
     Card:
       type: object
       required: [card_id, status, limit_minor]
@@ -1011,6 +1035,10 @@ components:
             page: { type: integer }
             page_size: { type: integer }
             total: { type: integer }
+    EnvelopeHoldingList:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Holding' } }
     EnvelopeCardList:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:

@@ -118,6 +118,35 @@ func (r *Repository) Transactions(ctx context.Context, userID string) ([]domain.
 	return result, rows.Err()
 }
 
+func (r *Repository) Product(ctx context.Context, id string) (domain.Product, error) {
+	var product domain.Product
+	err := r.db.QueryRowContext(ctx, `SELECT id,name,risk_level,minimum_amount_minor,term_days,benchmark_note FROM investment_products WHERE id=?`, id).Scan(&product.ID, &product.Name, &product.RiskLevel, &product.MinimumAmountMinor, &product.TermDays, &product.BenchmarkNote)
+	return product, err
+}
+
+func (r *Repository) Holdings(ctx context.Context, userID string) ([]domain.Holding, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT h.id,h.product_id,p.name,h.amount_minor,h.status,h.purchased_at FROM investment_holdings h JOIN investment_products p ON p.id=h.product_id WHERE h.user_id=? ORDER BY h.purchased_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var holdings []domain.Holding
+	for rows.Next() {
+		var holding domain.Holding
+		var purchased string
+		if err := rows.Scan(&holding.ID, &holding.ProductID, &holding.ProductName, &holding.AmountMinor, &holding.Status, &purchased); err != nil {
+			return nil, err
+		}
+		var err error
+		holding.PurchasedAt, err = time.Parse(time.RFC3339Nano, purchased)
+		if err != nil {
+			return nil, err
+		}
+		holdings = append(holdings, holding)
+	}
+	return holdings, rows.Err()
+}
+
 func (r *Repository) Products(ctx context.Context, riskLevel string) ([]domain.Product, error) {
 	query := `SELECT id,name,risk_level,minimum_amount_minor,term_days,benchmark_note FROM investment_products`
 	args := []any{}
@@ -309,6 +338,48 @@ func (r *Repository) ExecuteTransfer(ctx context.Context, a domain.Action, amoun
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("txn"), accountID, "out", amount, "transfer", description, now.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) ExecuteInvestmentPurchase(ctx context.Context, a domain.Action, productID string, amount int64, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE actions SET status='executing',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), a.ID, a.Status)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	var accountID, currency string
+	var balance int64
+	if err := tx.QueryRowContext(ctx, `SELECT id,currency,balance_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &currency, &balance); err != nil {
+		return err
+	}
+	if currency != "CNY" || balance < amount {
+		_, _ = tx.ExecContext(ctx, `UPDATE actions SET status='failed',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID)
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		return domain.ErrInsufficientBalance
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET balance_minor=balance_minor-? WHERE id=?`, amount, accountID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("txn"), accountID, "out", amount, "investment", "理财申购 "+productID, now.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO investment_holdings(id,user_id,product_id,amount_minor,status,purchased_at) VALUES(?,?,?,?,?,?)`, domain.NewID("holding"), a.UserID, productID, amount, "active", now.Format(time.RFC3339Nano)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {

@@ -72,6 +72,15 @@ type ProductPage struct {
 	Total    int       `json:"total"`
 }
 
+type Holding struct {
+	ID          string    `json:"holding_id"`
+	ProductID   string    `json:"product_id"`
+	ProductName string    `json:"product_name"`
+	AmountMinor int64     `json:"amount_minor"`
+	Status      string    `json:"status"`
+	PurchasedAt time.Time `json:"purchased_at"`
+}
+
 type Card struct {
 	ID           string   `json:"card_id"`
 	MaskedNumber string   `json:"masked_number"`
@@ -166,6 +175,8 @@ type Repository interface {
 	Account(context.Context, string) (Account, error)
 	Transactions(context.Context, string) ([]Transaction, error)
 	Products(context.Context, string) ([]Product, error)
+	Product(context.Context, string) (Product, error)
+	Holdings(context.Context, string) ([]Holding, error)
 	Cards(context.Context, string) ([]Card, error)
 	Subscriptions(context.Context, string, string) ([]Subscription, error)
 	BillSummary(context.Context, string, time.Time) (BillSummary, error)
@@ -175,6 +186,7 @@ type Repository interface {
 	Action(context.Context, string) (Action, error)
 	UpdateAction(context.Context, Action) error
 	ExecuteTransfer(context.Context, Action, int64, string, time.Time) error
+	ExecuteInvestmentPurchase(context.Context, Action, string, int64, time.Time) error
 	ExecuteCardStatus(context.Context, Action, string, string, time.Time) error
 	ExecuteSubscriptionCancel(context.Context, Action, string, time.Time) error
 	CancelAction(context.Context, string, time.Time) (bool, error)
@@ -200,6 +212,19 @@ func NewID(prefix string) string {
 		panic(err)
 	}
 	return prefix + "_" + hex.EncodeToString(raw[:])
+}
+
+func parseInvestmentPurchase(text string) (amountMinor int64, ok bool) {
+	pattern := regexp.MustCompile(`申购.*?([0-9]+(?:\.[0-9]{1,2})?)\s*元`)
+	matches := pattern.FindStringSubmatch(strings.TrimSpace(text))
+	if len(matches) == 0 {
+		return 0, false
+	}
+	amount, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil || amount <= 0 {
+		return 0, false
+	}
+	return int64(amount*100 + 0.5), true
 }
 
 func parseTransfer(text string) (name string, amountMinor int64, remark string, ok bool) {

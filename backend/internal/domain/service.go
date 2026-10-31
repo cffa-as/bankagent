@@ -74,6 +74,38 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		}
 		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("已找到 %d 笔交易记录。", len(records)), Records: records}, trace, nil
 	}
+	if strings.Contains(text, "理财") && strings.Contains(text, "申购") {
+		amount, ok := parseInvestmentPurchase(text)
+		if !ok {
+			return MessageResult{RunID: runID, ReplyType: "question", Text: "请提供申购金额，例如：申购稳健理财 100 元。"}, trace, nil
+		}
+		productID := "product_conservative"
+		if strings.Contains(text, "均衡") {
+			productID = "product_balanced"
+		} else if strings.Contains(text, "进取") {
+			productID = "product_aggressive"
+		}
+		product, err := s.repo.Product(ctx, productID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return MessageResult{}, trace, ErrNotFound
+			}
+			return MessageResult{}, trace, err
+		}
+		if amount < product.MinimumAmountMinor {
+			return MessageResult{}, trace, ErrInvalidArgument
+		}
+		snapshot := map[string]any{"product_id": product.ID, "product_name": product.Name, "amount_minor": amount, "currency": "CNY"}
+		snapshotJSON, _ := json.Marshal(snapshot)
+		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "investment_purchase", RiskLevel: "red", Status: "awaiting_mfa", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+		if err := s.repo.CreateAction(ctx, action); err != nil {
+			return MessageResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "该理财申购需要完成 MFA 验证。", Action: ptr(action.Public())}, trace, nil
+	}
 	if strings.Contains(text, "卡") && (strings.Contains(text, "冻结") || strings.Contains(text, "解冻")) {
 		status, verb := "frozen", "冻结"
 		if strings.Contains(text, "解冻") {
@@ -176,6 +208,21 @@ func (s *Service) ListProducts(ctx context.Context, riskLevel string, page, page
 		return ProductPage{}, trace, err
 	}
 	return ProductPage{Items: items, Page: page, PageSize: pageSize, Total: total}, trace, nil
+}
+
+func (s *Service) ListHoldings(ctx context.Context, userID string) ([]Holding, string, error) {
+	holdings, err := s.repo.Holdings(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	trace := NewID("tr")
+	if err := s.audit(ctx, trace, "", "", "investment_holdings_queried", "succeeded", "tool", map[string]any{"count": len(holdings)}, s.now()); err != nil {
+		return nil, trace, err
+	}
+	if holdings == nil {
+		holdings = []Holding{}
+	}
+	return holdings, trace, nil
 }
 
 func (s *Service) ListCards(ctx context.Context, userID string) ([]Card, string, error) {
@@ -471,6 +518,25 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		action.Status = "succeeded"
 		action.UpdatedAt = now
 		return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_succeeded", "succeeded", "tool", map[string]any{"amount_minor": snapshot.AmountMinor}, now)
+	case "investment_purchase":
+		var snapshot struct {
+			ProductID   string `json:"product_id"`
+			AmountMinor int64  `json:"amount_minor"`
+		}
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		if err := s.repo.ExecuteInvestmentPurchase(ctx, *action, snapshot.ProductID, snapshot.AmountMinor, now); err != nil {
+			if errors.Is(err, ErrInsufficientBalance) {
+				action.Status, action.UpdatedAt = "failed", now
+				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "investment_purchase_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
+					return auditErr
+				}
+			}
+			return err
+		}
+		action.Status, action.UpdatedAt = "succeeded", now
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "investment_purchased", "succeeded", "tool", map[string]any{"product_id": snapshot.ProductID, "amount_minor": snapshot.AmountMinor}, now)
 	case "card_status_change":
 		var snapshot struct {
 			CardID       string `json:"card_id"`

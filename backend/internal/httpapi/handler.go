@@ -48,6 +48,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.products(w, r, userID)
 		return
 	}
+	if r.Method == http.MethodGet && path == "/v1/investments/holdings" {
+		h.holdings(w, r, userID)
+		return
+	}
 	if r.Method == http.MethodGet && path == "/v1/cards" {
 		h.cards(w, r, userID)
 		return
@@ -163,6 +167,15 @@ func (h *Handler) products(w http.ResponseWriter, r *http.Request, _ string) {
 		return
 	}
 	writeJSON(w, http.StatusOK, envelope(result, trace))
+}
+
+func (h *Handler) holdings(w http.ResponseWriter, r *http.Request, userID string) {
+	holdings, trace, err := h.service.ListHoldings(r.Context(), userID)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(holdings, trace))
 }
 
 func (h *Handler) cards(w http.ResponseWriter, r *http.Request, userID string) {

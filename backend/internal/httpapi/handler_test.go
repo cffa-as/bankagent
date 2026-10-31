@@ -381,3 +381,22 @@ func TestCardStatusActionAndSubscriptionCancellation(t *testing.T) {
 		t.Fatalf("subscriptions: status=%d body=%s", resp.StatusCode, body)
 	}
 }
+
+func TestInvestmentPurchaseRequiresMFAAndCreatesHolding(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+
+	status, result, body := sendMessage(t, server.URL, conversationID, "申购稳健理财100元", "investment-message")
+	if status != http.StatusOK || result.ReplyType != "action_required" || result.Action.Risk != "red" {
+		t.Fatalf("investment message: status=%d result=%+v body=%s", status, result, body)
+	}
+	resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/mfa/verify", `{"code":"000000"}`, "investment-mfa")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("investment mfa: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/investments/holdings", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"product_id":"product_conservative"`)) || !bytes.Contains(body, []byte(`"amount_minor":10000`)) {
+		t.Fatalf("holdings: status=%d body=%s", resp.StatusCode, body)
+	}
+}

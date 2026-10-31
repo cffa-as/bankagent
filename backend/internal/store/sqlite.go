@@ -83,6 +83,14 @@ CREATE TABLE IF NOT EXISTS investment_products (
     term_days INTEGER NOT NULL,
     benchmark_note TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS investment_holdings (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    purchased_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS cards (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
