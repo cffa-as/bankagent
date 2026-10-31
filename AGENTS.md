@@ -7,6 +7,7 @@
 - 后端：Go。HTTP API、领域服务、Agent 编排、Mock 银行账本和审计链都由 Go 实现。
 - 前端：Next.js + TypeScript。负责对话界面、结果展示、确认和 MFA 输入，不承担最终授权。
 - 数据库：SQLite。首期用于 Mock 账本、动作、审计和演示数据。金额使用整数最小货币单位。
+- 模型：通过 DeepSeek API Adapter 接入；API Key 只能来自本地环境变量，不能写入代码、文档、日志或提交。
 - Go 后端编码细则见 `.agents/skills/bankagent-go-engineering/SKILL.md`。
 
 ## 项目状态与边界
