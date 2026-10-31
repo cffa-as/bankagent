@@ -345,87 +345,105 @@ func (r *Repository) UpdateAction(ctx context.Context, a domain.Action) error {
 	return err
 }
 
-func (r *Repository) ExecuteTransfer(ctx context.Context, a domain.Action, amount int64, description string, now time.Time) error {
+func (r *Repository) ExecuteTransfer(ctx context.Context, a domain.Action, amount int64, description string, now time.Time) (domain.TransferResult, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return domain.TransferResult{}, err
 	}
 	defer tx.Rollback()
 	result, err := tx.ExecContext(ctx, `UPDATE actions SET status='executing',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), a.ID, a.Status)
 	if err != nil {
-		return err
+		return domain.TransferResult{}, err
 	}
 	if affected, err := result.RowsAffected(); err != nil {
-		return err
+		return domain.TransferResult{}, err
 	} else if affected != 1 {
-		return domain.ErrActionStateConflict
+		return domain.TransferResult{}, domain.ErrActionStateConflict
 	}
 	var accountID string
 	var balance, reserved int64
 	if err := tx.QueryRowContext(ctx, `SELECT id,balance_minor,reserved_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &balance, &reserved); err != nil {
-		return err
+		return domain.TransferResult{}, err
 	}
 	if balance-reserved < amount {
 		if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='failed',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
-			return err
+			return domain.TransferResult{}, err
 		}
 		if err := tx.Commit(); err != nil {
-			return err
+			return domain.TransferResult{}, err
 		}
-		return domain.ErrInsufficientBalance
+		return domain.TransferResult{}, domain.ErrInsufficientBalance
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET balance_minor=balance_minor-? WHERE id=?`, amount, accountID); err != nil {
-		return err
+		return domain.TransferResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("txn"), accountID, "out", amount, "transfer", description, now.Format(time.RFC3339Nano)); err != nil {
-		return err
+	transactionID := domain.NewID("txn")
+	if _, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, transactionID, accountID, "out", amount, "transfer", description, now.Format(time.RFC3339Nano)); err != nil {
+		return domain.TransferResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
-		return err
+	transferResult := domain.TransferResult{TransactionID: transactionID, AmountMinor: amount, Currency: "CNY"}
+	receipt, err := json.Marshal(transferResult)
+	if err != nil {
+		return domain.TransferResult{}, err
 	}
-	return tx.Commit()
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',result_json=?,updated_at=? WHERE id=?`, string(receipt), now.Format(time.RFC3339Nano), a.ID); err != nil {
+		return domain.TransferResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.TransferResult{}, err
+	}
+	return transferResult, nil
 }
 
-func (r *Repository) ExecuteInvestmentPurchase(ctx context.Context, a domain.Action, productID string, amount int64, now time.Time) error {
+func (r *Repository) ExecuteInvestmentPurchase(ctx context.Context, a domain.Action, productID string, amount int64, now time.Time) (domain.InvestmentPurchaseResult, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return domain.InvestmentPurchaseResult{}, err
 	}
 	defer tx.Rollback()
 	result, err := tx.ExecContext(ctx, `UPDATE actions SET status='executing',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), a.ID, a.Status)
 	if err != nil {
-		return err
+		return domain.InvestmentPurchaseResult{}, err
 	}
 	if affected, err := result.RowsAffected(); err != nil {
-		return err
+		return domain.InvestmentPurchaseResult{}, err
 	} else if affected != 1 {
-		return domain.ErrActionStateConflict
+		return domain.InvestmentPurchaseResult{}, domain.ErrActionStateConflict
 	}
 	var accountID, currency string
 	var balance, reserved int64
 	if err := tx.QueryRowContext(ctx, `SELECT id,currency,balance_minor,reserved_minor FROM accounts WHERE user_id=?`, a.UserID).Scan(&accountID, &currency, &balance, &reserved); err != nil {
-		return err
+		return domain.InvestmentPurchaseResult{}, err
 	}
 	if currency != "CNY" || balance-reserved < amount {
 		_, _ = tx.ExecContext(ctx, `UPDATE actions SET status='failed',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID)
 		if err := tx.Commit(); err != nil {
-			return err
+			return domain.InvestmentPurchaseResult{}, err
 		}
-		return domain.ErrInsufficientBalance
+		return domain.InvestmentPurchaseResult{}, domain.ErrInsufficientBalance
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET balance_minor=balance_minor-? WHERE id=?`, amount, accountID); err != nil {
-		return err
+		return domain.InvestmentPurchaseResult{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("txn"), accountID, "out", amount, "investment", "理财申购 "+productID, now.Format(time.RFC3339Nano)); err != nil {
-		return err
+		return domain.InvestmentPurchaseResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO investment_holdings(id,user_id,product_id,amount_minor,status,purchased_at) VALUES(?,?,?,?,?,?)`, domain.NewID("holding"), a.UserID, productID, amount, "active", now.Format(time.RFC3339Nano)); err != nil {
-		return err
+	holdingID := domain.NewID("holding")
+	if _, err := tx.ExecContext(ctx, `INSERT INTO investment_holdings(id,user_id,product_id,amount_minor,status,purchased_at) VALUES(?,?,?,?,?,?)`, holdingID, a.UserID, productID, amount, "active", now.Format(time.RFC3339Nano)); err != nil {
+		return domain.InvestmentPurchaseResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
-		return err
+	purchaseResult := domain.InvestmentPurchaseResult{HoldingID: holdingID, ProductID: productID, AmountMinor: amount, Currency: currency}
+	receipt, err := json.Marshal(purchaseResult)
+	if err != nil {
+		return domain.InvestmentPurchaseResult{}, err
 	}
-	return tx.Commit()
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',result_json=?,updated_at=? WHERE id=?`, string(receipt), now.Format(time.RFC3339Nano), a.ID); err != nil {
+		return domain.InvestmentPurchaseResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.InvestmentPurchaseResult{}, err
+	}
+	return purchaseResult, nil
 }
 
 func (r *Repository) ExecuteInvestmentRedemption(ctx context.Context, a domain.Action, holdingID string, now time.Time) (domain.RedemptionResult, error) {

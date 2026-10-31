@@ -111,7 +111,7 @@ func TestYellowTransferAndIdempotency(t *testing.T) {
 	}
 	confirmBody := `{}`
 	resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", confirmBody, "confirm-1")
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"transaction_id":"txn_`)) || !bytes.Contains(body, []byte(`"result":{`)) {
 		t.Fatalf("confirm: status=%d body=%s", resp.StatusCode, body)
 	}
 	var first envelope
@@ -612,7 +612,7 @@ func TestInvestmentPurchaseRequiresMFAAndCreatesHolding(t *testing.T) {
 		t.Fatalf("investment message: status=%d result=%+v body=%s", status, result, body)
 	}
 	resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/mfa/verify", `{"code":"000000"}`, "investment-mfa")
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"holding_id":"holding_`)) || !bytes.Contains(body, []byte(`"product_id":"product_conservative"`)) {
 		t.Fatalf("investment mfa: status=%d body=%s", resp.StatusCode, body)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/investments/holdings", "", "")

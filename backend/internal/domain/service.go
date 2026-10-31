@@ -1210,7 +1210,8 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
 			return err
 		}
-		if err := s.repo.ExecuteTransfer(ctx, *action, snapshot.AmountMinor, "转账给"+snapshot.BeneficiaryName+" "+snapshot.Remark, now); err != nil {
+		result, err := s.repo.ExecuteTransfer(ctx, *action, snapshot.AmountMinor, "转账给"+snapshot.BeneficiaryName+" "+snapshot.Remark, now)
+		if err != nil {
 			if errors.Is(err, ErrInsufficientBalance) {
 				action.Status = "failed"
 				action.UpdatedAt = now
@@ -1222,7 +1223,8 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		}
 		action.Status = "succeeded"
 		action.UpdatedAt = now
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_succeeded", "succeeded", "tool", map[string]any{"amount_minor": snapshot.AmountMinor}, now)
+		action.Result = result
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_succeeded", "succeeded", "tool", map[string]any{"transaction_id": result.TransactionID, "amount_minor": result.AmountMinor}, now)
 	case "transfer_split":
 		var snapshot TransferSplitSnapshot
 		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
@@ -1276,7 +1278,8 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
 			return err
 		}
-		if err := s.repo.ExecuteInvestmentPurchase(ctx, *action, snapshot.ProductID, snapshot.AmountMinor, now); err != nil {
+		result, err := s.repo.ExecuteInvestmentPurchase(ctx, *action, snapshot.ProductID, snapshot.AmountMinor, now)
+		if err != nil {
 			if errors.Is(err, ErrInsufficientBalance) {
 				action.Status, action.UpdatedAt = "failed", now
 				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "investment_purchase_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
@@ -1286,7 +1289,8 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
-		return s.audit(ctx, trace, action.ConversationID, action.ID, "investment_purchased", "succeeded", "tool", map[string]any{"product_id": snapshot.ProductID, "amount_minor": snapshot.AmountMinor}, now)
+		action.Result = result
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "investment_purchased", "succeeded", "tool", map[string]any{"holding_id": result.HoldingID, "product_id": result.ProductID, "amount_minor": result.AmountMinor}, now)
 	case "card_application":
 		var snapshot struct {
 			CardType string `json:"card_type"`
