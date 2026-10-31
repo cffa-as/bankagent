@@ -4,19 +4,21 @@
 
 ## 目标
 
-制作一条 3–5 分钟的 Vaultline 产品介绍视频。首页 GIF 只承担“看一眼就理解品牌和安全边界”的任务；长视频负责讲清完整产品价值、真实业务操作和安全控制链路。
+制作一条 3–5 分钟的 Vaultline 产品介绍视频。README 首屏使用“视频封面 + 播放入口”，不再用 GIF 代替产品视频；短测试片负责验证录屏与包装流程，完整长片负责讲清业务价值、真实操作和安全控制链路。
 
 视频使用合成账户和本地账本。所有资金结果、交易回执和 MFA 画面都必须明确标注为演示数据。
 
 ## 推荐制作路线
 
-### A. 产品主片：Remotion + 真实前端录屏
+### A. 产品主片：Playwright 录制 + Remotion 包装
 
-Remotion 负责品牌片头、章节标题、状态卡片、Action ID、Trace ID、风险颜色、镜头转场和字幕。它用 React 组件生成视频，可以在浏览器预览后直接渲染 MP4，也可以导出 GIF。这样品牌视觉可以和 Vaultline 首页保持一致，后续修改页面文案或颜色时也能复用组件。
+Playwright 自动驱动生产构建的真实 Next.js 页面和 Go API，并把浏览器视口录成 WebM；脚本同时记录输入、动作生成和回执时间点，供 Remotion 对齐镜头与字幕。Remotion 负责品牌片头、章节标题、状态卡片、Action ID、Trace ID、风险颜色、镜头推进和结尾。
 
-真实前端操作使用 Chrome 或 Screen Studio 录制，再把录屏作为 Remotion 的视频素材嵌入章节。这样既有真实 API 交互，也有可控的产品级镜头。
+当前仓库已经实现单场景测试链路：真实转账录制、MiniMax `speech-2.8-hd`「沉稳高管」中文旁白、Remotion 包装、1080p MP4 输出。工程位于 `video/`，产物为 `frontend/public/demo/vaultline-preview.mp4`。
 
-### B. 真实操作短片：Screen Studio 或 Tella
+手工精修时，可以使用 Screen Studio 替换 Playwright 素材：它更适合真人操作、平滑光标和自动缩放，但录制后仍应回到 Remotion 统一品牌字幕与章节。
+
+### B. 手工操作镜头：Screen Studio 或 Tella
 
 用于录制“用户真的如何使用工作台”。录屏时只保留一个浏览器窗口，使用合成账户，隐藏 token、验证码和本地调试日志。每个镜头只讲一个任务，通过自动缩放、光标高亮和字幕把注意力放到输入框、动作快照、确认按钮和服务端回执上。
 
@@ -48,6 +50,16 @@ Remotion 负责品牌片头、章节标题、状态卡片、Action ID、Trace ID
 5. 录制成功、拒绝、MFA 失败、过期和重复确认等状态时，画面必须以服务端响应为准。
 6. 导出 16:9 主片、60–90 秒答辩版和 6–10 秒首页 GIF；三种素材共享同一套色板、字体、文案和品牌标识。
 
+## 当前可复用流程
+
+1. 使用生产构建启动前端，隐藏 Next.js 开发工具。
+2. 使用 `video/scripts/record-preview.mjs` 自动操作真实页面，并记录事件时间。
+3. 使用 macOS `say` 生成中文旁白，`afconvert` 转为 WAV。
+4. 使用 Remotion 读取录屏和 `timeline.json`，输出 1920×1080 H.264。
+5. 生成带播放入口的静态封面，README 链接到 MP4。
+
+完整命令和目录说明见 [`video/README.md`](../video/README.md)。
+
 ## 视觉规则
 
 - 画面比例：主片 1920×1080，答辩版同样使用 16:9。
@@ -62,6 +74,7 @@ Remotion 负责品牌片头、章节标题、状态卡片、Action ID、Trace ID
 | 目标 | 工具 | 适合 Vaultline 的原因 |
 | --- | --- | --- |
 | 品牌化主片 | Remotion | 视觉可代码化、可复用首页组件、可渲染 MP4 / GIF |
+| 真实操作录制 | Playwright | 自动驱动生产前端和真实 API，可重复生成录屏与事件时间 |
 | 真实操作录制 | Screen Studio | 自动缩放、光标和点击动画适合展示工作台操作 |
 | 快速剪辑 | Tella | 支持多段录制、自动缩放、字幕和 4K 导出 |
 | 可点击文档 | Supademo | 可把截图或录屏拆成带步骤的交互式导览 |
@@ -71,6 +84,8 @@ Remotion 负责品牌片头、章节标题、状态卡片、Action ID、Trace ID
 
 ```text
 public/demo/vaultline-demo.gif       # 首页首屏轻量循环素材
+public/demo/vaultline-preview.mp4   # 已产出的 22 秒真实操作测试片
+public/demo/vaultline-preview-cover.png # README 视频封面
 public/demo/vaultline-product.mp4   # 3–5 分钟产品主片
 public/demo/vaultline-pitch.mp4     # 60–90 秒答辩版
 public/demo/vaultline-cover.png     # README / 视频封面

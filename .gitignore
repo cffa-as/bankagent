@@ -15,10 +15,18 @@ config.local.json
 *.db-shm
 *.db-wal
 
-# 暂缓的竞赛媒体与设计探索产物，仅保留本地副本。
-/video/
+# 视频工程可复现，但录屏、旁白和临时渲染产物留在本地。
 /.superdesign/
 /design-previews/*
+!/design-previews/vaultline-logo-directions.html
+!/design-previews/vaultline-logo-directions.png
+!/design-previews/threshold-mark.png
+!/design-previews/reserve-mark.png
+!/design-previews/route-mark.png
+!/design-previews/render-logo-directions.mjs
 /frontend/public/demo/*.mp4
 /frontend/public/demo/vaultline-preview-*
 /frontend/public/demo/vaultline-product-*
+!/frontend/public/demo/vaultline-preview.mp4
+!/frontend/public/demo/vaultline-preview-cover.png
+!/frontend/public/demo/vaultline-preview-poster.png

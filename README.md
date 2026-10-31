@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="frontend/public/vaultline-mark.svg" width="72" alt="Vaultline" />
+  <a href="README.md">中文</a> · <a href="README.en.md">English</a>
 </p>
 
 <h1 align="center">VAULTLINE</h1>
@@ -7,8 +7,8 @@
 <h3 align="center">让银行业务，一句话开始。</h3>
 
 <p align="center">
-  面向银行业务场景的安全 AI 工作台<br />
-  <sub>Understand intent. Govern execution. Prove the outcome.</sub>
+  面向真实银行业务的安全 AI 工作台<br />
+  <sub>Secure banking intelligence where the server remains in control.</sub>
 </p>
 
 <p align="center">
@@ -21,45 +21,56 @@
 </p>
 
 <p align="center">
-  <a href="#product">Product</a>
+  <a href="#product">产品</a>
   ·
-  <a href="#security-model">Security model</a>
+  <a href="#security-model">安全模型</a>
   ·
-  <a href="#quick-start">Quick start</a>
+  <a href="#product-film">产品视频</a>
   ·
-  <a href="#documentation">Docs</a>
+  <a href="#quick-start">快速开始</a>
+  ·
+  <a href="#documentation">文档</a>
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-demo.gif">
-    <img src="frontend/public/demo/vaultline-demo.gif" width="960" alt="Vaultline product film: six banking capabilities and the server-owned security path" />
+  <a href="frontend/public/demo/vaultline-preview.mp4">
+    <img src="frontend/public/demo/vaultline-preview-cover.png" width="960" alt="Vaultline product preview — real UI and server-controlled transfer flow" />
   </a>
 </p>
 
 <p align="center">
-  <sub>6 CORE SCENARIOS · SERVER-OWNED EXECUTION · SYNTHETIC DATA ONLY</sub>
+  <a href="frontend/public/demo/vaultline-preview.mp4"><strong>▶ 观看 22 秒产品测试片</strong></a>
+  <br />
+  <sub>Watch the 22-second preview · Real UI · Local mock ledger · Synthetic data only</sub>
 </p>
 
-## Product
+> [!NOTE]
+> 当前视频是真实 UI 的单场景测试片，用于验证录屏、镜头、字幕和声音设计流程。完整 3–5 分钟产品片将在后端功能稳定后覆盖六类业务和异常路径。
+
+<a id="product"></a>
+
+## 产品 / Product
 
 Vaultline 把自然语言请求转化为可审查的银行动作。模型负责理解意图、提取实体和准备候选计划；风险分级、用户确认、MFA、执行门、幂等、审计和最终回执始终由银行服务端掌握。
+
+Vaultline turns natural-language requests into reviewable banking actions. The model prepares a candidate plan; the bank server owns risk classification, authorization, MFA, the execution gate, idempotency, audit, and the final receipt.
 
 <table>
   <tr>
     <td width="33%" valign="top">
       <sub>01 / UNDERSTAND</sub><br />
       <strong>一句话表达复杂需求</strong><br />
-      <sub>转账、账单、理财、卡片、订阅和跨场景工作流进入同一个入口。</sub>
+      <sub>自然语言进入统一工作台，不需要记住深层菜单和功能入口。</sub>
     </td>
     <td width="33%" valign="top">
       <sub>02 / GOVERN</sub><br />
-      <strong>每笔动作先审查再执行</strong><br />
-      <sub>关键字段锁定为动作快照；黄色确认，红色 MFA，均绑定 Action ID。</sub>
+      <strong>每个动作先审查再执行</strong><br />
+      <sub>关键字段锁定为动作快照；黄色确认，红色 Action-bound MFA。</sub>
     </td>
     <td width="33%" valign="top">
       <sub>03 / PROVE</sub><br />
       <strong>最终结果只认业务回执</strong><br />
-      <sub>页面不伪造余额、交易号或收益；状态变化均可关联 Trace ID。</sub>
+      <sub>页面不伪造余额、交易号或收益；状态变化关联 Trace ID。</sub>
     </td>
   </tr>
 </table>
@@ -68,34 +79,50 @@ Vaultline 把自然语言请求转化为可审查的银行动作。模型负责�
   <code>Natural language</code> → <code>Server risk</code> → <code>Action snapshot</code> → <code>Confirmation / MFA</code> → <code>Server receipt</code>
 </p>
 
-## Core capabilities
+## 核心能力 / Core capabilities
 
-| 业务能力 | 用户可以直接说 | 服务端必须给出 |
+| Capability | 用户可以直接说 | 服务端必须给出 |
 | --- | --- | --- |
-| **智能转账** | “转 500 元给王明，备注房租” | 动作快照、风险等级、Action ID、执行回执 |
-| **账单分析** | “看看这个月钱花在哪了” | 分类统计、异常交易解释、Trace ID |
-| **理财操作** | “比较稳健型产品，赎回 1 万” | 产品/持仓事实、风险评估、MFA 执行门 |
-| **卡片管理** | “冻结尾号 8842 的卡” | 卡片状态、授权路径、变更记录 |
-| **订阅 / 代扣** | “找出不用的订阅并取消” | 周期扣费证据、取消快照、可审计结果 |
-| **跨场景联动** | “预算 1000 元安排爱人生日” | 子任务工作流、逐项授权、服务回执 |
+| **智能转账 / Transfers** | “转 500 元给王明，备注房租” | 动作快照、风险等级、Action ID、执行回执 |
+| **账单分析 / Bill analysis** | “看看这个月钱花在哪了” | 分类统计、异常交易解释、Trace ID |
+| **理财操作 / Investments** | “比较稳健型产品，申购 100 元” | 产品/持仓事实、风险分级、MFA 执行门 |
+| **卡片管理 / Card controls** | “冻结尾号 8842 的卡” | 卡片状态、授权路径、变更记录 |
+| **订阅代扣 / Subscriptions** | “找出不用的订阅并取消” | 周期扣费证据、取消快照、可审计结果 |
+| **跨场景联动 / Cross-scene** | “预算 1000 元安排爱人生日” | 子任务工作流、逐项授权、业务回执 |
 
-## Security model
+<a id="security-model"></a>
+
+## 安全模型 / Security model
 
 > 模型可以提出计划，但不能修改权限、绕过确认、开启执行门，也不能宣布交易成功。
 
-| 等级 | 典型动作 | 服务端控制 |
+| Level | 典型动作 | 服务端控制 |
 | --- | --- | --- |
 | **Green** | 余额、流水、账单、产品查询 | 意图确认后自动执行；只返回服务端事实 |
-| **Yellow** | 小额转账、订阅取消、虚拟卡申请 | 展示不可静默修改的动作快照，等待显式确认 |
-| **Red** | 大额转账、卡片挂失、理财申购/赎回 | 必须通过绑定 Action ID 的 MFA；通过后仍需执行门 |
+| **Yellow** | 小额转账、冻结卡片、订阅取消、虚拟卡申请 | 展示不可静默修改的动作快照，等待显式确认 |
+| **Red** | 大额转账、卡片挂失/解挂、理财申购/赎回 | 必须通过绑定 Action ID 的 MFA；通过后仍需执行门 |
 
-- **Snapshot**：金额、收款人、产品等关键字段锁定；变化必须创建新动作并重新授权。
-- **Idempotency**：确认与执行支持幂等键，同一请求只能产生一次副作用。
-- **Audit**：决策链、授权证据和业务回执通过 Trace ID 关联，敏感字段脱敏。
-- **Failure-safe**：取消、过期、MFA 失败、余额不足和未知回执都有明确状态，不盲目重试。
+- **Snapshot / 动作快照**：金额、收款人、产品等关键字段锁定；变化必须创建新动作并重新授权。
+- **Idempotency / 幂等**：确认与执行支持幂等键，同一请求只能产生一次副作用。
+- **Audit / 审计**：决策链、授权证据和业务回执通过 Trace ID 关联，敏感字段脱敏。
+- **Failure-safe / 失败安全**：取消、过期、MFA 失败、余额不足和未知回执都有明确状态，不盲目重试。
+
+<a id="product-film"></a>
+
+## 产品视频 / Product film
+
+当前测试片展示了一条完整的真实链路：
+
+`自然语言输入 → 服务端风险判定 → 不可变动作快照 → 显式确认 → 服务端业务回执`
+
+画面由 Playwright 驱动真实前端录制，Remotion 负责品牌片头、镜头推进、双语章节、字幕和结尾；旁白由 MiniMax `speech-2.8-hd` 的「沉稳高管」音色生成。没有使用假界面、假进度或伪造成功状态。
+
+The preview is captured from the real Next.js UI and Go API. Remotion adds the branded intro, camera motion, bilingual chapters, captions, and outro. All funds, balances, and receipts are synthetic.
+
+完整的 3–5 分钟产品片会覆盖六类业务、异常路径、安全拒绝和审计回放。制作流程见 [产品演示视频方案](docs/demo-video-production.md)，可复用工程见 [`video/`](video/README.md)。
 
 <details>
-<summary><strong>Architecture</strong></summary>
+<summary><strong>Architecture / 架构</strong></summary>
 
 <br />
 
@@ -118,7 +145,9 @@ flowchart LR
 
 </details>
 
-## Quick start
+<a id="quick-start"></a>
+
+## 快速开始 / Quick start
 
 需要 Go 1.27+、Node.js 20+ 和 CGO（SQLite 驱动）。
 
@@ -145,19 +174,12 @@ npm run dev
 
 打开 <http://localhost:3000>。演示身份为 `Bearer demo-user-1`，演示 MFA 验证码为 `000000`。
 
-演示账户、交易和认证结果均为合成数据。
+> [!IMPORTANT]
+> 当前版本只连接本地 Mock 银行账本。没有真实账户、真实资金、真实短信/人脸认证或银行核心系统接入；所有演示数据均为合成数据。
 
-## Repository
+<a id="documentation"></a>
 
-```text
-backend/   Go API、Agent、状态机、SQLite 与集成测试
-frontend/  Next.js 对话、动作确认与 MFA 交互
-docs/      赛题解析、产品、设计、安全、OpenAPI 与技术方案
-mcp/       受控工具边界说明
-.github/   Issue 与 PR 模板
-```
-
-## Documentation
+## 文档 / Documentation
 
 | Document | Purpose |
 | --- | --- |
@@ -167,7 +189,8 @@ mcp/       受控工具边界说明
 | [技术方案](docs/技术方案.md) | 架构、安全边界、验收和风险 |
 | [安全自评报告](docs/安全自评报告.md) | 权限分级实现说明与已知风险 |
 | [品牌规范](frontend/BRAND.md) | Vaultline 视觉方向、标识和用色 |
+| [视频工程](video/README.md) | 录屏、旁白、Remotion 渲染流程 |
 
 <p align="center">
-  <sub>VAULTLINE · SECURE BANKING INTELLIGENCE FOR A WORLD THAT CHECKS TWICE.</sub>
+  <sub>VAULTLINE · UNDERSTAND INTENT · GOVERN EXECUTION · PROVE THE OUTCOME</sub>
 </p>

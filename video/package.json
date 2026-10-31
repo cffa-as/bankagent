@@ -1,0 +1,28 @@
+{
+  "name": "vaultline-video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "record": "node scripts/record-preview.mjs",
+    "audio": "node scripts/generate-audio.mjs",
+    "dev": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts VaultlinePreview ../frontend/public/demo/vaultline-preview.mp4 --codec=h264 --crf=20 --pixel-format=yuv420p",
+    "poster": "remotion still src/index.ts VaultlinePreview ../frontend/public/demo/vaultline-preview-poster.png --frame=240"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.539",
+    "@remotion/media": "4.0.539",
+    "@remotion/media-utils": "4.0.539",
+    "playwright": "1.64.1",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "remotion": "4.0.539"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "typescript": "^5.8.3"
+  }
+}

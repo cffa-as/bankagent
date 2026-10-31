@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vaultline logo directions</title>
+    <style>
+      :root { --ink: #101827; --paper: #f5f6f8; --line: #c7ced7; --accent: #2c5fd7; --muted: #68758a; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #e8ecf0;
+        color: var(--ink);
+        font-family: "Helvetica Neue", "PingFang SC", sans-serif;
+      }
+      .sheet { width: 1800px; padding: 68px; }
+      .masthead {
+        align-items: flex-end;
+        border-bottom: 1px solid #b9c2ce;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 28px;
+        padding-bottom: 26px;
+      }
+      .masthead h1 { font-size: 27px; font-weight: 500; letter-spacing: .15em; margin: 0; }
+      .masthead p {
+        color: #68758a;
+        font-family: "SFMono-Regular", Menlo, monospace;
+        font-size: 11px;
+        letter-spacing: .13em;
+        line-height: 1.7;
+        margin: 0;
+        text-align: right;
+      }
+      .concept {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        display: grid;
+        grid-template-rows: 446px 150px;
+        margin-top: 22px;
+        overflow: hidden;
+      }
+      .stage {
+        align-items: center;
+        background:
+          linear-gradient(rgba(151, 165, 181, .14) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(151, 165, 181, .14) 1px, transparent 1px),
+          var(--paper);
+        background-size: 64px 64px;
+        display: grid;
+        grid-template-columns: 1fr 350px;
+      }
+      .lockup-wrap {
+        align-items: center;
+        display: flex;
+        justify-content: center;
+      }
+      .lockup {
+        align-items: center;
+        color: var(--ink);
+        display: flex;
+        gap: 30px;
+        white-space: nowrap;
+      }
+      .mark { display: block; flex: none; }
+      .mark path, .mark circle, .mark rect { vector-effect: non-scaling-stroke; }
+      .ink-line { fill: none; stroke: currentColor; }
+      .paper-fill { fill: var(--paper); }
+      .cut-fill { fill: var(--paper); }
+      .accent-fill { fill: var(--accent); }
+      .accent-line { fill: none; stroke: var(--accent); }
+      .monument-word {
+        font-family: "Avenir Next Condensed", "Arial Narrow", sans-serif;
+        font-size: 100px;
+        font-weight: 700;
+        letter-spacing: -.015em;
+        line-height: 1;
+      }
+      .monument-word .seam {
+        background: var(--accent);
+        display: inline-block;
+        height: 74px;
+        margin: 0 10px;
+        transform: translateY(6px);
+        width: 2px;
+      }
+      .meridian-word {
+        font-family: "New York", "Times New Roman", serif;
+        font-size: 92px;
+        font-weight: 500;
+        letter-spacing: .075em;
+        line-height: 1;
+      }
+      .signal-word {
+        font-family: "Helvetica Neue", sans-serif;
+        font-size: 86px;
+        letter-spacing: -.052em;
+        line-height: 1;
+      }
+      .signal-word .strong { font-weight: 700; }
+      .signal-word .soft { font-weight: 300; }
+      .signal-word .axis {
+        background: var(--accent);
+        display: inline-block;
+        height: 65px;
+        margin: 0 7px;
+        transform: translateY(5px);
+        width: 2px;
+      }
+      .reverse {
+        align-self: stretch;
+        align-items: center;
+        background: #091321;
+        border-left: 1px solid #2b3b53;
+        color: #f3f6fa;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .reverse .lockup { color: #f3f6fa; gap: 16px; zoom: .44; }
+      .reverse .cut-fill { fill: #091321; }
+      .reverse-label {
+        color: #74839a;
+        font-family: "SFMono-Regular", Menlo, monospace;
+        font-size: 9px;
+        letter-spacing: .14em;
+        margin-top: 28px;
+      }
+      .meta {
+        border-top: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: 76px 1fr 350px;
+      }
+      .index {
+        align-items: center;
+        border-right: 1px solid var(--line);
+        color: var(--accent);
+        display: flex;
+        font-family: "SFMono-Regular", Menlo, monospace;
+        font-size: 13px;
+        justify-content: center;
+      }
+      .copy {
+        align-items: center;
+        display: flex;
+        gap: 40px;
+        padding: 26px 38px;
+      }
+      .copy h2 { font-size: 28px; font-weight: 600; letter-spacing: -.035em; margin: 0; min-width: 200px; }
+      .copy p { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 0; max-width: 750px; }
+      .markscale {
+        align-items: center;
+        background: #eef1f5;
+        border-left: 1px solid var(--line);
+        display: flex;
+        justify-content: center;
+      }
+      .markscale svg { height: 72px; width: 72px; }
+      .footer {
+        background: #091321;
+        color: #f2f5f9;
+        display: grid;
+        gap: 40px;
+        grid-template-columns: 1.15fr .85fr;
+        margin-top: 22px;
+        padding: 36px 42px;
+      }
+      .footer strong {
+        color: #809fff;
+        font-family: "SFMono-Regular", Menlo, monospace;
+        font-size: 10px;
+        font-weight: 400;
+        letter-spacing: .13em;
+      }
+      .footer h3 { font-size: 27px; font-weight: 500; letter-spacing: -.03em; margin: 10px 0 0; }
+      .footer p { color: #9aa8bb; font-size: 14px; line-height: 1.8; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">
+      <header class="masthead">
+        <h1>VAULTLINE / IDENTITY DIRECTIONS 02</h1>
+        <p>DIRECT WORDMARK + CONTROLLED MARK<br />THREE DISTINCT LEVELS OF INSTITUTIONAL AUTHORITY</p>
+      </header>
+
+      <section class="concept">
+        <div class="stage">
+          <div class="lockup-wrap">
+            <div class="lockup">
+              <svg class="mark" id="threshold-mark" width="116" height="116" viewBox="0 0 116 116" fill="none">
+                <path class="ink-line" d="M34 15H15V101H34M82 15H101V101H82" stroke-width="4" />
+                <path class="ink-line" d="M0 58H43M49 58H51" stroke-width="4" />
+                <path class="accent-line" d="M57 58H73" stroke-width="4" />
+                <rect class="paper-fill ink-line" x="43" y="43" width="30" height="30" stroke-width="3" />
+              </svg>
+              <div class="monument-word"><span>VAULT</span><i class="seam"></i><span>LINE</span></div>
+            </div>
+          </div>
+          <div class="reverse">
+            <div class="lockup">
+              <svg class="mark" width="116" height="116" viewBox="0 0 116 116" fill="none">
+                <path class="ink-line" d="M34 15H15V101H34M82 15H101V101H82" stroke-width="4" />
+                <path class="ink-line" d="M0 58H43M49 58H51" stroke-width="4" />
+                <path class="accent-line" d="M57 58H73" stroke-width="4" />
+                <rect x="43" y="43" width="30" height="30" stroke="currentColor" stroke-width="3" />
+              </svg>
+              <div class="monument-word"><span>VAULT</span><i class="seam"></i><span>LINE</span></div>
+            </div>
+            <span class="reverse-label">REVERSED / 01 COLOUR + WHITE</span>
+          </div>
+        </div>
+        <div class="meta">
+          <div class="index">A</div>
+          <div class="copy">
+            <h2>Threshold</h2>
+            <p>一束信号穿过受控边界，中央方块是动作执行门。它与压缩字标组合，像银行基础设施的入口，而不是常见的盾牌或锁头。</p>
+          </div>
+          <div class="markscale">
+            <svg width="72" height="72" viewBox="0 0 116 116" fill="none">
+              <path class="ink-line" d="M34 15H15V101H34M82 15H101V101H82" stroke-width="6" />
+              <path class="ink-line" d="M0 58H43M49 58H51" stroke-width="6" />
+              <path class="accent-line" d="M57 58H73" stroke-width="6" />
+              <rect class="paper-fill ink-line" x="43" y="43" width="30" height="30" stroke-width="5" />
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section class="concept">
+        <div class="stage">
+          <div class="lockup-wrap">
+            <div class="lockup">
+              <svg class="mark" id="reserve-mark" width="106" height="106" viewBox="0 0 116 116" fill="none">
+                <circle cx="58" cy="58" r="49" fill="currentColor" />
+                <path class="cut-fill" d="M28 27L58 80L88 27H73L58 54L43 27H28Z" />
+                <rect class="accent-fill" x="77" y="54" width="9" height="9" />
+              </svg>
+              <div class="meridian-word">VAULTLINE</div>
+            </div>
+          </div>
+          <div class="reverse">
+            <div class="lockup">
+              <svg class="mark" width="106" height="106" viewBox="0 0 116 116" fill="none">
+                <circle cx="58" cy="58" r="49" fill="currentColor" />
+                <path class="cut-fill" d="M28 27L58 80L88 27H73L58 54L43 27H28Z" />
+                <rect class="accent-fill" x="77" y="54" width="9" height="9" />
+              </svg>
+              <div class="meridian-word">VAULTLINE</div>
+            </div>
+            <span class="reverse-label">REVERSED / 01 COLOUR + WHITE</span>
+          </div>
+        </div>
+        <div class="meta">
+          <div class="index">B</div>
+          <div class="copy">
+            <h2>Reserve</h2>
+            <p>圆券轮廓内收出一个 V 形，横线像账本上的核验标记。它与衬线字标组合，更接近私人银行、资产托管与长期信任。</p>
+          </div>
+          <div class="markscale">
+            <svg width="72" height="72" viewBox="0 0 116 116" fill="none">
+              <circle cx="58" cy="58" r="49" fill="currentColor" />
+              <path class="cut-fill" d="M28 27L58 80L88 27H73L58 54L43 27H28Z" />
+              <rect class="accent-fill" x="77" y="54" width="9" height="9" />
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section class="concept">
+        <div class="stage">
+          <div class="lockup-wrap">
+            <div class="lockup">
+              <svg class="mark" id="route-mark" width="110" height="110" viewBox="0 0 116 116" fill="none">
+                <path class="ink-line" d="M8 20L58 102L108 20" stroke-width="4" />
+                <path class="ink-line" d="M28 20L58 71L88 20" stroke-width="2" opacity=".62" />
+                <rect class="accent-fill" x="53" y="92" width="10" height="10" />
+              </svg>
+              <div class="signal-word"><span class="strong">VAULT</span><i class="axis"></i><span class="soft">LINE</span></div>
+            </div>
+          </div>
+          <div class="reverse">
+            <div class="lockup">
+              <svg class="mark" width="110" height="110" viewBox="0 0 116 116" fill="none">
+                <path class="ink-line" d="M8 20L58 102L108 20" stroke-width="4" />
+                <path class="ink-line" d="M28 20L58 71L88 20" stroke-width="2" opacity=".62" />
+                <rect class="accent-fill" x="53" y="92" width="10" height="10" />
+              </svg>
+              <div class="signal-word"><span class="strong">VAULT</span><i class="axis"></i><span class="soft">LINE</span></div>
+            </div>
+            <span class="reverse-label">REVERSED / 01 COLOUR + WHITE</span>
+          </div>
+        </div>
+        <div class="meta">
+          <div class="index">C</div>
+          <div class="copy">
+            <h2>Route</h2>
+            <p>两条路径汇入同一点，蓝色方块是执行后的回执。图形更轻、更像智能体系统，与拆分字重组合后保持明显的技术气质。</p>
+          </div>
+          <div class="markscale">
+            <svg width="72" height="72" viewBox="0 0 116 116" fill="none">
+              <path class="ink-line" d="M8 20L58 102L108 20" stroke-width="7" />
+              <path class="ink-line" d="M28 20L58 71L88 20" stroke-width="4" opacity=".62" />
+              <rect class="accent-fill" x="53" y="92" width="10" height="10" />
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section class="footer">
+        <div>
+          <strong>RECOMMENDATION</strong>
+          <h3>A / Threshold，最符合“受控执行”的产品主张。</h3>
+        </div>
+        <p>A 的图形语义、字标重量和机构感最一致：边界、动作门和信号线都可以继续扩展成首页动效。B 更偏私人银行，C 更偏技术平台；三者都不依赖盾牌、锁头或机器人。</p>
+      </section>
+    </main>
+  </body>
+</html>
