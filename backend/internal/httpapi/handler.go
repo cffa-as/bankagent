@@ -48,6 +48,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.products(w, r, userID)
 		return
 	}
+	if r.Method == http.MethodGet && path == "/v1/cards" {
+		h.cards(w, r, userID)
+		return
+	}
+	if r.Method == http.MethodGet && path == "/v1/subscriptions" {
+		h.subscriptions(w, r, userID)
+		return
+	}
 	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/accounts/") && strings.HasSuffix(path, "/balance") {
 		h.accountBalance(w, r, userID, path)
 		return
@@ -155,6 +163,28 @@ func (h *Handler) products(w http.ResponseWriter, r *http.Request, _ string) {
 		return
 	}
 	writeJSON(w, http.StatusOK, envelope(result, trace))
+}
+
+func (h *Handler) cards(w http.ResponseWriter, r *http.Request, userID string) {
+	cards, trace, err := h.service.ListCards(r.Context(), userID)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(cards, trace))
+}
+
+func (h *Handler) subscriptions(w http.ResponseWriter, r *http.Request, userID string) {
+	subscriptions, trace, err := h.service.ListSubscriptions(r.Context(), userID, strings.TrimSpace(r.URL.Query().Get("status")))
+	if err != nil {
+		if errors.Is(err, domain.ErrInvalidArgument) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "status 参数无效", "tr_invalid")
+			return
+		}
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(subscriptions, trace))
 }
 
 func (h *Handler) accountBalance(w http.ResponseWriter, r *http.Request, userID, path string) {

@@ -72,6 +72,24 @@ type ProductPage struct {
 	Total    int       `json:"total"`
 }
 
+type Card struct {
+	ID           string   `json:"card_id"`
+	MaskedNumber string   `json:"masked_number"`
+	Status       string   `json:"status"`
+	LimitMinor   int64    `json:"limit_minor"`
+	Restrictions []string `json:"restrictions"`
+}
+
+type Subscription struct {
+	ID           string    `json:"subscription_id"`
+	MerchantRef  string    `json:"merchant_ref"`
+	Status       string    `json:"status"`
+	AmountMinor  int64     `json:"amount_minor"`
+	Currency     string    `json:"currency"`
+	BillingCycle string    `json:"billing_cycle"`
+	NextChargeAt time.Time `json:"next_charge_at"`
+}
+
 type BillCategory struct {
 	Category    string `json:"category"`
 	AmountMinor int64  `json:"amount_minor"`
@@ -148,6 +166,8 @@ type Repository interface {
 	Account(context.Context, string) (Account, error)
 	Transactions(context.Context, string) ([]Transaction, error)
 	Products(context.Context, string) ([]Product, error)
+	Cards(context.Context, string) ([]Card, error)
+	Subscriptions(context.Context, string, string) ([]Subscription, error)
 	BillSummary(context.Context, string, time.Time) (BillSummary, error)
 	DailyOutgoing(context.Context, string, time.Time) (int64, error)
 	Beneficiary(context.Context, string, string) (string, error)

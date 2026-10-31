@@ -43,6 +43,23 @@ func (r *Repository) Seed(ctx context.Context, now time.Time) error {
 			return fmt.Errorf("seed investment product: %w", err)
 		}
 	}
+	_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO cards(id,user_id,masked_number,status,limit_minor,restrictions_json) VALUES(?,?,?,?,?,?)`, "card_demo", domain.DemoUserID, "**** 1234", "active", 500000, `["online","contactless"]`)
+	if err != nil {
+		return fmt.Errorf("seed card: %w", err)
+	}
+	subscriptions := []struct {
+		id, merchant, status, currency, cycle, next string
+		amount                                      int64
+	}{
+		{"sub_streaming", "demo-streaming", "active", "CNY", "monthly", now.AddDate(0, 0, 10).Format(time.RFC3339Nano), 2999},
+		{"sub_cloud", "demo-cloud", "paused", "CNY", "monthly", now.AddDate(0, 0, 20).Format(time.RFC3339Nano), 1999},
+	}
+	for _, subscription := range subscriptions {
+		_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO subscriptions(id,user_id,merchant_ref,status,amount_minor,currency,billing_cycle,next_charge_at) VALUES(?,?,?,?,?,?,?,?)`, subscription.id, domain.DemoUserID, subscription.merchant, subscription.status, subscription.amount, subscription.currency, subscription.cycle, subscription.next)
+		if err != nil {
+			return fmt.Errorf("seed subscription: %w", err)
+		}
+	}
 	entries := []struct {
 		id, category, description string
 		amount                    int64
@@ -123,6 +140,57 @@ func (r *Repository) Products(ctx context.Context, riskLevel string) ([]domain.P
 		products = append(products, product)
 	}
 	return products, rows.Err()
+}
+
+func (r *Repository) Cards(ctx context.Context, userID string) ([]domain.Card, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,masked_number,status,limit_minor,restrictions_json FROM cards WHERE user_id=? ORDER BY id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cards []domain.Card
+	for rows.Next() {
+		var card domain.Card
+		var restrictions string
+		if err := rows.Scan(&card.ID, &card.MaskedNumber, &card.Status, &card.LimitMinor, &restrictions); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(restrictions), &card.Restrictions); err != nil {
+			return nil, err
+		}
+		cards = append(cards, card)
+	}
+	return cards, rows.Err()
+}
+
+func (r *Repository) Subscriptions(ctx context.Context, userID, status string) ([]domain.Subscription, error) {
+	query := `SELECT id,merchant_ref,status,amount_minor,currency,billing_cycle,next_charge_at FROM subscriptions WHERE user_id=?`
+	args := []any{userID}
+	if status != "" {
+		query += ` AND status=?`
+		args = append(args, status)
+	}
+	query += ` ORDER BY next_charge_at, id`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var subscriptions []domain.Subscription
+	for rows.Next() {
+		var subscription domain.Subscription
+		var nextCharge string
+		if err := rows.Scan(&subscription.ID, &subscription.MerchantRef, &subscription.Status, &subscription.AmountMinor, &subscription.Currency, &subscription.BillingCycle, &nextCharge); err != nil {
+			return nil, err
+		}
+		var err error
+		subscription.NextChargeAt, err = time.Parse(time.RFC3339Nano, nextCharge)
+		if err != nil {
+			return nil, err
+		}
+		subscriptions = append(subscriptions, subscription)
+	}
+	return subscriptions, rows.Err()
 }
 
 func (r *Repository) BillSummary(ctx context.Context, userID string, month time.Time) (domain.BillSummary, error) {

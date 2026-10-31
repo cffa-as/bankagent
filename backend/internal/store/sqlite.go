@@ -83,6 +83,24 @@ CREATE TABLE IF NOT EXISTS investment_products (
     term_days INTEGER NOT NULL,
     benchmark_note TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS cards (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    masked_number TEXT NOT NULL,
+    status TEXT NOT NULL,
+    limit_minor INTEGER NOT NULL,
+    restrictions_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    merchant_ref TEXT NOT NULL,
+    status TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    billing_cycle TEXT NOT NULL,
+    next_charge_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id TEXT PRIMARY KEY,
     account_id TEXT NOT NULL,

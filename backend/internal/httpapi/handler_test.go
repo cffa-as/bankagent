@@ -152,6 +152,54 @@ func TestBillSummaryQuery(t *testing.T) {
 	}
 }
 
+func TestCardsAndSubscriptionsQuery(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+
+	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("cards: status=%d body=%s", resp.StatusCode, body)
+	}
+	var result envelope
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatal(err)
+	}
+	var cards []struct {
+		ID           string   `json:"card_id"`
+		Status       string   `json:"status"`
+		Restrictions []string `json:"restrictions"`
+	}
+	if err := json.Unmarshal(result.Data, &cards); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 1 || cards[0].ID != "card_demo" || cards[0].Status != "active" || len(cards[0].Restrictions) != 2 {
+		t.Fatalf("unexpected cards: %+v", cards)
+	}
+
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/subscriptions?status=active", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("subscriptions: status=%d body=%s", resp.StatusCode, body)
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatal(err)
+	}
+	var subscriptions []struct {
+		ID     string `json:"subscription_id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(result.Data, &subscriptions); err != nil {
+		t.Fatal(err)
+	}
+	if len(subscriptions) != 1 || subscriptions[0].ID != "sub_streaming" || subscriptions[0].Status != "active" {
+		t.Fatalf("unexpected subscriptions: %+v", subscriptions)
+	}
+
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/subscriptions?status=unknown", "", "")
+	if resp.StatusCode != http.StatusBadRequest || !bytes.Contains(body, []byte("INVALID_ARGUMENT")) {
+		t.Fatalf("invalid subscription status: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
 func TestInvestmentProductsQuery(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()

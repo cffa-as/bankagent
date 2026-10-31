@@ -145,6 +145,39 @@ func (s *Service) ListProducts(ctx context.Context, riskLevel string, page, page
 	return ProductPage{Items: items, Page: page, PageSize: pageSize, Total: total}, trace, nil
 }
 
+func (s *Service) ListCards(ctx context.Context, userID string) ([]Card, string, error) {
+	cards, err := s.repo.Cards(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	trace := NewID("tr")
+	if err := s.audit(ctx, trace, "", "", "cards_queried", "succeeded", "tool", map[string]any{"count": len(cards)}, s.now()); err != nil {
+		return nil, trace, err
+	}
+	if cards == nil {
+		cards = []Card{}
+	}
+	return cards, trace, nil
+}
+
+func (s *Service) ListSubscriptions(ctx context.Context, userID, status string) ([]Subscription, string, error) {
+	if status != "" && status != "active" && status != "cancelled" && status != "paused" {
+		return nil, "", ErrInvalidArgument
+	}
+	subscriptions, err := s.repo.Subscriptions(ctx, userID, status)
+	if err != nil {
+		return nil, "", err
+	}
+	trace := NewID("tr")
+	if err := s.audit(ctx, trace, "", "", "subscriptions_queried", "succeeded", "tool", map[string]any{"status": status, "count": len(subscriptions)}, s.now()); err != nil {
+		return nil, trace, err
+	}
+	if subscriptions == nil {
+		subscriptions = []Subscription{}
+	}
+	return subscriptions, trace, nil
+}
+
 func (s *Service) AccountBalance(ctx context.Context, userID, accountID string) (Account, string, error) {
 	account, err := s.repo.Account(ctx, userID)
 	if err != nil {
