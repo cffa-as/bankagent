@@ -36,19 +36,19 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-product.mp4">
-    <img src="frontend/public/demo/vaultline-product-cover.png" width="100%" alt="Vaultline 完整产品演示 — 真实前端、服务端授权与审计" />
+  <a href="frontend/public/demo/vaultline-launch.mp4">
+    <img src="frontend/public/demo/vaultline-launch-cover.png" width="100%" alt="Vaultline 30 秒产品宣传片 — 受控银行执行层" />
   </a>
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-product.mp4"><strong>▶ 观看 3 分钟完整产品演示</strong></a>
+  <a href="frontend/public/demo/vaultline-launch.mp4"><strong>▶ 观看 30 秒产品宣传片</strong></a>
   <br />
-  <sub>Full product film · Real UI · Server-governed actions · Synthetic data only</sub>
+  <sub>30-second launch film · Real UI · Server-governed actions · Synthetic data only</sub>
 </p>
 
 > [!NOTE]
-> 视频由 Playwright 驱动真实前端和 Go API 录制，Remotion 完成品牌片头、镜头推进、章节、字幕和结尾。所有账户、金额、动作与回执均为合成演示数据。
+> 30 秒品牌片由 huashu-motion 的代码化动画流程生成，配乐和音效在本地合成；3 分钟业务演示由 Playwright 驱动真实前端和 Go API 录制。所有账户、金额、动作与回执均为合成演示数据。
 
 <a id="product"></a>
 
@@ -115,15 +115,15 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 
 ## 产品视频 / Product film
 
-完整演示覆盖从查询到执行的主要链路：
+30 秒品牌片用一条控制线贯穿从意图到回执的核心链路：
 
-`自然语言输入 → 只读查询 → 流动性预检 → 工作流编排 → 显式确认 / MFA → 服务端回执 → 审计追踪`
+`自然语言输入 → 动作快照 → 风险判定 → Action-bound MFA → 业务回执 → 审计追踪`
 
-画面由 Playwright 驱动真实前端录制，Remotion 负责品牌片头、镜头推进、双语章节、字幕和结尾；旁白由 MiniMax `speech-2.8-hd` 的「沉稳高管」音色生成。没有使用假界面、假进度或伪造成功状态。
+品牌片使用真实工作台截图和真实服务端状态重新编排，不伪造界面、进度或成功结果。完整的 3 分钟业务演示保留了查询、理财、卡片、订阅、流动性预演和工作流等逐项操作。
 
-The product film is captured from the real Next.js UI and Go API. Remotion adds the branded intro, camera motion, chapters, captions, and outro. All funds, balances, and receipts are synthetic.
+The 30-second launch film is built with the huashu-motion code-animation workflow and a locally synthesized score. The separate 3-minute business demo is captured from the real Next.js UI and Go API. All funds, balances, and receipts are synthetic.
 
-制作流程见 [产品演示视频方案](docs/demo-video-production.md)，可复用工程见 [`video/`](video/README.md)。
+[观看 3 分钟完整业务演示](frontend/public/demo/vaultline-product.mp4) · 制作流程见 [产品演示视频方案](docs/demo-video-production.md)，可复用工程见 [`video/`](video/README.md)。
 
 <details>
 <summary><strong>Architecture / 架构</strong></summary>

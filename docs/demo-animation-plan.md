@@ -1,6 +1,6 @@
 # Vaultline Demo Animation Plan
 
-> 状态：首版已按本方案落地。完整 3:02 成片位于 `frontend/public/demo/vaultline-product.mp4`。
+> 状态：已落地两套成片。30 秒品牌片位于 `frontend/public/demo/vaultline-launch.mp4`，3:02 完整业务演示位于 `frontend/public/demo/vaultline-product.mp4`。
 
 ## 目标
 

@@ -36,19 +36,19 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-product.mp4">
-    <img src="frontend/public/demo/vaultline-product-cover.png" width="100%" alt="Vaultline full product film — real UI, server authorization, and audit" />
+  <a href="frontend/public/demo/vaultline-launch.mp4">
+    <img src="frontend/public/demo/vaultline-launch-cover.png" width="100%" alt="Vaultline 30-second launch film — the controlled banking execution layer" />
   </a>
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-product.mp4"><strong>▶ Watch the 3-minute product film</strong></a>
+  <a href="frontend/public/demo/vaultline-launch.mp4"><strong>▶ Watch the 30-second launch film</strong></a>
   <br />
-  <sub>Full product film · Real UI · Server-governed actions · Synthetic data only</sub>
+  <sub>30-second launch film · Real UI · Server-governed actions · Synthetic data only</sub>
 </p>
 
 > [!NOTE]
-> The film is captured from the real Next.js frontend and Go API with Playwright. Remotion adds the branded intro, camera motion, chapters, captions, and outro. All accounts, balances, actions, and receipts are synthetic demo data.
+> The 30-second launch film is built with the huashu-motion code-animation workflow and a locally synthesized score. A separate 3-minute business demo is captured from the real Next.js frontend and Go API with Playwright. All accounts, balances, actions, and receipts are synthetic demo data.
 
 ## Product
 
@@ -109,13 +109,13 @@ The product is designed as a regulated banking control surface, not a generic AI
 
 ## Product film
 
-The full film covers the primary path from query to execution:
+The launch film follows one control line from intent to proof:
 
-`natural language → read-only query → liquidity preflight → workflow planning → confirmation / MFA → server receipt → audit trail`
+`natural language → immutable action → risk decision → Action-bound MFA → server receipt → audit trail`
 
-The UI is recorded through Playwright from the real Next.js application and Go API. Remotion adds the branded intro, camera movement, chapters, captions, and outro. Narration uses MiniMax `speech-2.8-hd` with the “Reliable Executive” voice. The film contains no fabricated interface, fake progress, or invented success state.
+The launch film rebuilds real workspace captures into motion shots and never fabricates UI, progress, or success states. The longer business demo preserves the working query, investment, card, subscription, liquidity, and workflow flows.
 
-See the [production plan](docs/demo-video-production.md) and the reusable [video pipeline](video/README.md).
+[Watch the 3-minute business demo](frontend/public/demo/vaultline-product.mp4) · See the [production plan](docs/demo-video-production.md) and the reusable [video pipeline](video/README.md).
 
 <details>
 <summary><strong>Architecture</strong></summary>

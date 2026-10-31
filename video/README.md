@@ -1,14 +1,49 @@
-# Vaultline product film
+# Vaultline films
 
-This directory produces the full Vaultline product film from the real Next.js frontend and Go API. Recording and rendering tools stay outside the frontend bundle.
+This directory produces two separate deliverables:
+
+- a 30-second cinematic launch film driven by huashu-motion;
+- a 3:02 business demo captured from the real Next.js frontend and Go API.
 
 ## Current output
 
+- `frontend/public/demo/vaultline-launch.mp4` — 30s, 1920×1080, H.264/AAC launch film
+- `frontend/public/demo/vaultline-launch-cover.png` — README cover
+- `frontend/public/demo/vaultline-launch-poster.png` — player poster
 - `frontend/public/demo/vaultline-product.mp4` — 3:02, 1920×1080, H.264/AAC product film
-- `frontend/public/demo/vaultline-product-cover.png` — README cover
-- `frontend/public/demo/vaultline-product-poster.png` — clean still for other materials
+- `frontend/public/demo/vaultline-product-cover.png` — full-demo cover
+- `frontend/public/demo/vaultline-product-poster.png` — full-demo still
 
-The film covers:
+## 30-second launch film
+
+The editable project is [`huashu-vaultline/`](huashu-vaultline/). Its `treatment.md` contains the selected direction, 112 BPM rhythm sheet, continuity chain, palette and sound plan.
+
+The skill npm package is behind GitHub. Clone the repository and use its local CLI:
+
+```bash
+git clone --depth 1 https://github.com/alchaincyf/huashu-motion.git /tmp/huashu-motion
+OM=/tmp/huashu-motion/cli/om.js
+node "$OM" doctor
+node "$OM" sound video/huashu-vaultline
+node "$OM" check video/huashu-vaultline
+node "$OM" render video/huashu-vaultline --fps 30 --blur --workers 6
+node "$OM" qa video/huashu-vaultline
+node "$OM" share video/huashu-vaultline
+```
+
+The final film uses a composed 112 BPM score, 27 sound-effect hits, real product captures and a 1.2-second huashu-motion signature.
+
+Create the README cover and player poster from the final MP4:
+
+```bash
+ffmpeg -ss 3.6 -i video/huashu-vaultline/out/huashu-vaultline-v11.mp4 \
+  -frames:v 1 frontend/public/demo/vaultline-launch-poster.png
+python3 video/huashu-vaultline/tools/make-cover.py
+```
+
+## Full business demo
+
+The long-form film covers:
 
 1. unified workspace;
 2. transaction and bill queries;
@@ -22,7 +57,7 @@ The film covers:
 10. audit replay;
 11. prompt-injection resistance.
 
-## Pipeline
+### Pipeline
 
 1. Playwright drives the production frontend and records the real browser viewport as WebM.
 2. `scripts/record-demo.mjs` stores trim points in `src/timeline.json`.
@@ -38,7 +73,7 @@ The film covers:
 - Go backend on `http://localhost:8090`
 - MiniMax TTS config containing `tts.api_key`
 
-## Record from a fresh ledger
+### Record from a fresh ledger
 
 The yellow/red risk scenes depend on the daily transfer total, so always start from a new database.
 
@@ -68,7 +103,7 @@ pnpm exec playwright install ffmpeg
 VAULTLINE_DEMO_URL=http://localhost:3001/workspace pnpm record
 ```
 
-## Narration and render
+### Narration and render
 
 Generate all narration segments:
 
@@ -102,4 +137,4 @@ pnpm dev
 
 ## Repository policy
 
-Raw recordings, narration, and Remotion caches are intentionally ignored. The final MP4, cover and poster are committed so GitHub README links and clones remain usable.
+Raw recordings, narration, huashu-motion output and Remotion caches are intentionally ignored. The final launch film and full business demo are committed so GitHub README links and clones remain usable.
