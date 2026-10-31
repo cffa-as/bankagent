@@ -500,6 +500,23 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		}
 		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "请确认取消" + merchant + "订阅。", Action: ptr(action.Public())}, actionTrace, nil
 	}
+	liquidityAsked := (strings.Contains(continuation, "锁定") || strings.Contains(continuation, "预留") || strings.Contains(continuation, "预算") || strings.Contains(continuation, "现金流")) &&
+		(strings.Contains(continuation, "影响") || strings.Contains(continuation, "够不够") || strings.Contains(continuation, "现金流") || strings.Contains(continuation, "可用") || strings.Contains(continuation, "必要支出"))
+	if liquidityAsked {
+		budget, ok := parseLiquidityBudget(continuation)
+		if !ok {
+			return MessageResult{RunID: runID, ReplyType: "question", Text: "请提供计划预留金额，例如：锁定1000元会影响房租吗？"}, trace, nil
+		}
+		account, err := s.repo.Account(ctx, userID)
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		simulation, simulationTrace, err := s.CreateLiquiditySimulation(ctx, userID, account.ID, defaultLiquidityHorizonDays, budget, nil)
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: liquiditySummary(simulation), Liquidity: &simulation}, simulationTrace, nil
+	}
 	if strings.Contains(continuation, "生日") && strings.Contains(continuation, "预算") {
 		budget, eventAt, ok := parseBirthdayPlan(continuation)
 		if !ok {
@@ -682,6 +699,31 @@ func (s *Service) handleIntentPlan(ctx context.Context, userID, conversationID, 
 		}
 		action, _, err := s.CreateTransferSplitAction(ctx, userID, conversationID, total, participants)
 		return actionReply(action, err)
+	case "liquidity_simulation":
+		budget, ok := planInt64(plan, "proposed_budget_minor")
+		if !ok {
+			return question("请补充计划预留金额。")
+		}
+		horizonDays := defaultLiquidityHorizonDays
+		if value, exists := planInt64(plan, "horizon_days"); exists {
+			horizonDays = int(value)
+		}
+		var buffer *int64
+		if value, exists := planInt64(plan, "essential_buffer_minor"); exists {
+			buffer = &value
+		}
+		account, err := s.repo.Account(ctx, userID)
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		simulation, simulationTrace, err := s.CreateLiquiditySimulation(ctx, userID, account.ID, horizonDays, budget, buffer)
+		if err != nil {
+			return MessageResult{}, true, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "model_liquidity_simulation_selected", "succeeded", "model", map[string]any{"simulation_id": simulation.ID, "simulation_trace_id": simulationTrace}, s.now()); err != nil {
+			return MessageResult{}, true, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: liquiditySummary(simulation), Liquidity: &simulation}, true, nil
 	case "birthday_plan":
 		budget, ok := planInt64(plan, "budget_minor")
 		eventAt, parseErr := time.Parse(time.RFC3339, planString(plan, "event_at"))
@@ -1164,6 +1206,9 @@ func (s *Service) expireAction(ctx context.Context, action *Action, trace string
 
 func (s *Service) proceedAuthorized(ctx context.Context, action *Action, trace string) error {
 	now := s.now()
+	if err := s.enforceWorkflowBudgetLiquidity(ctx, action, trace, now); err != nil {
+		return err
+	}
 	if scheduledAt, ok := actionScheduledAt(*action); ok && now.Before(scheduledAt) {
 		scheduled, err := s.repo.ScheduleAction(ctx, action.ID, action.Status, now)
 		if err != nil {

@@ -20,12 +20,14 @@ GET /v1/investments/products?risk_level=balanced&page=1&page_size=20
 GET /v1/cards
 GET /v1/subscriptions?status=active
 GET /v1/subscriptions/reminders?days=7
+GET /v1/liquidity-simulations/{simulation_id}
 GET /v1/workflows/{workflow_id}
 
 动作接口：
 
 POST /v1/transfers
 POST /v1/transfer-splits
+POST /v1/liquidity-simulations
 POST /v1/cards/{card_id}/apply
 POST /v1/cards/{card_id}/limit
 POST /v1/cards/{card_id}/freeze

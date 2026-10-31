@@ -64,6 +64,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.createTransferSplit(w, r, userID)
 		return
 	}
+	if r.Method == http.MethodPost && path == "/v1/liquidity-simulations" {
+		h.createLiquiditySimulation(w, r, userID)
+		return
+	}
+	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/liquidity-simulations/") {
+		h.getLiquiditySimulation(w, r, userID, path)
+		return
+	}
 	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/investments/holdings/") && strings.HasSuffix(path, "/redemptions") {
 		h.createInvestmentRedemption(w, r, userID, path)
 		return
@@ -280,6 +288,43 @@ func (h *Handler) createTransferSplit(w http.ResponseWriter, r *http.Request, us
 	response := envelope(action, trace)
 	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
 	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) createLiquiditySimulation(w http.ResponseWriter, r *http.Request, userID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var request struct {
+		AccountID            string `json:"account_id"`
+		HorizonDays          int    `json:"horizon_days"`
+		ProposedBudgetMinor  int64  `json:"proposed_budget_minor"`
+		EssentialBufferMinor *int64 `json:"essential_buffer_minor"`
+	}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, r.URL.Path, fp) {
+		return
+	}
+	simulation, trace, err := h.service.CreateLiquiditySimulation(r.Context(), userID, request.AccountID, request.HorizonDays, request.ProposedBudgetMinor, request.EssentialBufferMinor)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(simulation, trace)
+	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
+	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) getLiquiditySimulation(w http.ResponseWriter, r *http.Request, userID, path string) {
+	simulation, trace, err := h.service.GetLiquiditySimulation(r.Context(), userID, segment(path, 2))
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(simulation, trace))
 }
 
 func (h *Handler) createCardApplication(w http.ResponseWriter, r *http.Request, userID, path string) {

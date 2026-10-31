@@ -16,7 +16,7 @@ tags:
   - name: Actions
     description: 动作创建、确认、MFA、取消和预约触发。
   - name: Queries
-    description: 账户、账单、理财、卡片、订阅与工作流查询。
+    description: 账户、账单、理财、卡片、订阅、流动性与工作流查询。
   - name: Audit
     description: 脱敏决策与执行审计链。
 paths:
@@ -296,6 +296,53 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
+
+  /v1/liquidity-simulations:
+    post:
+      tags: [Queries]
+      summary: 创建流动性预检
+      description: 确定性计算未来现金流和逐日可用余额，不扣款、不创建动作。
+      operationId: createLiquiditySimulation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLiquiditySimulationRequest'
+      responses:
+        '201':
+          description: 流动性预检已生成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeLiquiditySimulation'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+  /v1/liquidity-simulations/{simulation_id}:
+    get:
+      tags: [Queries]
+      summary: 查询流动性预检
+      operationId: getLiquiditySimulation
+      parameters:
+        - name: simulation_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: 流动性预检结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeLiquiditySimulation'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/investments/products/{product_id}/subscriptions:
     post:
@@ -1031,6 +1078,8 @@ components:
           $ref: '#/components/schemas/BillSummary'
         data:
           description: 受控查询结果，例如产品、卡片或订阅列表
+        liquidity:
+          $ref: '#/components/schemas/LiquiditySimulation'
         workflow:
           $ref: '#/components/schemas/Workflow'
     ConfirmActionRequest:
@@ -1227,6 +1276,93 @@ components:
           items: { $ref: '#/components/schemas/SplitParticipant' }
         status: { type: string, enum: [requested] }
         created_at: { type: string, format: date-time }
+    CreateLiquiditySimulationRequest:
+      type: object
+      additionalProperties: false
+      required: [account_id, proposed_budget_minor]
+      properties:
+        account_id: { type: string, minLength: 1 }
+        horizon_days: { type: integer, minimum: 0, maximum: 90, default: 30, description: 0 表示使用默认 30 天。 }
+        proposed_budget_minor: { type: integer, format: int64, minimum: 0 }
+        essential_buffer_minor: { type: integer, format: int64, minimum: 0, description: 省略时默认 100000，即 1000.00 CNY }
+    LiquidityTimelinePoint:
+      type: object
+      required: [date, available_minor]
+      properties:
+        date: { type: string, format: date }
+        available_minor: { type: integer, format: int64 }
+    LiquidityScenario:
+      type: object
+      required: [name, daily_discretionary_minor, ending_available_minor, minimum_available_minor, minimum_date, status, points]
+      properties:
+        name: { type: string, enum: [essential_only, expected, conservative] }
+        daily_discretionary_minor: { type: integer, format: int64, minimum: 0 }
+        ending_available_minor: { type: integer, format: int64 }
+        minimum_available_minor: { type: integer, format: int64 }
+        minimum_date: { type: string, format: date }
+        status: { type: string, enum: [safe, tight, unsafe] }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/LiquidityTimelinePoint' }
+    LiquidityEvent:
+      type: object
+      required: [date, kind, direction, description, amount_minor, essential]
+      properties:
+        date: { type: string, format: date }
+        kind: { type: string }
+        direction: { type: string, enum: [in, out] }
+        description: { type: string }
+        amount_minor: { type: integer, format: int64, minimum: 0 }
+        essential: { type: boolean }
+        source_id: { type: string }
+    LiquiditySimulation:
+      type: object
+      required:
+        - simulation_id
+        - account_id
+        - trace_id
+        - currency
+        - start_at
+        - horizon_days
+        - starting_available_minor
+        - proposed_budget_minor
+        - essential_buffer_minor
+        - historical_average_daily_minor
+        - historical_conservative_daily_minor
+        - maximum_safe_budget_minor
+        - verdict
+        - risk_reason
+        - recommendation
+        - assumptions
+        - events
+        - scenarios
+        - created_at
+      properties:
+        simulation_id: { type: string }
+        account_id: { type: string }
+        trace_id: { type: string }
+        currency: { type: string }
+        start_at: { type: string, format: date-time }
+        horizon_days: { type: integer, minimum: 1, maximum: 90 }
+        starting_available_minor: { type: integer, format: int64 }
+        proposed_budget_minor: { type: integer, format: int64, minimum: 0 }
+        essential_buffer_minor: { type: integer, format: int64, minimum: 0 }
+        historical_average_daily_minor: { type: integer, format: int64, minimum: 0 }
+        historical_conservative_daily_minor: { type: integer, format: int64, minimum: 0 }
+        maximum_safe_budget_minor: { type: integer, format: int64, minimum: 0 }
+        verdict: { type: string, enum: [safe, tight, unsafe] }
+        risk_reason: { type: string }
+        recommendation: { type: string }
+        assumptions: { type: array, items: { type: string } }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/LiquidityEvent' }
+        scenarios:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { $ref: '#/components/schemas/LiquidityScenario' }
+        created_at: { type: string, format: date-time }
     CardApplicationRequest:
       type: object
       additionalProperties: false
@@ -1374,6 +1510,10 @@ components:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:
         data: { type: array, items: { $ref: '#/components/schemas/SubscriptionReminder' } }
+    EnvelopeLiquiditySimulation:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/LiquiditySimulation' }
     EnvelopeWorkflow:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:
@@ -1387,6 +1527,7 @@ components:
           properties:
             workflow: { $ref: '#/components/schemas/Workflow' }
             action: { $ref: '#/components/schemas/Action' }
+            liquidity: { $ref: '#/components/schemas/LiquiditySimulation' }
     EnvelopeWorkflowList:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:

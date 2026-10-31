@@ -170,6 +170,81 @@ type SubscriptionReminder struct {
 	DaysUntil      int       `json:"days_until"`
 }
 
+type CashflowEvent struct {
+	ID          string    `json:"cashflow_event_id"`
+	UserID      string    `json:"-"`
+	Direction   string    `json:"direction"`
+	AmountMinor int64     `json:"amount_minor"`
+	Currency    string    `json:"currency"`
+	Category    string    `json:"category"`
+	Description string    `json:"description"`
+	Essential   bool      `json:"essential"`
+	ExpectedAt  time.Time `json:"expected_at"`
+	Frequency   string    `json:"frequency"`
+	Status      string    `json:"status"`
+}
+
+type ScheduledCashflow struct {
+	ActionID    string    `json:"action_id"`
+	AmountMinor int64     `json:"amount_minor"`
+	Currency    string    `json:"currency"`
+	ScheduledAt time.Time `json:"scheduled_at"`
+	Description string    `json:"description"`
+}
+
+type HistoricalSpending struct {
+	AverageDailyMinor      int64 `json:"average_daily_minor"`
+	ConservativeDailyMinor int64 `json:"conservative_daily_minor"`
+}
+
+type LiquidityTimelinePoint struct {
+	Date           string `json:"date"`
+	AvailableMinor int64  `json:"available_minor"`
+}
+
+type LiquidityScenario struct {
+	Name                    string                   `json:"name"`
+	DailyDiscretionaryMinor int64                    `json:"daily_discretionary_minor"`
+	EndingAvailableMinor    int64                    `json:"ending_available_minor"`
+	MinimumAvailableMinor   int64                    `json:"minimum_available_minor"`
+	MinimumDate             string                   `json:"minimum_date"`
+	Status                  string                   `json:"status"`
+	Points                  []LiquidityTimelinePoint `json:"points"`
+}
+
+type LiquidityEvent struct {
+	Date        string `json:"date"`
+	Kind        string `json:"kind"`
+	Direction   string `json:"direction"`
+	Description string `json:"description"`
+	AmountMinor int64  `json:"amount_minor"`
+	Essential   bool   `json:"essential"`
+	SourceID    string `json:"source_id,omitempty"`
+}
+
+type LiquiditySimulation struct {
+	ID                        string              `json:"simulation_id"`
+	UserID                    string              `json:"-"`
+	AccountID                 string              `json:"account_id"`
+	TraceID                   string              `json:"trace_id"`
+	Currency                  string              `json:"currency"`
+	StartAt                   time.Time           `json:"start_at"`
+	HorizonDays               int                 `json:"horizon_days"`
+	StartingAvailableMinor    int64               `json:"starting_available_minor"`
+	ProposedBudgetMinor       int64               `json:"proposed_budget_minor"`
+	EssentialBufferMinor      int64               `json:"essential_buffer_minor"`
+	HistoricalAverageDaily    int64               `json:"historical_average_daily_minor"`
+	HistoricalConservativeDay int64               `json:"historical_conservative_daily_minor"`
+	MaximumSafeBudgetMinor    int64               `json:"maximum_safe_budget_minor"`
+	Verdict                   string              `json:"verdict"`
+	RiskReason                string              `json:"risk_reason"`
+	Recommendation            string              `json:"recommendation"`
+	Assumptions               []string            `json:"assumptions"`
+	Events                    []LiquidityEvent    `json:"events"`
+	Scenarios                 []LiquidityScenario `json:"scenarios"`
+	CreatedAt                 time.Time           `json:"created_at"`
+}
+
 type SplitParticipant struct {
 	Name        string `json:"name,omitempty"`
 	Phone       string `json:"phone,omitempty"`
@@ -233,15 +308,16 @@ type AuditEvent struct {
 }
 
 type MessageResult struct {
-	RunID     string        `json:"run_id"`
-	ReplyType string        `json:"reply_type"`
-	Text      string        `json:"text"`
-	Action    *Action       `json:"action,omitempty"`
-	Balance   *Account      `json:"balance,omitempty"`
-	Records   []Transaction `json:"transactions,omitempty"`
-	Bill      *BillSummary  `json:"bill,omitempty"`
-	Data      any           `json:"data,omitempty"`
-	Workflow  *Workflow     `json:"workflow,omitempty"`
+	RunID     string               `json:"run_id"`
+	ReplyType string               `json:"reply_type"`
+	Text      string               `json:"text"`
+	Action    *Action              `json:"action,omitempty"`
+	Balance   *Account             `json:"balance,omitempty"`
+	Records   []Transaction        `json:"transactions,omitempty"`
+	Bill      *BillSummary         `json:"bill,omitempty"`
+	Data      any                  `json:"data,omitempty"`
+	Workflow  *Workflow            `json:"workflow,omitempty"`
+	Liquidity *LiquiditySimulation `json:"liquidity,omitempty"`
 }
 
 type Service struct {
@@ -265,6 +341,11 @@ type Repository interface {
 	ActiveHolding(context.Context, string, string) (Holding, error)
 	Cards(context.Context, string) ([]Card, error)
 	Subscriptions(context.Context, string, string) ([]Subscription, error)
+	CashflowEvents(context.Context, string) ([]CashflowEvent, error)
+	ScheduledCashflows(context.Context, string, time.Time) ([]ScheduledCashflow, error)
+	HistoricalSpending(context.Context, string, time.Time, time.Time) (HistoricalSpending, error)
+	CreateLiquiditySimulation(context.Context, LiquiditySimulation) error
+	LiquiditySimulation(context.Context, string, string) (LiquiditySimulation, error)
 	BillSummary(context.Context, string, time.Time) (BillSummary, error)
 	BillSummaryRange(context.Context, string, time.Time, time.Time, string) (BillSummary, error)
 	DailyOutgoing(context.Context, string, time.Time) (int64, error)

@@ -60,6 +60,23 @@ func (r *Repository) Seed(ctx context.Context, now time.Time) error {
 			return fmt.Errorf("seed subscription: %w", err)
 		}
 	}
+	cashflows := []struct {
+		id, direction, category, description, frequency string
+		amount                                          int64
+		essential                                       bool
+		expectedAt                                      time.Time
+	}{
+		{"cashflow_salary", "in", "income", "工资收入", "monthly", 500000, false, now.AddDate(0, 0, 10)},
+		{"cashflow_rent", "out", "housing", "房租", "monthly", 650000, true, now.AddDate(0, 0, 3)},
+		{"cashflow_loan", "out", "loan", "贷款还款", "monthly", 200000, true, now.AddDate(0, 0, 5)},
+		{"cashflow_insurance", "out", "insurance", "保险缴费", "monthly", 50000, true, now.AddDate(0, 0, 20)},
+	}
+	for _, cashflow := range cashflows {
+		_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO cashflow_events(id,user_id,direction,amount_minor,currency,category,description,essential,expected_at,frequency,status) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, cashflow.id, domain.DemoUserID, cashflow.direction, cashflow.amount, "CNY", cashflow.category, cashflow.description, cashflow.essential, cashflow.expectedAt.Format(time.RFC3339Nano), cashflow.frequency, "active")
+		if err != nil {
+			return fmt.Errorf("seed cashflow event: %w", err)
+		}
+	}
 	entries := []struct {
 		id, category, description string
 		amount                    int64
@@ -265,6 +282,122 @@ func (r *Repository) Subscriptions(ctx context.Context, userID, status string) (
 		subscriptions = append(subscriptions, subscription)
 	}
 	return subscriptions, rows.Err()
+}
+
+func (r *Repository) CashflowEvents(ctx context.Context, userID string) ([]domain.CashflowEvent, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,user_id,direction,amount_minor,currency,category,description,essential,expected_at,frequency,status FROM cashflow_events WHERE user_id=? AND status='active' ORDER BY expected_at,id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var events []domain.CashflowEvent
+	for rows.Next() {
+		var event domain.CashflowEvent
+		var expectedAt string
+		var essential int
+		if err := rows.Scan(&event.ID, &event.UserID, &event.Direction, &event.AmountMinor, &event.Currency, &event.Category, &event.Description, &essential, &expectedAt, &event.Frequency, &event.Status); err != nil {
+			return nil, err
+		}
+		event.Essential = essential == 1
+		if event.ExpectedAt, err = time.Parse(time.RFC3339Nano, expectedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}
+
+func (r *Repository) ScheduledCashflows(ctx context.Context, userID string, now time.Time) ([]domain.ScheduledCashflow, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,snapshot_json FROM actions WHERE user_id=? AND kind='transfer' AND status='scheduled' AND datetime(expires_at)>=datetime(?) ORDER BY created_at,id`, userID, now.Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var transfers []domain.ScheduledCashflow
+	for rows.Next() {
+		var actionID, snapshotJSON string
+		if err := rows.Scan(&actionID, &snapshotJSON); err != nil {
+			return nil, err
+		}
+		var snapshot struct {
+			AmountMinor     int64  `json:"amount_minor"`
+			Currency        string `json:"currency"`
+			ScheduledAt     string `json:"scheduled_at"`
+			BeneficiaryName string `json:"beneficiary_name"`
+			Remark          string `json:"remark"`
+		}
+		if err := json.Unmarshal([]byte(snapshotJSON), &snapshot); err != nil {
+			return nil, err
+		}
+		scheduledAt, err := time.Parse(time.RFC3339, snapshot.ScheduledAt)
+		if err != nil {
+			return nil, err
+		}
+		description := "预约转账给" + snapshot.BeneficiaryName
+		if snapshot.Remark != "" {
+			description += " " + snapshot.Remark
+		}
+		transfers = append(transfers, domain.ScheduledCashflow{ActionID: actionID, AmountMinor: snapshot.AmountMinor, Currency: snapshot.Currency, ScheduledAt: scheduledAt, Description: description})
+	}
+	return transfers, rows.Err()
+}
+
+func (r *Repository) HistoricalSpending(ctx context.Context, userID string, start, end time.Time) (domain.HistoricalSpending, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT date(datetime(l.created_at),'+8 hours'),COALESCE(SUM(l.amount_minor),0) FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.category IN ('food','transport','shopping','entertainment','other') AND datetime(l.created_at)>=datetime(?) AND datetime(l.created_at)<datetime(?) GROUP BY date(datetime(l.created_at),'+8 hours')`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
+	if err != nil {
+		return domain.HistoricalSpending{}, err
+	}
+	defer rows.Close()
+	var total, maximum int64
+	for rows.Next() {
+		var day string
+		var amount int64
+		if err := rows.Scan(&day, &amount); err != nil {
+			return domain.HistoricalSpending{}, err
+		}
+		total += amount
+		if amount > maximum {
+			maximum = amount
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return domain.HistoricalSpending{}, err
+	}
+	days := int64(end.Sub(start).Hours() / 24)
+	if days < 1 {
+		days = 1
+	}
+	average := (total + days - 1) / days
+	if maximum < average {
+		maximum = average
+	}
+	return domain.HistoricalSpending{AverageDailyMinor: average, ConservativeDailyMinor: maximum}, nil
+}
+
+func (r *Repository) CreateLiquiditySimulation(ctx context.Context, simulation domain.LiquiditySimulation) error {
+	result, err := json.Marshal(simulation)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO liquidity_simulations(id,user_id,account_id,trace_id,result_json,created_at) VALUES(?,?,?,?,?,?)`, simulation.ID, simulation.UserID, simulation.AccountID, simulation.TraceID, string(result), simulation.CreatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func (r *Repository) LiquiditySimulation(ctx context.Context, userID, id string) (domain.LiquiditySimulation, error) {
+	var result string
+	err := r.db.QueryRowContext(ctx, `SELECT result_json FROM liquidity_simulations WHERE id=? AND user_id=?`, id, userID).Scan(&result)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.LiquiditySimulation{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.LiquiditySimulation{}, err
+	}
+	var simulation domain.LiquiditySimulation
+	if err := json.Unmarshal([]byte(result), &simulation); err != nil {
+		return domain.LiquiditySimulation{}, err
+	}
+	simulation.UserID = userID
+	return simulation, nil
 }
 
 func (r *Repository) BillSummary(ctx context.Context, userID string, month time.Time) (domain.BillSummary, error) {

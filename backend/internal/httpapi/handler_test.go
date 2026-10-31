@@ -180,9 +180,10 @@ func TestPendingYellowTransfersCannotExceedDailyLimitAtExecution(t *testing.T) {
 }
 
 func TestBillSummaryQuery(t *testing.T) {
-	server, cleanup := newServer(t)
+	base := time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	server, cleanup := newServerWithClock(t, func() time.Time { return base })
 	defer cleanup()
-	month := time.Now().Format("2006-01")
+	month := "2026-11"
 	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/bills/summary?month="+month, "", "")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("bill summary: status=%d body=%s", resp.StatusCode, body)
@@ -942,9 +943,10 @@ func TestPromptInjectionCannotAutoExecuteTransfer(t *testing.T) {
 }
 
 func TestAnnualBillAndSubscriptionReminderQueries(t *testing.T) {
-	server, cleanup := newServer(t)
+	base := time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	server, cleanup := newServerWithClock(t, func() time.Time { return base })
 	defer cleanup()
-	year := time.Now().Format("2006")
+	year := "2026"
 	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/bills/summary?year="+year, "", "")
 	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"period":"`+year+`"`)) || !bytes.Contains(body, []byte(`"total_minor":31500`)) || !bytes.Contains(body, []byte(`"transaction_id":"txn_seed_shopping"`)) {
 		t.Fatalf("annual bill: status=%d body=%s", resp.StatusCode, body)
@@ -952,6 +954,95 @@ func TestAnnualBillAndSubscriptionReminderQueries(t *testing.T) {
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/subscriptions/reminders?days=11", "", "")
 	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"subscription_id":"sub_streaming"`)) {
 		t.Fatalf("subscription reminders: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
+func TestLiquiditySimulationPersistsProjectionAndAudit(t *testing.T) {
+	base := time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	server, cleanup := newServerWithClock(t, func() time.Time { return base })
+	defer cleanup()
+	body := `{"account_id":"acct_demo","horizon_days":30,"proposed_budget_minor":100000,"essential_buffer_minor":100000}`
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/liquidity-simulations", body, "liquidity-simulation-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create liquidity simulation: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var result envelope
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	var simulation struct {
+		ID                     string `json:"simulation_id"`
+		Verdict                string `json:"verdict"`
+		MaximumSafeBudgetMinor int64  `json:"maximum_safe_budget_minor"`
+		Scenarios              []struct {
+			Name   string `json:"name"`
+			Points []any  `json:"points"`
+		} `json:"scenarios"`
+		Events []struct {
+			Description string `json:"description"`
+		} `json:"events"`
+	}
+	if err := json.Unmarshal(result.Data, &simulation); err != nil {
+		t.Fatal(err)
+	}
+	if simulation.ID == "" || simulation.Verdict != "tight" || simulation.MaximumSafeBudgetMinor != 42224 {
+		t.Fatalf("unexpected simulation: %+v", simulation)
+	}
+	if len(simulation.Scenarios) != 3 || len(simulation.Scenarios[1].Points) != 31 {
+		t.Fatalf("unexpected scenarios: %+v", simulation.Scenarios)
+	}
+	if !bytes.Contains(raw, []byte(`"description":"房租"`)) || !bytes.Contains(raw, []byte(`"kind":"subscription"`)) {
+		t.Fatalf("missing cashflow events: %s", raw)
+	}
+	resp, replay := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/liquidity-simulations", body, "liquidity-simulation-1")
+	if resp.StatusCode != http.StatusCreated || !bytes.Equal(bytes.TrimSpace(raw), bytes.TrimSpace(replay)) {
+		t.Fatalf("idempotent replay: status=%d first=%s replay=%s", resp.StatusCode, raw, replay)
+	}
+	resp, persisted := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/liquidity-simulations/"+simulation.ID, "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Equal(bytes.TrimSpace(raw), bytes.TrimSpace(persisted)) {
+		t.Fatalf("get simulation: status=%d body=%s", resp.StatusCode, persisted)
+	}
+	resp, auditRaw := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/audit-traces/"+result.TraceID, "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(auditRaw, []byte(`"event_type":"liquidity_simulation_completed"`)) {
+		t.Fatalf("simulation audit: status=%d body=%s", resp.StatusCode, auditRaw)
+	}
+}
+
+func TestLiquiditySimulationFromConversation(t *testing.T) {
+	base := time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	server, cleanup := newServerWithClock(t, func() time.Time { return base })
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	status, result, raw := sendMessage(t, server.URL, conversationID, "锁定1000元会影响房租吗", "liquidity-message-1")
+	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"liquidity"`)) || !bytes.Contains(raw, []byte(`"verdict":"tight"`)) {
+		t.Fatalf("liquidity message: status=%d result=%+v body=%s", status, result, raw)
+	}
+}
+
+func TestLiquiditySimulationValidatesBounds(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	tests := []struct {
+		name   string
+		body   string
+		status int
+	}{
+		{"other account", `{"account_id":"acct_other","proposed_budget_minor":10000}`, http.StatusForbidden},
+		{"horizon too long", `{"account_id":"acct_demo","horizon_days":91,"proposed_budget_minor":10000}`, http.StatusBadRequest},
+		{"negative budget", `{"account_id":"acct_demo","proposed_budget_minor":-1}`, http.StatusBadRequest},
+		{"negative buffer", `{"account_id":"acct_demo","proposed_budget_minor":10000,"essential_buffer_minor":-1}`, http.StatusBadRequest},
+	}
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/liquidity-simulations", test.body, "liquidity-invalid-"+string(rune('a'+i)))
+			if resp.StatusCode != test.status {
+				t.Fatalf("status=%d want=%d body=%s", resp.StatusCode, test.status, raw)
+			}
+		})
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/liquidity-simulations/liq_missing", "", "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing simulation: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
 
@@ -1201,7 +1292,7 @@ func TestTransferSplitCreatesConfirmedCollectionRequest(t *testing.T) {
 }
 
 func TestWorkflowBudgetLockFailuresAndCancellationReleaseReservation(t *testing.T) {
-	t.Run("insufficient balance", func(t *testing.T) {
+	t.Run("preflight blocks unsafe lock", func(t *testing.T) {
 		server, cleanup := newServer(t)
 		defer cleanup()
 		deadline := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
@@ -1224,21 +1315,8 @@ func TestWorkflowBudgetLockFailuresAndCancellationReleaseReservation(t *testing.
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("advance workflow: status=%d body=%s", resp.StatusCode, raw)
 		}
-		var advanced envelope
-		if err := json.Unmarshal(raw, &advanced); err != nil {
-			t.Fatal(err)
-		}
-		var pending struct {
-			Action struct {
-				ID string `json:"action_id"`
-			} `json:"action"`
-		}
-		if err := json.Unmarshal(advanced.Data, &pending); err != nil {
-			t.Fatal(err)
-		}
-		resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/mfa/verify", `{"code":"000000"}`, "insufficient-lock-mfa-1")
-		if resp.StatusCode != http.StatusUnprocessableEntity || !bytes.Contains(raw, []byte("INSUFFICIENT_BALANCE")) {
-			t.Fatalf("lock beyond balance: status=%d body=%s", resp.StatusCode, raw)
+		if !bytes.Contains(raw, []byte(`"verdict":"unsafe"`)) || !bytes.Contains(raw, []byte(`"liquidity"`)) || bytes.Contains(raw, []byte(`"action":{`)) {
+			t.Fatalf("unsafe lock preflight: status=%d body=%s", resp.StatusCode, raw)
 		}
 		resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
 		if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) {
@@ -1344,6 +1422,78 @@ func TestWorkflowBudgetLockFailuresAndCancellationReleaseReservation(t *testing.
 			t.Fatalf("workflow after mfa lock: status=%d body=%s", resp.StatusCode, raw)
 		}
 	})
+}
+
+func TestWorkflowBudgetLockRechecksLiquidityBeforeExecution(t *testing.T) {
+	base := time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	server, cleanup := newServerWithClock(t, func() time.Time { return base })
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	deadline := base.Add(2 * time.Hour).Format(time.RFC3339)
+	body := `{"purpose":"大额预算","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":500000}]}`
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "liquidity-recheck-workflow-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created envelope
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	var workflow struct {
+		ID string `json:"workflow_id"`
+	}
+	if err := json.Unmarshal(created.Data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "liquidity-recheck-advance-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"verdict":"safe"`)) {
+		t.Fatalf("preflight advance: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var advanced envelope
+	var pending struct {
+		Action struct {
+			ID string `json:"action_id"`
+		} `json:"action"`
+	}
+	if err := json.Unmarshal(raw, &advanced); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(advanced.Data, &pending); err != nil {
+		t.Fatal(err)
+	}
+
+	scheduledAt := base.Add(30 * time.Minute).Format(time.RFC3339)
+	transferBody := `{"conversation_id":"` + conversationID + `","beneficiary_name":"张三","amount_minor":500000,"scheduled_at":"` + scheduledAt + `"}`
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfers", transferBody, "liquidity-transfer-create-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create scheduled transfer: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var transferResult envelope
+	var transferAction struct {
+		ID string `json:"action_id"`
+	}
+	if err := json.Unmarshal(raw, &transferResult); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(transferResult.Data, &transferAction); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+transferAction.ID+"/mfa/verify", `{"code":"000000"}`, "liquidity-transfer-mfa-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"scheduled"`)) {
+		t.Fatalf("schedule transfer: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/mfa/verify", `{"code":"000000"}`, "liquidity-budget-mfa-1")
+	if resp.StatusCode != http.StatusConflict || !bytes.Contains(raw, []byte("ACTION_STATE_CONFLICT")) {
+		t.Fatalf("block budget lock: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/workflows/"+workflow.ID, "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"failed"`)) {
+		t.Fatalf("workflow after liquidity block: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"reserved_minor":0`)) {
+		t.Fatalf("blocked lock changed reservation: status=%d body=%s", resp.StatusCode, raw)
+	}
 }
 
 func TestWorkflowVirtualTimeWaitsForNodeDueAt(t *testing.T) {
@@ -1506,5 +1656,37 @@ func TestModelPlanCreatesValidatedActionWithoutTrustingAuthorizationFields(t *te
 	resp, raw := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/actions/"+result.Action.ID, "", "")
 	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"beneficiary_name":"张三"`)) || !bytes.Contains(raw, []byte(`"amount_minor":20000`)) {
 		t.Fatalf("validated action snapshot: status=%d body=%s", resp.StatusCode, raw)
+	}
+}
+
+func TestModelCanRequestDeterministicLiquiditySimulation(t *testing.T) {
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plan, err := json.Marshal(map[string]any{
+			"intent": "liquidity_simulation",
+			"entities": map[string]any{
+				"proposed_budget_minor": 100000, "horizon_days": 30, "essential_buffer_minor": 100000,
+			},
+			"missing_fields": []string{},
+			"candidate_plan": []map[string]string{{"kind": "calculate_cashflow"}},
+		})
+		if err != nil {
+			t.Errorf("marshal plan: %v", err)
+			http.Error(w, "encode plan", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": string(plan)}}}})
+	}))
+	defer modelServer.Close()
+	t.Setenv("BANKAGENT_LLM_BASE_URL", modelServer.URL)
+	t.Setenv("BANKAGENT_LLM_API_KEY", "test-key")
+	t.Setenv("BANKAGENT_LLM_MODEL", "test-model")
+
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	status, result, raw := sendMessage(t, server.URL, conversationID, "如果生日花1000元，未来30天资金安全吗", "model-liquidity-message-1")
+	if status != http.StatusOK || result.ReplyType != "query_result" || !bytes.Contains(raw, []byte(`"liquidity"`)) || !bytes.Contains(raw, []byte(`"simulation_id":"liq_`)) {
+		t.Fatalf("model liquidity simulation: status=%d result=%+v body=%s", status, result, raw)
 	}
 }

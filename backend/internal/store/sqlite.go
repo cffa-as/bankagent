@@ -235,6 +235,27 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     billing_cycle TEXT NOT NULL,
     next_charge_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS cashflow_events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    category TEXT NOT NULL,
+    description TEXT NOT NULL,
+    essential INTEGER NOT NULL,
+    expected_at TEXT NOT NULL,
+    frequency TEXT NOT NULL,
+    status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS liquidity_simulations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS transfer_splits (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
@@ -341,6 +362,8 @@ CREATE TABLE IF NOT EXISTS idempotency_records (
 );
 CREATE INDEX IF NOT EXISTS idx_actions_user ON actions(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages ON conversation_messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_cashflow_events_user ON cashflow_events(user_id, expected_at);
+CREATE INDEX IF NOT EXISTS idx_liquidity_simulations_user ON liquidity_simulations(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_trace ON audit_events(trace_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_ledger_account ON ledger_entries(account_id, created_at);
 `

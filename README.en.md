@@ -87,6 +87,7 @@ The product is designed as a regulated banking control surface, not a generic AI
 | **Card controls** | “Freeze the card ending in 8842” | Card state, authorization path, change history |
 | **Subscriptions** | “Find unused subscriptions and cancel them” | Recurring-charge evidence, cancellation snapshot, audit |
 | **Cross-scene workflows** | “Plan a birthday with a CNY 1,000 budget” | Child tasks, step-by-step authorization, receipts |
+| **Liquidity preflight** | “Will reserving CNY 1,000 affect rent?” | Three cash-flow scenarios, daily curve, minimum balance, and safe budget |
 
 ## Security model
 
@@ -175,6 +176,7 @@ Open <http://localhost:3000>. The demo identity is `Bearer demo-user-1`; the moc
 | [High-level design](docs/概要设计.md) | Data model, API, database, and key flows |
 | [OpenAPI](docs/openapi.yaml) | Shared machine-readable API contract |
 | [Technical design](docs/技术方案.md) | Architecture, security boundaries, acceptance, and risks |
+| [Competitive and technical evaluation](docs/竞品评测.md) | Executable metrics, public capability matrix, and reproduction steps |
 | [Security self-assessment](docs/安全自评报告.md) | Permission model and known risks |
 | [Brand direction](frontend/BRAND.md) | Vaultline visual direction and usage |
 | [Video pipeline](video/README.md) | Capture, voiceover, and Remotion rendering workflow |

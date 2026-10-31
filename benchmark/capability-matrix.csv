@@ -1,0 +1,6 @@
+product,conversational_action_execution,transfer_actions,bill_analysis,investment_actions,card_actions,subscription_management,cross_scenario_planning,liquidity_preflight,source_date
+Vaultline,yes,yes,yes,yes,yes,yes,yes,yes,2026-11-01
+Revolut AIR,yes,partial,partial,partial,partial,partial,partial,partial,2026-11-01
+Cleo,partial,no,partial,partial,partial,partial,partial,partial,2026-11-01
+Copilot Money,partial,no,yes,partial,no,yes,partial,yes,2026-11-01
+Origin,partial,no,yes,yes,no,yes,yes,partial,2026-11-01

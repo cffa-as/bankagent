@@ -89,6 +89,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 | **卡片管理 / Card controls** | “冻结尾号 8842 的卡” | 卡片状态、授权路径、变更记录 |
 | **订阅代扣 / Subscriptions** | “找出不用的订阅并取消” | 周期扣费证据、取消快照、可审计结果 |
 | **跨场景联动 / Cross-scene** | “预算 1000 元安排爱人生日” | 子任务工作流、逐项授权、业务回执 |
+| **流动性预检 / Liquidity preflight** | “锁定 1000 元会影响房租吗” | 三种现金流情景、逐日曲线、最低余额和安全预算 |
 
 <a id="security-model"></a>
 
@@ -187,6 +188,7 @@ npm run dev
 | [概要设计](docs/概要设计.md) | 数据模型、API、数据库和关键流程 |
 | [OpenAPI](docs/openapi.yaml) | 前后端共同遵循的机器可读契约 |
 | [技术方案](docs/技术方案.md) | 架构、安全边界、验收和风险 |
+| [竞品与技术评测](docs/竞品评测.md) | 可执行指标、竞品能力矩阵和复现方式 |
 | [安全自评报告](docs/安全自评报告.md) | 权限分级实现说明与已知风险 |
 | [品牌规范](frontend/BRAND.md) | Vaultline 视觉方向、标识和用色 |
 | [视频工程](video/README.md) | 录屏、旁白、Remotion 渲染流程 |

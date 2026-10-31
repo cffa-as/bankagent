@@ -181,8 +181,9 @@ func (s *Service) CancelWorkflow(ctx context.Context, userID, id string) (Workfl
 }
 
 type WorkflowAdvanceResult struct {
-	Workflow Workflow `json:"workflow"`
-	Action   *Action  `json:"action,omitempty"`
+	Workflow  Workflow             `json:"workflow"`
+	Action    *Action              `json:"action,omitempty"`
+	Liquidity *LiquiditySimulation `json:"liquidity,omitempty"`
 }
 
 func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string, virtualNow time.Time) (WorkflowAdvanceResult, string, error) {
@@ -243,6 +244,28 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string, virtua
 		return WorkflowAdvanceResult{Workflow: updated}, trace, nil
 	}
 
+	var liquidity *LiquiditySimulation
+	if node.Kind == "budget_lock" {
+		account, err := s.repo.Account(ctx, userID)
+		if err != nil {
+			return WorkflowAdvanceResult{}, trace, err
+		}
+		simulation, _, err := s.createLiquiditySimulationAt(ctx, userID, account.ID, liquidityHorizonDays(virtualNow, workflow.Deadline), node.AmountMinor, nil, virtualNow)
+		if err != nil {
+			return WorkflowAdvanceResult{}, trace, err
+		}
+		liquidity = &simulation
+		if simulation.Verdict == "unsafe" {
+			if err := s.audit(ctx, trace, "", "", "workflow_budget_preflight_blocked", "failed", "system", map[string]any{
+				"workflow_id": workflow.ID, "node_id": node.ID, "simulation_id": simulation.ID,
+				"minimum_expected_minor": simulation.Scenarios[1].MinimumAvailableMinor,
+			}, virtualNow); err != nil {
+				return WorkflowAdvanceResult{}, trace, err
+			}
+			return WorkflowAdvanceResult{Workflow: workflow, Liquidity: liquidity}, trace, nil
+		}
+	}
+
 	risk, status := "red", "awaiting_mfa"
 	kind := "workflow_budget_lock"
 	if node.Kind == "external_order" {
@@ -266,7 +289,7 @@ func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string, virtua
 	if err != nil {
 		return WorkflowAdvanceResult{}, trace, err
 	}
-	return WorkflowAdvanceResult{Workflow: updated, Action: ptr(action.Public())}, trace, nil
+	return WorkflowAdvanceResult{Workflow: updated, Action: ptr(action.Public()), Liquidity: liquidity}, trace, nil
 }
 
 func (s *Service) createWorkflowActionRecord(ctx context.Context, userID, kind, risk, status string, snapshot map[string]any) (Action, error) {
