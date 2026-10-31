@@ -56,8 +56,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.createInvestmentPurchase(w, r, userID, path)
 		return
 	}
+	if r.Method == http.MethodPost && path == "/v1/transfers" {
+		h.createTransfer(w, r, userID)
+		return
+	}
 	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/investments/holdings/") && strings.HasSuffix(path, "/redemptions") {
 		h.createInvestmentRedemption(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/cards/") && strings.HasSuffix(path, "/apply") {
+		h.createCardApplication(w, r, userID, path)
 		return
 	}
 	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/cards/") && strings.HasSuffix(path, "/limit") {
@@ -106,6 +114,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/actions/") && strings.HasSuffix(path, "/cancel") {
 		h.cancel(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodPost && path == "/v1/workflows" {
+		h.createWorkflow(w, r, userID)
+		return
+	}
+	if r.Method == http.MethodGet && path == "/v1/workflows" {
+		h.listWorkflows(w, r, userID)
+		return
+	}
+	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/workflows/") {
+		h.getWorkflow(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/workflows/") && strings.HasSuffix(path, "/cancel") {
+		h.cancelWorkflow(w, r, userID, path)
 		return
 	}
 	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/audit-traces/") {
@@ -173,6 +197,59 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID, path s
 	response := envelope(result, trace)
 	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) createTransfer(w http.ResponseWriter, r *http.Request, userID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var request struct {
+		ConversationID  string `json:"conversation_id"`
+		BeneficiaryName string `json:"beneficiary_name"`
+		AmountMinor     int64  `json:"amount_minor"`
+		Remark          string `json:"remark"`
+	}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, r.URL.Path, fp) {
+		return
+	}
+	action, trace, err := h.service.CreateTransferAction(r.Context(), userID, request.ConversationID, request.BeneficiaryName, request.AmountMinor, request.Remark)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(action, trace)
+	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
+	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) createCardApplication(w http.ResponseWriter, r *http.Request, userID, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var request struct {
+		ConversationID string `json:"conversation_id"`
+	}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, path, fp) {
+		return
+	}
+	action, trace, err := h.service.CreateCardApplicationAction(r.Context(), userID, request.ConversationID, segment(path, 2))
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(action, trace)
+	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
+	writeJSON(w, http.StatusCreated, response)
 }
 
 func (h *Handler) createInvestmentPurchase(w http.ResponseWriter, r *http.Request, userID, path string) {
@@ -536,6 +613,86 @@ func queryDateRange(r *http.Request) (*time.Time, *time.Time, error) {
 		return nil, nil, errors.New("invalid date range")
 	}
 	return from, to, nil
+}
+
+func (h *Handler) createWorkflow(w http.ResponseWriter, r *http.Request, userID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var request struct {
+		Purpose  string                     `json:"purpose"`
+		Deadline string                     `json:"deadline"`
+		Nodes    []domain.WorkflowNodeInput `json:"nodes"`
+	}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, r.URL.Path, fp) {
+		return
+	}
+	deadline, err := time.Parse(time.RFC3339, request.Deadline)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "deadline 必须是 RFC3339 时间", "tr_invalid")
+		return
+	}
+	workflow, trace, err := h.service.CreateWorkflow(r.Context(), userID, strings.TrimSpace(request.Purpose), deadline, request.Nodes)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(workflow, trace)
+	h.saveReplay(r, userID, r.URL.Path, fp, http.StatusCreated, response)
+	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) listWorkflows(w http.ResponseWriter, r *http.Request, userID string) {
+	workflows, err := h.service.ListWorkflows(r.Context(), userID)
+	if err != nil {
+		writeServiceError(w, err, "tr_workflows")
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(workflows, "tr_workflows"))
+}
+
+func (h *Handler) getWorkflow(w http.ResponseWriter, r *http.Request, userID, path string) {
+	workflow, err := h.service.GetWorkflow(r.Context(), userID, segment(path, 2))
+	if err != nil {
+		writeServiceError(w, err, "tr_workflow")
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(workflow, "tr_workflow"))
+}
+
+func (h *Handler) cancelWorkflow(w http.ResponseWriter, r *http.Request, userID, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	body, err := readBody(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		body = []byte("{}")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, path, fp) {
+		return
+	}
+	workflow, trace, err := h.service.CancelWorkflow(r.Context(), userID, segment(path, 2))
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(workflow, trace)
+	h.saveReplay(r, userID, path, fp, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (h *Handler) audit(w http.ResponseWriter, r *http.Request, userID, path string) {

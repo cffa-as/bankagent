@@ -24,6 +24,52 @@ func (s *Service) CreateConversation(ctx context.Context, userID string) (Conver
 	return conversation, trace, nil
 }
 
+func (s *Service) CreateTransferAction(ctx context.Context, userID, conversationID, beneficiaryName string, amountMinor int64, remark string) (Action, string, error) {
+	if amountMinor <= 0 || strings.TrimSpace(beneficiaryName) == "" {
+		return Action{}, "", ErrInvalidArgument
+	}
+	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
+		return Action{}, "", err
+	}
+	accountID, err := s.repo.Beneficiary(ctx, userID, strings.TrimSpace(beneficiaryName))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Action{}, "", ErrNotFound
+	}
+	if err != nil {
+		return Action{}, "", err
+	}
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return Action{}, "", err
+	}
+	daily, err := s.repo.DailyOutgoing(ctx, userID, s.now().In(loc))
+	if err != nil {
+		return Action{}, "", err
+	}
+	risk, status := "yellow", "awaiting_confirmation"
+	if daily+amountMinor > 100000 {
+		risk, status = "red", "awaiting_mfa"
+	}
+	snapshot := map[string]any{
+		"beneficiary_name": beneficiaryName, "beneficiary_account_id": accountID,
+		"amount_minor": amountMinor, "currency": "CNY", "remark": strings.TrimSpace(remark),
+		"daily_outgoing_before_minor": daily,
+	}
+	return s.createActionRecord(ctx, userID, conversationID, "transfer", risk, status, snapshot)
+}
+
+func (s *Service) CreateCardApplicationAction(ctx context.Context, userID, conversationID, cardType string) (Action, string, error) {
+	if strings.TrimSpace(cardType) == "" {
+		return Action{}, "", ErrInvalidArgument
+	}
+	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
+		return Action{}, "", err
+	}
+	return s.createActionRecord(ctx, userID, conversationID, "card_application", "yellow", "awaiting_confirmation", map[string]any{
+		"card_type": strings.TrimSpace(cardType),
+	})
+}
+
 func (s *Service) CreateCardLimitAction(ctx context.Context, userID, conversationID, cardID string, limitMinor int64) (Action, string, error) {
 	if limitMinor < 0 {
 		return Action{}, "", ErrInvalidArgument
@@ -323,40 +369,18 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 	}
 	name, amount, remark, ok := parseTransfer(text)
 	if ok {
-		accountID, err := s.repo.Beneficiary(ctx, userID, name)
+		action, actionTrace, err := s.CreateTransferAction(ctx, userID, conversationID, name, amount, remark)
+		if errors.Is(err, ErrNotFound) {
+			return MessageResult{RunID: runID, ReplyType: "question", Text: "没有找到对应收款人，请提供预置收款人姓名。"}, trace, nil
+		}
 		if err != nil {
-			if err == sql.ErrNoRows {
-				return MessageResult{RunID: runID, ReplyType: "question", Text: "没有找到对应收款人，请提供预置收款人姓名。"}, trace, nil
-			}
-			return MessageResult{}, trace, err
-		}
-		loc, err := time.LoadLocation("Asia/Shanghai")
-		if err != nil {
-			return MessageResult{}, trace, err
-		}
-		daily, err := s.repo.DailyOutgoing(ctx, userID, now.In(loc))
-		if err != nil {
-			return MessageResult{}, trace, err
-		}
-		risk := "yellow"
-		status := "awaiting_confirmation"
-		if daily+amount > 100000 {
-			risk, status = "red", "awaiting_mfa"
-		}
-		snapshot := map[string]any{"beneficiary_name": name, "beneficiary_account_id": accountID, "amount_minor": amount, "currency": "CNY", "remark": remark, "daily_outgoing_before_minor": daily}
-		snapshotJSON, _ := json.Marshal(snapshot)
-		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "transfer", RiskLevel: risk, Status: status, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
-		if err := s.repo.CreateAction(ctx, action); err != nil {
-			return MessageResult{}, trace, err
-		}
-		if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": risk}, now); err != nil {
 			return MessageResult{}, trace, err
 		}
 		text := "请确认转账详情。"
-		if risk == "red" {
+		if action.RiskLevel == "red" {
 			text = "该转账需要完成 MFA 验证。"
 		}
-		return MessageResult{RunID: runID, ReplyType: "action_required", Text: text, Action: ptr(action.Public())}, trace, nil
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: text, Action: ptr(action.Public())}, actionTrace, nil
 	}
 	if s.model != nil {
 		plan, modelErr := s.model.Plan(ctx, text)
@@ -666,6 +690,14 @@ func (s *Service) Audit(ctx context.Context, userID, traceID string) ([]AuditEve
 		if owner != userID {
 			return nil, ErrForbidden
 		}
+	} else if workflowID, ok := events[0].Detail["workflow_id"].(string); ok {
+		owner, err := s.repo.WorkflowOwner(ctx, workflowID)
+		if err != nil {
+			return nil, err
+		}
+		if owner != userID {
+			return nil, ErrForbidden
+		}
 	}
 	return events, nil
 }
@@ -759,6 +791,28 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
 		return s.audit(ctx, trace, action.ConversationID, action.ID, "investment_purchased", "succeeded", "tool", map[string]any{"product_id": snapshot.ProductID, "amount_minor": snapshot.AmountMinor}, now)
+	case "card_application":
+		var snapshot struct {
+			CardType string `json:"card_type"`
+		}
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		card, err := s.repo.ExecuteCardApplication(ctx, *action, snapshot.CardType, now)
+		if err != nil {
+			return err
+		}
+		action.Status, action.UpdatedAt = "succeeded", now
+		action.Result = map[string]any{"card_id": card.ID, "masked_number": card.MaskedNumber, "status": card.Status, "card_type": snapshot.CardType}
+		resultJSON, err := json.Marshal(action.Result)
+		if err != nil {
+			return err
+		}
+		action.ResultJSON = string(resultJSON)
+		if err := s.repo.UpdateAction(ctx, *action); err != nil {
+			return err
+		}
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "card_applied", "succeeded", "tool", map[string]any{"card_id": card.ID, "card_type": snapshot.CardType}, now)
 	case "card_limit_change":
 		var snapshot struct {
 			CardID           string `json:"card_id"`

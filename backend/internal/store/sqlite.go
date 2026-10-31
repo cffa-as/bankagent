@@ -196,6 +196,28 @@ CREATE TABLE IF NOT EXISTS audit_events (
     occurred_at TEXT NOT NULL,
     sequence INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS workflows (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    deadline TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS workflow_nodes (
+    workflow_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    depends_on_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    action_id TEXT NOT NULL DEFAULT '',
+    amount_minor INTEGER NOT NULL DEFAULT 0,
+    merchant TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (workflow_id, node_id),
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_workflows_user ON workflows(user_id, created_at);
 CREATE TABLE IF NOT EXISTS idempotency_records (
     user_id TEXT NOT NULL,
     method TEXT NOT NULL,

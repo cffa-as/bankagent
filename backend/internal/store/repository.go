@@ -463,6 +463,35 @@ func (r *Repository) ExecuteInvestmentRedemption(ctx context.Context, a domain.A
 	return domain.RedemptionResult{HoldingID: holdingID, Principal: principal, ProfitMinor: profit, TotalMinor: total, DaysHeld: daysHeld, AnnualRateBPS: annualRateBPS}, nil
 }
 
+func (r *Repository) ExecuteCardApplication(ctx context.Context, a domain.Action, cardType string, now time.Time) (domain.Card, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Card{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE actions SET status='executing',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), a.ID, a.Status)
+	if err != nil {
+		return domain.Card{}, err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return domain.Card{}, err
+	} else if affected != 1 {
+		return domain.Card{}, domain.ErrActionStateConflict
+	}
+	cardID := domain.NewID("card")
+	masked := "**** " + cardID[len(cardID)-4:]
+	if _, err := tx.ExecContext(ctx, `INSERT INTO cards(id,user_id,masked_number,status,limit_minor,restrictions_json) VALUES(?,?,?,?,?,?)`, cardID, a.UserID, masked, "active", 500000, `[]`); err != nil {
+		return domain.Card{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+		return domain.Card{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Card{}, err
+	}
+	return domain.Card{ID: cardID, MaskedNumber: masked, Status: "active", LimitMinor: 500000, Restrictions: []string{}}, nil
+}
+
 func (r *Repository) ExecuteCardLimit(ctx context.Context, a domain.Action, cardID string, limitMinor int64, now time.Time) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -645,4 +674,134 @@ func (r *Repository) Idempotency(ctx context.Context, userID, method, path, key,
 func (r *Repository) SaveIdempotency(ctx context.Context, userID, method, path, key, fingerprint string, status int, response []byte, now time.Time) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO idempotency_records(user_id,method,path,idem_key,fingerprint,status_code,response_json,created_at) VALUES(?,?,?,?,?,?,?,?)`, userID, method, path, key, fingerprint, status, string(response), now.Format(time.RFC3339Nano))
 	return err
+}
+
+func (r *Repository) CreateWorkflow(ctx context.Context, workflow domain.Workflow) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO workflows(id,user_id,purpose,deadline,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, workflow.ID, workflow.UserID, workflow.Purpose, workflow.Deadline.Format(time.RFC3339Nano), workflow.Status, workflow.CreatedAt.Format(time.RFC3339Nano), workflow.UpdatedAt.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	for _, node := range workflow.Nodes {
+		depends, err := json.Marshal(node.DependsOn)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_nodes(workflow_id,node_id,kind,depends_on_json,status,action_id,amount_minor,merchant) VALUES(?,?,?,?,?,?,?,?)`, workflow.ID, node.ID, node.Kind, string(depends), node.Status, node.ActionID, node.AmountMinor, node.Merchant); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) Workflows(ctx context.Context, userID string) ([]domain.Workflow, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,purpose,deadline,status,created_at,updated_at FROM workflows WHERE user_id=? ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.Workflow
+	for rows.Next() {
+		var workflow domain.Workflow
+		var deadline, created, updated string
+		if err := rows.Scan(&workflow.ID, &workflow.Purpose, &deadline, &workflow.Status, &created, &updated); err != nil {
+			return nil, err
+		}
+		if workflow.Deadline, err = time.Parse(time.RFC3339Nano, deadline); err != nil {
+			return nil, err
+		}
+		if workflow.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			return nil, err
+		}
+		if workflow.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated); err != nil {
+			return nil, err
+		}
+		workflow.UserID = userID
+		workflow.Nodes, err = r.workflowNodes(ctx, workflow.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, workflow)
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) WorkflowOwner(ctx context.Context, id string) (string, error) {
+	var userID string
+	err := r.db.QueryRowContext(ctx, `SELECT user_id FROM workflows WHERE id=?`, id).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", domain.ErrNotFound
+	}
+	return userID, err
+}
+
+func (r *Repository) Workflow(ctx context.Context, id, userID string) (domain.Workflow, error) {
+	var workflow domain.Workflow
+	var deadline, created, updated string
+	err := r.db.QueryRowContext(ctx, `SELECT id,user_id,purpose,deadline,status,created_at,updated_at FROM workflows WHERE id=?`, id).Scan(&workflow.ID, &workflow.UserID, &workflow.Purpose, &deadline, &workflow.Status, &created, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Workflow{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.Workflow{}, err
+	}
+	if workflow.UserID != userID {
+		return domain.Workflow{}, domain.ErrForbidden
+	}
+	if workflow.Deadline, err = time.Parse(time.RFC3339Nano, deadline); err != nil {
+		return domain.Workflow{}, err
+	}
+	if workflow.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+		return domain.Workflow{}, err
+	}
+	if workflow.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated); err != nil {
+		return domain.Workflow{}, err
+	}
+	workflow.Nodes, err = r.workflowNodes(ctx, workflow.ID)
+	return workflow, err
+}
+
+func (r *Repository) workflowNodes(ctx context.Context, workflowID string) ([]domain.WorkflowNode, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT node_id,kind,depends_on_json,status,action_id,amount_minor,merchant FROM workflow_nodes WHERE workflow_id=? ORDER BY rowid`, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var nodes []domain.WorkflowNode
+	for rows.Next() {
+		var node domain.WorkflowNode
+		var depends string
+		if err := rows.Scan(&node.ID, &node.Kind, &depends, &node.Status, &node.ActionID, &node.AmountMinor, &node.Merchant); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(depends), &node.DependsOn); err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes, rows.Err()
+}
+
+func (r *Repository) CancelWorkflow(ctx context.Context, id, userID string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE workflows SET status='cancelled',updated_at=? WHERE id=? AND user_id=? AND status IN ('pending','running','partially_completed')`, now.Format(time.RFC3339Nano), id, userID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status='skipped' WHERE workflow_id=? AND status IN ('pending','ready','awaiting_authorization')`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

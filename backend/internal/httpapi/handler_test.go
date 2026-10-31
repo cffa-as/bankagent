@@ -633,3 +633,115 @@ func TestInvestmentRedemptionRequiresMFAAndCreditsPrincipal(t *testing.T) {
 		t.Fatalf("redeemed balance: status=%d body=%s", resp.StatusCode, body)
 	}
 }
+
+func TestDirectTransferActionAndIdempotency(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	body := `{"conversation_id":"` + conversationID + `","beneficiary_name":"张三","amount_minor":5000,"remark":"午餐"}`
+
+	resp, firstBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfers", body, "transfer-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create transfer: status=%d body=%s", resp.StatusCode, firstBody)
+	}
+	var result envelope
+	if err := json.Unmarshal(firstBody, &result); err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		ID     string `json:"action_id"`
+		Status string `json:"status"`
+		Risk   string `json:"risk_level"`
+	}
+	if err := json.Unmarshal(result.Data, &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" || created.Status != "awaiting_confirmation" || created.Risk != "yellow" {
+		t.Fatalf("unexpected transfer action: %+v", created)
+	}
+
+	resp, replayBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/transfers", body, "transfer-1")
+	if resp.StatusCode != http.StatusCreated || !bytes.Equal(bytes.TrimSpace(firstBody), bytes.TrimSpace(replayBody)) {
+		t.Fatalf("transfer replay: status=%d first=%s second=%s", resp.StatusCode, firstBody, replayBody)
+	}
+
+	resp, confirmBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+created.ID+"/confirm", `{}`, "transfer-confirm-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("confirm transfer: status=%d body=%s", resp.StatusCode, confirmBody)
+	}
+	if !bytes.Contains(confirmBody, []byte(`"status":"succeeded"`)) {
+		t.Fatalf("transfer not succeeded: %s", confirmBody)
+	}
+}
+
+func TestCardApplicationCreatesCardAfterConfirmation(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	body := `{"conversation_id":"` + conversationID + `"}`
+	resp, responseBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/cards/virtual/apply", body, "card-apply-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("apply card: status=%d body=%s", resp.StatusCode, responseBody)
+	}
+	var result envelope
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		t.Fatal(err)
+	}
+	var created struct {
+		ID     string `json:"action_id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(result.Data, &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" || created.Status != "awaiting_confirmation" {
+		t.Fatalf("unexpected card action: %+v", created)
+	}
+	resp, responseBody = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+created.ID+"/confirm", `{}`, "card-apply-confirm-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(responseBody, []byte(`"status":"succeeded"`)) {
+		t.Fatalf("confirm card: status=%d body=%s", resp.StatusCode, responseBody)
+	}
+	resp, responseBody = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list cards: status=%d body=%s", resp.StatusCode, responseBody)
+	}
+	if !bytes.Contains(responseBody, []byte(`"card_id":"card_`)) {
+		t.Fatalf("new card missing: %s", responseBody)
+	}
+}
+
+func TestWorkflowLifecycleAndCycleValidation(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	deadline := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	body := `{"purpose":"生日准备","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":100000},{"node_id":"flowers","kind":"external_order","depends_on":["lock"],"merchant":"mock-flower"}]}`
+	resp, responseBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "workflow-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, responseBody)
+	}
+	var result envelope
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		t.Fatal(err)
+	}
+	var workflow struct {
+		ID     string `json:"workflow_id"`
+		Status string `json:"status"`
+		Nodes  []struct {
+			Status string `json:"status"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(result.Data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	if workflow.ID == "" || workflow.Status != "pending" || len(workflow.Nodes) != 2 {
+		t.Fatalf("unexpected workflow: %+v", workflow)
+	}
+	resp, responseBody = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/cancel", `{}`, "workflow-cancel-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(responseBody, []byte(`"status":"cancelled"`)) {
+		t.Fatalf("cancel workflow: status=%d body=%s", resp.StatusCode, responseBody)
+	}
+	resp, responseBody = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", `{"purpose":"cycle","deadline":"`+deadline+`","nodes":[{"node_id":"a","kind":"reminder","depends_on":["b"]},{"node_id":"b","kind":"reminder","depends_on":["a"]}]}`, "workflow-cycle-1")
+	if resp.StatusCode != http.StatusBadRequest || !bytes.Contains(responseBody, []byte("INVALID_ARGUMENT")) {
+		t.Fatalf("cycle validation: status=%d body=%s", resp.StatusCode, responseBody)
+	}
+}

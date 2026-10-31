@@ -209,6 +209,7 @@ type Repository interface {
 	ExecuteInvestmentPurchase(context.Context, Action, string, int64, time.Time) error
 	ExecuteInvestmentRedemption(context.Context, Action, string, time.Time) (RedemptionResult, error)
 	ExecuteCardStatus(context.Context, Action, string, string, time.Time) error
+	ExecuteCardApplication(context.Context, Action, string, time.Time) (Card, error)
 	ExecuteCardLimit(context.Context, Action, string, int64, time.Time) error
 	ExecuteSubscriptionCancel(context.Context, Action, string, time.Time) error
 	CancelAction(context.Context, string, time.Time) (bool, error)
@@ -217,6 +218,11 @@ type Repository interface {
 	Audit(context.Context, string) ([]AuditEvent, error)
 	Idempotency(context.Context, string, string, string, string, string) ([]byte, int, error)
 	SaveIdempotency(context.Context, string, string, string, string, string, int, []byte, time.Time) error
+	CreateWorkflow(context.Context, Workflow) error
+	Workflows(context.Context, string) ([]Workflow, error)
+	Workflow(context.Context, string, string) (Workflow, error)
+	WorkflowOwner(context.Context, string) (string, error)
+	CancelWorkflow(context.Context, string, string, time.Time) error
 }
 
 func NewService(repo Repository, now func() time.Time) *Service {

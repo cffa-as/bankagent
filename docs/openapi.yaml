@@ -205,6 +205,31 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+  /v1/transfers:
+    post:
+      tags: [Actions]
+      summary: 创建转账动作
+      operationId: createTransfer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransferRequest' }
+      responses:
+        '201':
+          description: 转账动作已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeAction' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
   /v1/investments/products/{product_id}/subscriptions:
     post:
       tags: [Actions]
@@ -278,8 +303,14 @@ paths:
         - name: card_id
           in: path
           required: true
+          description: 申请类型，例如 virtual
           schema: { type: string, minLength: 1 }
         - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CardApplicationRequest' }
       responses:
         '201':
           description: 卡片申请动作已创建
@@ -927,6 +958,21 @@ components:
         currency: { type: string }
         billing_cycle: { type: string }
         next_charge_at: { type: string, format: date-time }
+    TransferRequest:
+      type: object
+      additionalProperties: false
+      required: [conversation_id, beneficiary_name, amount_minor]
+      properties:
+        conversation_id: { type: string, minLength: 1 }
+        beneficiary_name: { type: string, minLength: 1, maxLength: 100 }
+        amount_minor: { type: integer, format: int64, minimum: 1 }
+        remark: { type: string, maxLength: 200 }
+    CardApplicationRequest:
+      type: object
+      additionalProperties: false
+      required: [conversation_id]
+      properties:
+        conversation_id: { type: string, minLength: 1 }
     InvestmentOrderRequest:
       type: object
       additionalProperties: false
