@@ -2,8 +2,10 @@ package domain
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -45,6 +47,12 @@ func (s *Service) CreateWorkflow(ctx context.Context, userID, purpose string, de
 	graph := make(map[string][]string, len(inputs))
 	for _, node := range inputs {
 		if node.ID == "" || seen[node.ID] || !validWorkflowKind(node.Kind) || node.AmountMinor < 0 {
+			return Workflow{}, "", ErrInvalidArgument
+		}
+		if node.Kind != "reminder" && node.AmountMinor <= 0 {
+			return Workflow{}, "", ErrInvalidArgument
+		}
+		if node.Kind == "external_order" && strings.TrimSpace(node.Merchant) == "" {
 			return Workflow{}, "", ErrInvalidArgument
 		}
 		seen[node.ID] = true
@@ -140,4 +148,130 @@ func (s *Service) CancelWorkflow(ctx context.Context, userID, id string) (Workfl
 		return Workflow{}, "", err
 	}
 	return workflow, trace, nil
+}
+
+type WorkflowAdvanceResult struct {
+	Workflow Workflow `json:"workflow"`
+	Action   *Action  `json:"action,omitempty"`
+}
+
+func (s *Service) AdvanceWorkflow(ctx context.Context, userID, id string) (WorkflowAdvanceResult, string, error) {
+	workflow, err := s.repo.Workflow(ctx, id, userID)
+	if err != nil {
+		return WorkflowAdvanceResult{}, "", err
+	}
+	trace := NewID("tr")
+	if workflow.Status == "completed" || workflow.Status == "cancelled" || workflow.Status == "failed" || !s.now().Before(workflow.Deadline) {
+		return WorkflowAdvanceResult{}, trace, ErrActionStateConflict
+	}
+	for _, node := range workflow.Nodes {
+		if node.Status == "awaiting_authorization" && node.ActionID != "" {
+			action, err := s.repo.Action(ctx, node.ActionID)
+			if err != nil {
+				return WorkflowAdvanceResult{}, trace, err
+			}
+			return WorkflowAdvanceResult{Workflow: workflow, Action: ptr(action.Public())}, trace, nil
+		}
+	}
+	var node *WorkflowNode
+	for i := range workflow.Nodes {
+		if workflow.Nodes[i].Status == "ready" {
+			node = &workflow.Nodes[i]
+			break
+		}
+	}
+	if node == nil {
+		return WorkflowAdvanceResult{Workflow: workflow}, trace, nil
+	}
+	if node.Kind == "reminder" {
+		if err := s.repo.CompleteWorkflowNode(ctx, workflow.ID, node.ID, s.now()); err != nil {
+			return WorkflowAdvanceResult{}, trace, err
+		}
+		updated, err := s.repo.Workflow(ctx, workflow.ID, userID)
+		if err != nil {
+			return WorkflowAdvanceResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, "", "", "workflow_reminder_completed", "succeeded", "system", map[string]any{"workflow_id": workflow.ID, "node_id": node.ID}, s.now()); err != nil {
+			return WorkflowAdvanceResult{}, trace, err
+		}
+		return WorkflowAdvanceResult{Workflow: updated}, trace, nil
+	}
+
+	risk, status := "red", "awaiting_mfa"
+	kind := "workflow_budget_lock"
+	if node.Kind == "external_order" {
+		kind = "workflow_external_order"
+		if node.AmountMinor <= 100000 {
+			risk, status = "yellow", "awaiting_confirmation"
+		}
+	}
+	snapshot := map[string]any{
+		"workflow_id": workflow.ID, "node_id": node.ID, "amount_minor": node.AmountMinor,
+		"merchant": node.Merchant, "purpose": workflow.Purpose, "currency": "CNY",
+	}
+	action, err := s.createWorkflowActionRecord(ctx, workflow.UserID, kind, risk, status, snapshot)
+	if err != nil {
+		return WorkflowAdvanceResult{}, trace, err
+	}
+	if err := s.repo.SetWorkflowNodeAction(ctx, workflow.ID, node.ID, action.ID, "awaiting_authorization", s.now()); err != nil {
+		return WorkflowAdvanceResult{}, trace, err
+	}
+	updated, err := s.repo.Workflow(ctx, workflow.ID, userID)
+	if err != nil {
+		return WorkflowAdvanceResult{}, trace, err
+	}
+	return WorkflowAdvanceResult{Workflow: updated, Action: ptr(action.Public())}, trace, nil
+}
+
+func (s *Service) createWorkflowActionRecord(ctx context.Context, userID, kind, risk, status string, snapshot map[string]any) (Action, error) {
+	now := s.now()
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return Action{}, err
+	}
+	action := Action{ID: NewID("act"), UserID: userID, Kind: kind, RiskLevel: risk, Status: status, SnapshotJSON: string(encoded), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+	if err := s.repo.CreateAction(ctx, action); err != nil {
+		return Action{}, err
+	}
+	trace := NewID("tr")
+	if err := s.audit(ctx, trace, "", action.ID, "action_created", "succeeded", "system", map[string]any{"kind": kind, "risk_level": risk, "workflow_id": snapshot["workflow_id"]}, now); err != nil {
+		return Action{}, err
+	}
+	return action, nil
+}
+
+func (s *Service) cancelWorkflowAction(ctx context.Context, action *Action, now time.Time) error {
+	var snapshot struct {
+		WorkflowID string `json:"workflow_id"`
+		NodeID     string `json:"node_id"`
+	}
+	if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil || snapshot.WorkflowID == "" || snapshot.NodeID == "" {
+		return nil
+	}
+	return s.repo.CancelWorkflowNode(ctx, snapshot.WorkflowID, snapshot.NodeID, now)
+}
+
+func (s *Service) failWorkflowAction(ctx context.Context, action *Action, now time.Time) error {
+	var snapshot struct {
+		WorkflowID string `json:"workflow_id"`
+		NodeID     string `json:"node_id"`
+	}
+	if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil || snapshot.WorkflowID == "" || snapshot.NodeID == "" || action.Status != "failed" {
+		return nil
+	}
+	return s.repo.FailWorkflowNode(ctx, snapshot.WorkflowID, snapshot.NodeID, now)
+}
+
+func (s *Service) finishWorkflowAction(ctx context.Context, action *Action, now time.Time) error {
+	var snapshot struct {
+		WorkflowID string `json:"workflow_id"`
+		NodeID     string `json:"node_id"`
+	}
+	if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil || snapshot.WorkflowID == "" || snapshot.NodeID == "" || action.Status != "succeeded" {
+		return nil
+	}
+	if err := s.repo.CompleteWorkflowNode(ctx, snapshot.WorkflowID, snapshot.NodeID, now); err != nil {
+		return err
+	}
+	return nil
 }

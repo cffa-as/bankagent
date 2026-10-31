@@ -223,6 +223,12 @@ type Repository interface {
 	Workflow(context.Context, string, string) (Workflow, error)
 	WorkflowOwner(context.Context, string) (string, error)
 	CancelWorkflow(context.Context, string, string, time.Time) error
+	CompleteWorkflowNode(context.Context, string, string, time.Time) error
+	FailWorkflowNode(context.Context, string, string, time.Time) error
+	CancelWorkflowNode(context.Context, string, string, time.Time) error
+	SetWorkflowNodeAction(context.Context, string, string, string, string, time.Time) error
+	ExecuteWorkflowBudgetLock(context.Context, Action, string, string, int64, time.Time) error
+	ExecuteWorkflowOrder(context.Context, Action, string, string, int64, string, time.Time) error
 }
 
 func NewService(repo Repository, now func() time.Time) *Service {

@@ -714,7 +714,7 @@ func TestWorkflowLifecycleAndCycleValidation(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()
 	deadline := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
-	body := `{"purpose":"生日准备","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":100000},{"node_id":"flowers","kind":"external_order","depends_on":["lock"],"merchant":"mock-flower"}]}`
+	body := `{"purpose":"生日准备","deadline":"` + deadline + `","nodes":[{"node_id":"lock","kind":"budget_lock","amount_minor":100000},{"node_id":"flowers","kind":"external_order","depends_on":["lock"],"amount_minor":50000,"merchant":"mock-flower"}]}`
 	resp, responseBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "workflow-1")
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, responseBody)
@@ -743,5 +743,73 @@ func TestWorkflowLifecycleAndCycleValidation(t *testing.T) {
 	resp, responseBody = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", `{"purpose":"cycle","deadline":"`+deadline+`","nodes":[{"node_id":"a","kind":"reminder","depends_on":["b"]},{"node_id":"b","kind":"reminder","depends_on":["a"]}]}`, "workflow-cycle-1")
 	if resp.StatusCode != http.StatusBadRequest || !bytes.Contains(responseBody, []byte("INVALID_ARGUMENT")) {
 		t.Fatalf("cycle validation: status=%d body=%s", resp.StatusCode, responseBody)
+	}
+}
+
+func TestWorkflowAdvanceAuthorizationAndCompletion(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	deadline := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	body := `{"purpose":"爱人生日","deadline":"` + deadline + `","nodes":[{"node_id":"reserve","kind":"reminder","depends_on":[]},{"node_id":"flowers","kind":"external_order","depends_on":["reserve"],"amount_minor":50000,"merchant":"演示花店"}]}`
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows", body, "workflow-create-1")
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var created envelope
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	var workflow struct {
+		ID string `json:"workflow_id"`
+	}
+	if err := json.Unmarshal(created.Data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "workflow-advance-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("advance reminder: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/workflows/"+workflow.ID+"/advance", `{}`, "workflow-advance-2")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("advance order: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var advanced envelope
+	if err := json.Unmarshal(raw, &advanced); err != nil {
+		t.Fatal(err)
+	}
+	var pending struct {
+		Action *struct {
+			ID     string `json:"action_id"`
+			Risk   string `json:"risk_level"`
+			Status string `json:"status"`
+		} `json:"action"`
+	}
+	if err := json.Unmarshal(advanced.Data, &pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending.Action == nil || pending.Action.Risk != "yellow" || pending.Action.Status != "awaiting_confirmation" {
+		t.Fatalf("unexpected workflow action: %+v", pending)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+pending.Action.ID+"/confirm", `{}`, "workflow-confirm-1")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("confirm order: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/workflows/"+workflow.ID, "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get workflow: status=%d body=%s", resp.StatusCode, raw)
+	}
+	var finished envelope
+	if err := json.Unmarshal(raw, &finished); err != nil {
+		t.Fatal(err)
+	}
+	var final struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(finished.Data, &final); err != nil {
+		t.Fatal(err)
+	}
+	if final.Status != "completed" {
+		t.Fatalf("workflow not completed: %+v", final)
 	}
 }

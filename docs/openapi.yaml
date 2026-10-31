@@ -658,6 +658,36 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /v1/workflows/{workflow_id}/advance:
+    post:
+      tags: [Actions]
+      summary: 推进一个当前可执行的工作流节点
+      operationId: advanceWorkflow
+      parameters:
+        - $ref: '#/components/parameters/WorkflowID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: 节点已自动完成或已生成待授权动作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeWorkflowAdvance'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /v1/audit-traces/{trace_id}:
     get:
       tags: [Audit]
@@ -1032,8 +1062,10 @@ components:
         node_id: { type: string }
         kind: { type: string, enum: [budget_lock, reminder, external_order] }
         depends_on: { type: array, items: { type: string } }
-        status: { type: string, enum: [pending, ready, awaiting_authorization, running, completed, failed, skipped] }
+        status: { type: string, enum: [pending, ready, awaiting_authorization, running, succeeded, failed, skipped] }
         action_id: { type: string }
+        amount_minor: { type: integer, format: int64, minimum: 0 }
+        merchant: { type: string }
     AuditEvent:
       type: object
       required: [event_id, trace_id, event_type, outcome, occurred_at, sequence]
@@ -1107,6 +1139,15 @@ components:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:
         data: { $ref: '#/components/schemas/Workflow' }
+    EnvelopeWorkflowAdvance:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data:
+          type: object
+          required: [workflow]
+          properties:
+            workflow: { $ref: '#/components/schemas/Workflow' }
+            action: { $ref: '#/components/schemas/Action' }
     EnvelopeWorkflowList:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:

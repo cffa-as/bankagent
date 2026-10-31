@@ -603,6 +603,12 @@ func (s *Service) Confirm(ctx context.Context, userID, id, _ string) (Action, st
 		return Action{}, trace, ErrActionExpired
 	}
 	if err := s.execute(ctx, &action, trace); err != nil {
+		if workflowErr := s.failWorkflowAction(ctx, &action, s.now()); workflowErr != nil {
+			return Action{}, trace, workflowErr
+		}
+		return Action{}, trace, err
+	}
+	if err := s.finishWorkflowAction(ctx, &action, s.now()); err != nil {
 		return Action{}, trace, err
 	}
 	return action.Public(), trace, nil
@@ -644,6 +650,12 @@ func (s *Service) VerifyMFA(ctx context.Context, userID, id, code string) (Actio
 		return Action{}, trace, ErrMFAInvalid
 	}
 	if err := s.execute(ctx, &action, trace); err != nil {
+		if workflowErr := s.failWorkflowAction(ctx, &action, s.now()); workflowErr != nil {
+			return Action{}, trace, workflowErr
+		}
+		return Action{}, trace, err
+	}
+	if err := s.finishWorkflowAction(ctx, &action, s.now()); err != nil {
 		return Action{}, trace, err
 	}
 	return action.Public(), trace, nil
@@ -668,6 +680,9 @@ func (s *Service) Cancel(ctx context.Context, userID, id string) (Action, string
 	}
 	action.Status = "cancelled"
 	action.UpdatedAt = now
+	if err := s.cancelWorkflowAction(ctx, &action, now); err != nil {
+		return Action{}, trace, err
+	}
 	if err := s.audit(ctx, trace, action.ConversationID, action.ID, "action_cancelled", "succeeded", "user", nil, now); err != nil {
 		return Action{}, trace, err
 	}
@@ -851,6 +866,53 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
 		return s.audit(ctx, trace, action.ConversationID, action.ID, "subscription_cancelled", "succeeded", "tool", map[string]any{"subscription_id": snapshot.SubscriptionID}, now)
+	case "workflow_budget_lock":
+		var snapshot struct {
+			WorkflowID  string `json:"workflow_id"`
+			NodeID      string `json:"node_id"`
+			AmountMinor int64  `json:"amount_minor"`
+		}
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		if err := s.repo.ExecuteWorkflowBudgetLock(ctx, *action, snapshot.WorkflowID, snapshot.NodeID, snapshot.AmountMinor, now); err != nil {
+			return err
+		}
+		action.Status, action.UpdatedAt = "succeeded", now
+		action.Result = map[string]any{"workflow_id": snapshot.WorkflowID, "node_id": snapshot.NodeID, "amount_minor": snapshot.AmountMinor, "status": "locked"}
+		resultJSON, err := json.Marshal(action.Result)
+		if err != nil {
+			return err
+		}
+		action.ResultJSON = string(resultJSON)
+		if err := s.repo.UpdateAction(ctx, *action); err != nil {
+			return err
+		}
+		return s.audit(ctx, trace, "", action.ID, "workflow_budget_locked", "succeeded", "tool", map[string]any{"workflow_id": snapshot.WorkflowID, "node_id": snapshot.NodeID, "amount_minor": snapshot.AmountMinor}, now)
+	case "workflow_external_order":
+		var snapshot struct {
+			WorkflowID  string `json:"workflow_id"`
+			NodeID      string `json:"node_id"`
+			AmountMinor int64  `json:"amount_minor"`
+			Merchant    string `json:"merchant"`
+		}
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		if err := s.repo.ExecuteWorkflowOrder(ctx, *action, snapshot.WorkflowID, snapshot.NodeID, snapshot.AmountMinor, snapshot.Merchant, now); err != nil {
+			return err
+		}
+		action.Status, action.UpdatedAt = "succeeded", now
+		action.Result = map[string]any{"workflow_id": snapshot.WorkflowID, "node_id": snapshot.NodeID, "merchant": snapshot.Merchant, "amount_minor": snapshot.AmountMinor, "status": "confirmed"}
+		resultJSON, err := json.Marshal(action.Result)
+		if err != nil {
+			return err
+		}
+		action.ResultJSON = string(resultJSON)
+		if err := s.repo.UpdateAction(ctx, *action); err != nil {
+			return err
+		}
+		return s.audit(ctx, trace, "", action.ID, "workflow_order_confirmed", "succeeded", "tool", map[string]any{"workflow_id": snapshot.WorkflowID, "node_id": snapshot.NodeID, "amount_minor": snapshot.AmountMinor}, now)
 	default:
 		return ErrInvalidArgument
 	}

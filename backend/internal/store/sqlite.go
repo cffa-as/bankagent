@@ -218,6 +218,29 @@ CREATE TABLE IF NOT EXISTS workflow_nodes (
     FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_workflows_user ON workflows(user_id, created_at);
+CREATE TABLE IF NOT EXISTS workflow_budget_locks (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(workflow_id, node_id),
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS workflow_orders (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    merchant TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(workflow_id, node_id),
+    FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS idempotency_records (
     user_id TEXT NOT NULL,
     method TEXT NOT NULL,

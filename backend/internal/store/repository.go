@@ -805,3 +805,189 @@ func (r *Repository) CancelWorkflow(ctx context.Context, id, userID string, now 
 	}
 	return tx.Commit()
 }
+
+func (r *Repository) SetWorkflowNodeAction(ctx context.Context, workflowID, nodeID, actionID, status string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status=?,action_id=? WHERE workflow_id=? AND node_id=? AND status='ready'`, status, actionID, workflowID, nodeID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE workflows SET status='running',updated_at=? WHERE id=? AND status IN ('pending','running','partially_completed')`, now.Format(time.RFC3339Nano), workflowID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) CompleteWorkflowNode(ctx context.Context, workflowID, nodeID string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status='succeeded' WHERE workflow_id=? AND node_id=? AND status IN ('ready','awaiting_authorization')`, workflowID, nodeID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT node_id,depends_on_json,status FROM workflow_nodes WHERE workflow_id=?`, workflowID)
+	if err != nil {
+		return err
+	}
+	type nodeState struct{ id, depends, status string }
+	var states []nodeState
+	for rows.Next() {
+		var state nodeState
+		if err := rows.Scan(&state.id, &state.depends, &state.status); err != nil {
+			rows.Close()
+			return err
+		}
+		states = append(states, state)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	allSucceeded := true
+	for _, state := range states {
+		if state.status != "succeeded" {
+			allSucceeded = false
+		}
+		if state.status == "pending" {
+			var deps []string
+			if err := json.Unmarshal([]byte(state.depends), &deps); err != nil {
+				return err
+			}
+			ready := true
+			for _, dep := range deps {
+				var depStatus string
+				if err := tx.QueryRowContext(ctx, `SELECT status FROM workflow_nodes WHERE workflow_id=? AND node_id=?`, workflowID, dep).Scan(&depStatus); err != nil {
+					return err
+				}
+				if depStatus != "succeeded" {
+					ready = false
+				}
+			}
+			if ready {
+				if _, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status='ready' WHERE workflow_id=? AND node_id=? AND status='pending'`, workflowID, state.id); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	workflowStatus := "partially_completed"
+	if allSucceeded {
+		workflowStatus = "completed"
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE workflows SET status=?,updated_at=? WHERE id=? AND status IN ('pending','running','partially_completed')`, workflowStatus, now.Format(time.RFC3339Nano), workflowID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) ExecuteWorkflowBudgetLock(ctx context.Context, a domain.Action, workflowID, nodeID string, amount int64, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE actions SET status='executing',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), a.ID, a.Status)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_budget_locks(id,workflow_id,node_id,user_id,amount_minor,status,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("lock"), workflowID, nodeID, a.UserID, amount, "locked", now.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) ExecuteWorkflowOrder(ctx context.Context, a domain.Action, workflowID, nodeID string, amount int64, merchant string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE actions SET status='executing',updated_at=? WHERE id=? AND status=?`, now.Format(time.RFC3339Nano), a.ID, a.Status)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	orderID := domain.NewID("ord")
+	if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_orders(id,workflow_id,node_id,user_id,merchant,amount_minor,status,created_at) VALUES(?,?,?,?,?,?,?,?)`, orderID, workflowID, nodeID, a.UserID, merchant, amount, "confirmed", now.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	receipt, err := json.Marshal(map[string]any{"order_id": orderID, "merchant": merchant, "amount_minor": amount})
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=?,result_json=? WHERE id=?`, now.Format(time.RFC3339Nano), string(receipt), a.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) FailWorkflowNode(ctx context.Context, workflowID, nodeID string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status='failed' WHERE workflow_id=? AND node_id=? AND status IN ('ready','awaiting_authorization')`, workflowID, nodeID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE workflows SET status='failed',updated_at=? WHERE id=? AND status IN ('pending','running','partially_completed')`, now.Format(time.RFC3339Nano), workflowID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) CancelWorkflowNode(ctx context.Context, workflowID, nodeID string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE workflow_nodes SET status='skipped' WHERE workflow_id=? AND node_id=? AND status='awaiting_authorization'`, workflowID, nodeID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return domain.ErrActionStateConflict
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE workflows SET status='cancelled',updated_at=? WHERE id=? AND status IN ('pending','running','partially_completed')`, now.Format(time.RFC3339Nano), workflowID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
