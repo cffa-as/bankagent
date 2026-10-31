@@ -1,0 +1,997 @@
+openapi: 3.1.0
+info:
+  title: bankagent API
+  version: 0.1.0
+  description: |
+    银行 AI 智能体公开 HTTP API。所有业务操作运行在 Mock 银行账本上。
+    LLM 只产生结构化意图和候选计划；授权、风险、动作状态和业务结果由 Go 服务端决定。
+servers:
+  - url: http://localhost:8080
+    description: Local development
+security:
+  - bearerAuth: []
+tags:
+  - name: Conversations
+  - name: Actions
+  - name: Queries
+  - name: Audit
+paths:
+  /v1/conversations:
+    post:
+      tags: [Conversations]
+      summary: 创建会话
+      operationId: createConversation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationRequest'
+      responses:
+        '201':
+          description: 会话已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeConversation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/conversations/{conversation_id}/messages:
+    post:
+      tags: [Conversations]
+      summary: 提交自然语言消息
+      description: 返回追问、只读查询结果或待授权动作。不会直接接受模型返回的授权结论。
+      operationId: createConversationMessage
+      parameters:
+        - $ref: '#/components/parameters/ConversationID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMessageRequest'
+      responses:
+        '200':
+          description: 消息已处理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeMessageResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/actions/{action_id}:
+    get:
+      tags: [Actions]
+      summary: 查询动作
+      operationId: getAction
+      parameters:
+        - $ref: '#/components/parameters/ActionID'
+      responses:
+        '200':
+          description: 动作详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/actions/{action_id}/confirm:
+    post:
+      tags: [Actions]
+      summary: 确认黄色动作
+      description: 服务端复核不可变动作快照、授权状态、过期时间和幂等键后执行或推进动作。
+      operationId: confirmAction
+      parameters:
+        - $ref: '#/components/parameters/ActionID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmActionRequest'
+      responses:
+        '200':
+          description: 动作已确认或已返回幂等结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Expired'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /v1/actions/{action_id}/mfa/verify:
+    post:
+      tags: [Actions]
+      summary: 验证红色动作 MFA
+      description: MFA 成功只推进动作到执行门；业务成功仍必须来自工具回执。
+      operationId: verifyActionMFA
+      parameters:
+        - $ref: '#/components/parameters/ActionID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyMFARequest'
+      responses:
+        '200':
+          description: MFA 已验证或已返回幂等结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Expired'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /v1/actions/{action_id}/cancel:
+    post:
+      tags: [Actions]
+      summary: 取消动作
+      operationId: cancelAction
+      parameters:
+        - $ref: '#/components/parameters/ActionID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 动作已取消或已返回幂等结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+  /v1/investments/{investment_id}/subscribe:
+    post:
+      tags: [Actions]
+      summary: 创建理财申购动作
+      operationId: subscribeInvestment
+      parameters:
+        - name: investment_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvestmentOrderRequest'
+      responses:
+        '201':
+          description: 申购动作已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAction'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /v1/investments/{investment_id}/redeem:
+    post:
+      tags: [Actions]
+      summary: 创建理财赎回动作
+      operationId: redeemInvestment
+      parameters:
+        - name: investment_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvestmentOrderRequest'
+      responses:
+        '201':
+          description: 赎回动作已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAction'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /v1/cards/{card_id}/apply:
+    post:
+      tags: [Actions]
+      summary: 创建虚拟卡申请动作
+      operationId: applyCard
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 卡片申请动作已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeAction' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /v1/cards/{card_id}/limit:
+    post:
+      tags: [Actions]
+      summary: 创建卡片额度调整动作
+      operationId: updateCardLimit
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CardLimitRequest' }
+      responses:
+        '201':
+          description: 额度调整动作已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeAction' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /v1/cards/{card_id}/freeze:
+    post:
+      tags: [Actions]
+      summary: 创建卡片冻结动作
+      operationId: freezeCard
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 卡片冻结动作已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeAction' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+  /v1/cards/{card_id}/unfreeze:
+    post:
+      tags: [Actions]
+      summary: 创建卡片解冻动作
+      operationId: unfreezeCard
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 卡片解冻动作已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeAction' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+  /v1/subscriptions/{subscription_id}/cancel:
+    post:
+      tags: [Actions]
+      summary: 创建订阅取消动作
+      operationId: cancelSubscription
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: 订阅取消动作已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EnvelopeAction' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+  /v1/accounts/{account_id}/balance:
+    get:
+      tags: [Queries]
+      summary: 查询账户余额
+      operationId: getAccountBalance
+      parameters:
+        - $ref: '#/components/parameters/AccountID'
+      responses:
+        '200':
+          description: 账户余额
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBalance'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/accounts/{account_id}/transactions:
+    get:
+      tags: [Queries]
+      summary: 查询账户交易
+      operationId: listTransactions
+      parameters:
+        - $ref: '#/components/parameters/AccountID'
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: 交易列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeTransactionPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/accounts/{account_id}/bills/summary:
+    get:
+      tags: [Queries]
+      summary: 查询账单汇总
+      operationId: getBillSummary
+      parameters:
+        - $ref: '#/components/parameters/AccountID'
+        - in: query
+          name: month
+          required: true
+          schema: { type: string, pattern: '^\\d{4}-\\d{2}$', example: '2026-10' }
+      responses:
+        '200':
+          description: 账单分析结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeBillSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/investments/products:
+    get:
+      tags: [Queries]
+      summary: 查询理财产品
+      operationId: listInvestmentProducts
+      parameters:
+        - in: query
+          name: risk_level
+          schema:
+            type: string
+            enum: [conservative, balanced, aggressive]
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: 理财产品列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeProductPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/cards:
+    get:
+      tags: [Queries]
+      summary: 查询卡片
+      operationId: listCards
+      responses:
+        '200':
+          description: 卡片列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCardList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/subscriptions:
+    get:
+      tags: [Queries]
+      summary: 查询订阅
+      operationId: listSubscriptions
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, cancelled, paused]
+      responses:
+        '200':
+          description: 订阅列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSubscriptionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/workflows:
+    post:
+      tags: [Actions]
+      summary: 创建跨场景工作流
+      operationId: createWorkflow
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkflowRequest'
+      responses:
+        '201':
+          description: 工作流已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeWorkflow'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+    get:
+      tags: [Queries]
+      summary: 查询工作流列表
+      operationId: listWorkflows
+      responses:
+        '200':
+          description: 工作流列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeWorkflowList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/workflows/{workflow_id}:
+    get:
+      tags: [Queries]
+      summary: 查询工作流
+      operationId: getWorkflow
+      parameters:
+        - $ref: '#/components/parameters/WorkflowID'
+      responses:
+        '200':
+          description: 工作流详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeWorkflow'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/workflows/{workflow_id}/cancel:
+    post:
+      tags: [Actions]
+      summary: 取消工作流未执行节点
+      operationId: cancelWorkflow
+      parameters:
+        - $ref: '#/components/parameters/WorkflowID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 工作流已取消或已返回幂等结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeWorkflow'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/audit-traces/{trace_id}:
+    get:
+      tags: [Audit]
+      summary: 查询脱敏审计链
+      operationId: getAuditTrace
+      parameters:
+        - $ref: '#/components/parameters/TraceID'
+      responses:
+        '200':
+          description: 审计链
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeAuditTrace'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: demo-token
+  parameters:
+    ConversationID:
+      name: conversation_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    ActionID:
+      name: action_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    AccountID:
+      name: account_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    WorkflowID:
+      name: workflow_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    TraceID:
+      name: trace_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 同一用户、路径和请求体只能使用一次；重试必须复用原键。
+      schema: { type: string, minLength: 8, maxLength: 128 }
+  responses:
+    BadRequest:
+      description: 请求格式或参数错误
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Unauthorized:
+      description: 未认证
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Forbidden:
+      description: 无权访问资源
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    NotFound:
+      description: 资源不存在或不可见
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Conflict:
+      description: 状态冲突、重复执行或资源版本冲突
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    IdempotencyConflict:
+      description: 幂等键已用于不同请求体
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Expired:
+      description: 动作已过期
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    UnprocessableEntity:
+      description: 业务字段或计划校验失败
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    RateLimited:
+      description: 请求或验证频率受限
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    InternalError:
+      description: 内部错误
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+  schemas:
+    Envelope:
+      type: object
+      required: [trace_id, data]
+      properties:
+        trace_id: { type: string }
+        data: {}
+    ErrorEnvelope:
+      type: object
+      required: [trace_id, error]
+      properties:
+        trace_id: { type: string }
+        error:
+          $ref: '#/components/schemas/Error'
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - INVALID_ARGUMENT
+            - UNAUTHENTICATED
+            - PERMISSION_DENIED
+            - NOT_FOUND
+            - ACTION_STATE_CONFLICT
+            - IDEMPOTENCY_CONFLICT
+            - ACTION_EXPIRED
+            - MFA_INVALID
+            - MFA_LOCKED
+            - INSUFFICIENT_BALANCE
+            - TOOL_REJECTED
+            - TOOL_FAILED
+            - PLAN_REJECTED
+            - RATE_LIMITED
+            - INTERNAL
+            - SERVICE_UNAVAILABLE
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    CreateConversationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+    Conversation:
+      type: object
+      required: [conversation_id, created_at]
+      properties:
+        conversation_id: { type: string }
+        created_at: { type: string, format: date-time }
+    CreateMessageRequest:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        text: { type: string, minLength: 1, maxLength: 4000 }
+    MessageResult:
+      type: object
+      required: [run_id, reply_type]
+      properties:
+        run_id: { type: string }
+        reply_type:
+          type: string
+          enum: [question, query_result, action_required, workflow_created, rejected]
+        text: { type: string }
+        action:
+          $ref: '#/components/schemas/Action'
+        query_result: { type: object, additionalProperties: true }
+        workflow:
+          $ref: '#/components/schemas/Workflow'
+    ConfirmActionRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmation_token]
+      properties:
+        confirmation_token: { type: string, minLength: 1, maxLength: 256, writeOnly: true }
+    VerifyMFARequest:
+      type: object
+      additionalProperties: false
+      required: [challenge_id, code]
+      properties:
+        challenge_id: { type: string }
+        code: { type: string, minLength: 4, maxLength: 12, writeOnly: true }
+    Action:
+      type: object
+      required: [action_id, kind, risk_level, status, expires_at]
+      properties:
+        action_id: { type: string }
+        kind: { type: string }
+        risk_level:
+          type: string
+          enum: [green, yellow, red]
+        status:
+          type: string
+          enum: [awaiting_confirmation, awaiting_mfa, executing, processing, succeeded, failed, cancelled, expired]
+        snapshot_hash: { type: string }
+        summary: { type: object, additionalProperties: true }
+        authorization: { $ref: '#/components/schemas/Authorization' }
+        tool_receipt: { $ref: '#/components/schemas/ToolReceipt' }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Authorization:
+      type: object
+      required: [method, status]
+      properties:
+        method: { type: string, enum: [none, confirmation, mfa] }
+        status: { type: string, enum: [pending, succeeded, failed, expired] }
+        attempts: { type: integer, minimum: 0 }
+        expires_at: { type: string, format: date-time }
+    ToolReceipt:
+      type: object
+      required: [tool_name, status]
+      properties:
+        tool_name: { type: string }
+        status: { type: string, enum: [succeeded, rejected, failed, processing] }
+        reference: { type: string }
+        result: { type: object, additionalProperties: true }
+        occurred_at: { type: string, format: date-time }
+    Balance:
+      type: object
+      required: [account_id, available_minor, currency]
+      properties:
+        account_id: { type: string }
+        available_minor: { type: integer, format: int64 }
+        current_minor: { type: integer, format: int64 }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+    Transaction:
+      type: object
+      required: [transaction_id, amount_minor, currency, occurred_at]
+      properties:
+        transaction_id: { type: string }
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        category: { type: string }
+        merchant: { type: string }
+        occurred_at: { type: string, format: date-time }
+    TransactionPage:
+      type: object
+      required: [items, page, page_size]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Transaction' } }
+        page: { type: integer }
+        page_size: { type: integer }
+        total: { type: integer }
+    BillSummary:
+      type: object
+      required: [month, total_minor, currency, categories]
+      properties:
+        month: { type: string, pattern: '^\\d{4}-\\d{2}$' }
+        total_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        categories: { type: array, items: { type: object, additionalProperties: true } }
+        anomalies: { type: array, items: { type: object, additionalProperties: true } }
+    Product:
+      type: object
+      required: [product_id, name, risk_level, minimum_amount_minor]
+      properties:
+        product_id: { type: string }
+        name: { type: string }
+        risk_level: { type: string, enum: [conservative, balanced, aggressive] }
+        minimum_amount_minor: { type: integer, format: int64 }
+        term_days: { type: integer, minimum: 0 }
+        benchmark_note: { type: string }
+    Card:
+      type: object
+      required: [card_id, status, limit_minor]
+      properties:
+        card_id: { type: string }
+        masked_number: { type: string }
+        status: { type: string, enum: [active, frozen, lost, closed] }
+        limit_minor: { type: integer, format: int64 }
+        restrictions: { type: array, items: { type: string } }
+    Subscription:
+      type: object
+      required: [subscription_id, merchant_ref, status, amount_minor, billing_cycle]
+      properties:
+        subscription_id: { type: string }
+        merchant_ref: { type: string }
+        status: { type: string, enum: [active, cancelled, paused] }
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string }
+        billing_cycle: { type: string }
+        next_charge_at: { type: string, format: date-time }
+    InvestmentOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [amount_minor]
+      properties:
+        amount_minor: { type: integer, format: int64, minimum: 1 }
+        risk_acknowledged: { type: boolean, description: 红色理财动作必须明确确认风险提示 }
+    CardLimitRequest:
+      type: object
+      additionalProperties: false
+      required: [limit_minor]
+      properties:
+        limit_minor: { type: integer, format: int64, minimum: 0 }
+    CreateWorkflowRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, deadline, nodes]
+      properties:
+        purpose: { type: string, minLength: 1, maxLength: 200 }
+        deadline: { type: string, format: date-time }
+        nodes:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/WorkflowNodeInput'
+    WorkflowNodeInput:
+      type: object
+      required: [node_id, kind]
+      properties:
+        node_id: { type: string }
+        kind: { type: string, enum: [budget_lock, reminder, external_order] }
+        depends_on: { type: array, items: { type: string } }
+        amount_minor: { type: integer, format: int64, minimum: 0 }
+        merchant: { type: string }
+    Workflow:
+      type: object
+      required: [workflow_id, status, nodes]
+      properties:
+        workflow_id: { type: string }
+        status: { type: string, enum: [pending, running, partially_completed, completed, failed, cancelled] }
+        purpose: { type: string }
+        deadline: { type: string, format: date-time }
+        nodes: { type: array, items: { $ref: '#/components/schemas/WorkflowNode' } }
+    WorkflowNode:
+      type: object
+      required: [node_id, kind, status]
+      properties:
+        node_id: { type: string }
+        kind: { type: string, enum: [budget_lock, reminder, external_order] }
+        depends_on: { type: array, items: { type: string } }
+        status: { type: string, enum: [pending, ready, awaiting_authorization, running, completed, failed, skipped] }
+        action_id: { type: string }
+    AuditEvent:
+      type: object
+      required: [event_id, trace_id, event_type, outcome, occurred_at]
+      properties:
+        event_id: { type: string }
+        trace_id: { type: string }
+        run_id: { type: string }
+        action_id: { type: string }
+        event_type: { type: string }
+        outcome: { type: string }
+        actor: { type: string, enum: [user, system, model, tool] }
+        policy_version: { type: string }
+        detail: { type: object, additionalProperties: true, description: 已脱敏的摘要，不包含验证码、Token 或完整账户号 }
+        occurred_at: { type: string, format: date-time }
+    AuditTrace:
+      type: object
+      required: [trace_id, events]
+      properties:
+        trace_id: { type: string }
+        conversation_id: { type: string }
+        run_id: { type: string }
+        events: { type: array, items: { $ref: '#/components/schemas/AuditEvent' } }
+    EnvelopeConversation:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/Conversation' }
+    EnvelopeMessageResult:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/MessageResult' }
+    EnvelopeAction:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/Action' }
+    EnvelopeBalance:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/Balance' }
+    EnvelopeTransactionPage:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/TransactionPage' }
+    EnvelopeBillSummary:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/BillSummary' }
+    EnvelopeProductPage:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data:
+          type: object
+          properties:
+            items: { type: array, items: { $ref: '#/components/schemas/Product' } }
+            page: { type: integer }
+            page_size: { type: integer }
+            total: { type: integer }
+    EnvelopeCardList:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Card' } }
+    EnvelopeSubscriptionList:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Subscription' } }
+    EnvelopeWorkflow:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/Workflow' }
+    EnvelopeWorkflowList:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Workflow' } }
+    EnvelopeAuditTrace:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/AuditTrace' }

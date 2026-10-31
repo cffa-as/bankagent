@@ -1,0 +1,4 @@
+interface:
+  display_name: "bankagent 前端设计"
+  short_description: "生成和评审 bankagent 的高质量安全前端"
+  default_prompt: "Use $bankagent-frontend to design or review a bankagent frontend page."
