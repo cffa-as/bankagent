@@ -24,6 +24,57 @@ func (s *Service) CreateConversation(ctx context.Context, userID string) (Conver
 	return conversation, trace, nil
 }
 
+func (s *Service) CreateCardStatusAction(ctx context.Context, userID, conversationID, cardID, targetStatus string) (Action, string, error) {
+	if targetStatus != "active" && targetStatus != "frozen" {
+		return Action{}, "", ErrInvalidArgument
+	}
+	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
+		return Action{}, "", err
+	}
+	cards, err := s.repo.Cards(ctx, userID)
+	if err != nil {
+		return Action{}, "", err
+	}
+	for _, card := range cards {
+		if card.ID == cardID {
+			snapshot := map[string]any{"card_id": card.ID, "target_status": targetStatus, "masked_number": card.MaskedNumber}
+			return s.createActionRecord(ctx, userID, conversationID, "card_status_change", "yellow", "awaiting_confirmation", snapshot)
+		}
+	}
+	return Action{}, "", ErrNotFound
+}
+
+func (s *Service) CreateSubscriptionCancelAction(ctx context.Context, userID, conversationID, subscriptionID string) (Action, string, error) {
+	if err := s.checkConversationOwner(ctx, userID, conversationID); err != nil {
+		return Action{}, "", err
+	}
+	subscriptions, err := s.repo.Subscriptions(ctx, userID, "active")
+	if err != nil {
+		return Action{}, "", err
+	}
+	for _, subscription := range subscriptions {
+		if subscription.ID == subscriptionID {
+			snapshot := map[string]any{"subscription_id": subscription.ID, "merchant_ref": subscription.MerchantRef}
+			return s.createActionRecord(ctx, userID, conversationID, "subscription_cancel", "yellow", "awaiting_confirmation", snapshot)
+		}
+	}
+	return Action{}, "", ErrNotFound
+}
+
+func (s *Service) checkConversationOwner(ctx context.Context, userID, conversationID string) error {
+	owner, err := s.repo.ConversationOwner(ctx, conversationID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if owner != userID {
+		return ErrForbidden
+	}
+	return nil
+}
+
 func (s *Service) CreateInvestmentPurchaseAction(ctx context.Context, userID, conversationID, productID string, amountMinor int64, riskAcknowledged bool) (Action, string, error) {
 	return s.createInvestmentAction(ctx, userID, conversationID, productID, "", amountMinor, riskAcknowledged)
 }
@@ -75,13 +126,17 @@ func (s *Service) createInvestmentAction(ctx context.Context, userID, conversati
 }
 
 func (s *Service) createInvestmentActionRecord(ctx context.Context, userID, conversationID, kind string, snapshot map[string]any) (Action, string, error) {
+	return s.createActionRecord(ctx, userID, conversationID, kind, "red", "awaiting_mfa", snapshot)
+}
+
+func (s *Service) createActionRecord(ctx context.Context, userID, conversationID, kind, riskLevel, status string, snapshot map[string]any) (Action, string, error) {
 	now := s.now()
 	trace := NewID("tr")
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return Action{}, trace, err
 	}
-	action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: kind, RiskLevel: "red", Status: "awaiting_mfa", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+	action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: kind, RiskLevel: riskLevel, Status: status, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
 	if err := s.repo.CreateAction(ctx, action); err != nil {
 		return Action{}, trace, err
 	}

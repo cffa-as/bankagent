@@ -60,6 +60,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.createInvestmentRedemption(w, r, userID, path)
 		return
 	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/cards/") && (strings.HasSuffix(path, "/freeze") || strings.HasSuffix(path, "/unfreeze")) {
+		h.createCardStatus(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/subscriptions/") && strings.HasSuffix(path, "/cancel") {
+		h.createSubscriptionCancel(w, r, userID, path)
+		return
+	}
 	if r.Method == http.MethodGet && path == "/v1/cards" {
 		h.cards(w, r, userID)
 		return
@@ -206,6 +214,60 @@ func (h *Handler) createInvestmentRedemption(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	action, trace, err := h.service.CreateInvestmentRedemptionAction(r.Context(), userID, request.ConversationID, segment(path, 3))
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(action, trace)
+	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
+	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) createCardStatus(w http.ResponseWriter, r *http.Request, userID, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var request struct {
+		ConversationID string `json:"conversation_id"`
+	}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, path, fp) {
+		return
+	}
+	target := "frozen"
+	if strings.HasSuffix(path, "/unfreeze") {
+		target = "active"
+	}
+	action, trace, err := h.service.CreateCardStatusAction(r.Context(), userID, request.ConversationID, segment(path, 2), target)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	response := envelope(action, trace)
+	h.saveReplay(r, userID, path, fp, http.StatusCreated, response)
+	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) createSubscriptionCancel(w http.ResponseWriter, r *http.Request, userID, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var request struct {
+		ConversationID string `json:"conversation_id"`
+	}
+	body, err := decodeJSON(r, &request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_invalid")
+		return
+	}
+	fp := fingerprint(body)
+	if h.replay(w, r, userID, path, fp) {
+		return
+	}
+	action, trace, err := h.service.CreateSubscriptionCancelAction(r.Context(), userID, request.ConversationID, segment(path, 2))
 	if err != nil {
 		writeServiceError(w, err, trace)
 		return

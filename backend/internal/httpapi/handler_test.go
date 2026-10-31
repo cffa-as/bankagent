@@ -477,6 +477,58 @@ func TestDirectInvestmentRedemptionValidatesHoldingAndCreatesMFAAction(t *testin
 	}
 }
 
+func TestDirectCardAndSubscriptionActionsUseConfirmation(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	cardPath := server.URL + "/v1/cards/card_demo/freeze"
+	resp, body := request(t, http.DefaultClient, http.MethodPost, cardPath, `{"conversation_id":"`+conversationID+`"}`, "direct-card-freeze")
+	if resp.StatusCode != http.StatusCreated || !bytes.Contains(body, []byte(`"status":"awaiting_confirmation"`)) {
+		t.Fatalf("direct card action: status=%d body=%s", resp.StatusCode, body)
+	}
+	var created envelope
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	var cardAction struct {
+		ID string `json:"action_id"`
+	}
+	if err := json.Unmarshal(created.Data, &cardAction); err != nil {
+		t.Fatal(err)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+cardAction.ID+"/confirm", `{}`, "direct-card-confirm")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("card confirm: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"status":"frozen"`)) {
+		t.Fatalf("frozen card: status=%d body=%s", resp.StatusCode, body)
+	}
+
+	subscriptionPath := server.URL + "/v1/subscriptions/sub_streaming/cancel"
+	resp, body = request(t, http.DefaultClient, http.MethodPost, subscriptionPath, `{"conversation_id":"`+conversationID+`"}`, "direct-sub-cancel")
+	if resp.StatusCode != http.StatusCreated || !bytes.Contains(body, []byte(`"status":"awaiting_confirmation"`)) {
+		t.Fatalf("direct subscription action: status=%d body=%s", resp.StatusCode, body)
+	}
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	var subscriptionAction struct {
+		ID string `json:"action_id"`
+	}
+	if err := json.Unmarshal(created.Data, &subscriptionAction); err != nil {
+		t.Fatal(err)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+subscriptionAction.ID+"/confirm", `{}`, "direct-sub-confirm")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("subscription confirm: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/subscriptions?status=cancelled", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"subscription_id":"sub_streaming"`)) {
+		t.Fatalf("cancelled subscription: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
 func TestInvestmentPurchaseRequiresMFAAndCreatesHolding(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()
