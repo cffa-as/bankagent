@@ -14,3 +14,11 @@ config.local.json
 *.db
 *.db-shm
 *.db-wal
+
+# 暂缓的竞赛媒体与设计探索产物，仅保留本地副本。
+/video/
+/.superdesign/
+/design-previews/*
+/frontend/public/demo/*.mp4
+/frontend/public/demo/vaultline-preview-*
+/frontend/public/demo/vaultline-product-*

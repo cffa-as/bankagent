@@ -140,7 +140,7 @@ export default function Home() {
         <div className="hero-copy">
           <p className="kicker"><span className="kicker-line" /> SECURE BANKING INTELLIGENCE</p>
           <h1>让银行业务<br /><em>一句话开始。</em></h1>
-          <p className="hero-lede">Vaultline 是一个面向真实银行业务的 AI 工作台：理解自然语言，准备可审查动作，把风险、授权、MFA、执行和回执交给银行服务端。</p>
+          <p className="hero-lede">Vaultline 是一个面向银行业务场景的 AI 工作台：理解自然语言，准备可审查动作，把风险、授权、MFA、执行和回执交给银行服务端。</p>
           <div className="hero-actions"><a className="primary-button" href="#demo">进入真实工作台 <span>↓</span></a><a className="text-button" href="#demo-film">观看产品演示 <span>↗</span></a></div>
           <div className="hero-stats" aria-label="产品能力摘要"><div><strong>06</strong><span>banking scenarios</span></div><div><strong>01</strong><span>server owned path</span></div><div><strong>00</strong><span>fake receipts</span></div></div>
         </div>

@@ -509,7 +509,7 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		if err != nil {
 			return MessageResult{}, trace, err
 		}
-		return MessageResult{RunID: runID, ReplyType: "workflow_created", Text: "已生成生日预算、提醒和 Mock 采购 DAG。", Workflow: &workflow}, workflowTrace, nil
+		return MessageResult{RunID: runID, ReplyType: "workflow_created", Text: "已生成生日预算、提醒和采购 DAG。", Workflow: &workflow}, workflowTrace, nil
 	}
 	phone, phoneAmount, phoneRemark, phoneOK := parsePhoneTransfer(text)
 	if !phoneOK && continuation != text {
@@ -692,7 +692,7 @@ func (s *Service) handleIntentPlan(ctx context.Context, userID, conversationID, 
 		if err != nil {
 			return MessageResult{}, true, err
 		}
-		return MessageResult{RunID: runID, ReplyType: "workflow_created", Text: "已生成生日预算、提醒和 Mock 采购 DAG。", Workflow: &workflow}, true, nil
+		return MessageResult{RunID: runID, ReplyType: "workflow_created", Text: "已生成生日预算、提醒和采购 DAG。", Workflow: &workflow}, true, nil
 	case "investment_purchase":
 		productID := planString(plan, "product_id")
 		amount, amountOK := planInt64(plan, "amount_minor")

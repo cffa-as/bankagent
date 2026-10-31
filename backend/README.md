@@ -1,6 +1,6 @@
 # Backend
 
-Go HTTP 服务、领域服务、SQLite Mock 账本和集成测试。
+Go HTTP 服务、领域服务、SQLite 本地账本和集成测试。
 
 ```bash
 go test ./...

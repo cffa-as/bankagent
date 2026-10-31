@@ -3,7 +3,7 @@ info:
   title: bankagent API
   version: 0.2.0
   description: |
-    银行 AI 智能体公开 HTTP API。所有业务操作运行在 Mock 银行账本上。
+    银行 AI 智能体公开 HTTP API。所有业务操作运行在本地演示账本上。
     LLM 只产生结构化意图和候选计划；授权、风险、动作状态和业务结果由 Go 服务端决定。
 servers:
   - url: http://localhost:8080
@@ -12,9 +12,13 @@ security:
   - bearerAuth: []
 tags:
   - name: Conversations
+    description: 会话创建与自然语言消息。
   - name: Actions
+    description: 动作创建、确认、MFA、取消和预约触发。
   - name: Queries
+    description: 账户、账单、理财、卡片、订阅与工作流查询。
   - name: Audit
+    description: 脱敏决策与执行审计链。
 paths:
   /v1/conversations:
     post:
@@ -270,7 +274,7 @@ paths:
     post:
       tags: [Actions]
       summary: 创建 AA 拆分收款请求动作
-      description: 服务端重新计算每人份额；执行只登记 Mock 收款请求，不替其他参与人扣款。
+      description: 服务端重新计算每人份额；执行只登记收款请求，不替其他参与人扣款。
       operationId: createTransferSplit
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -1131,7 +1135,7 @@ components:
         minimum_amount_minor: { type: integer, format: int64 }
         term_days: { type: integer, minimum: 0 }
         benchmark_note: { type: string }
-        annual_rate_bps: { type: integer, format: int64, minimum: 0, description: Mock 演示用年化基准，不能视为收益承诺 }
+        annual_rate_bps: { type: integer, format: int64, minimum: 0, description: 演示用年化基准，不构成收益承诺 }
     Holding:
       type: object
       required: [holding_id, product_id, product_name, amount_minor, status, purchased_at]

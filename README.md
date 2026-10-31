@@ -7,7 +7,7 @@
 <h3 align="center">让银行业务，一句话开始。</h3>
 
 <p align="center">
-  面向真实银行业务的安全 AI 工作台<br />
+  面向银行业务场景的安全 AI 工作台<br />
   <sub>Understand intent. Govern execution. Prove the outcome.</sub>
 </p>
 
@@ -25,8 +25,6 @@
   ·
   <a href="#security-model">Security model</a>
   ·
-  <a href="#demo-film">Demo film</a>
-  ·
   <a href="#quick-start">Quick start</a>
   ·
   <a href="#documentation">Docs</a>
@@ -39,7 +37,7 @@
 </p>
 
 <p align="center">
-  <sub>8 SCENES · 6 BANKING CAPABILITIES · SERVER-OWNED EXECUTION · SYNTHETIC DATA ONLY</sub>
+  <sub>6 CORE SCENARIOS · SERVER-OWNED EXECUTION · SYNTHETIC DATA ONLY</sub>
 </p>
 
 ## Product
@@ -96,14 +94,8 @@ Vaultline 把自然语言请求转化为可审查的银行动作。模型负责�
 - **Audit**：决策链、授权证据和业务回执通过 Trace ID 关联，敏感字段脱敏。
 - **Failure-safe**：取消、过期、MFA 失败、余额不足和未知回执都有明确状态，不盲目重试。
 
-## Demo film
-
-上方 GIF 是首页使用的 8 场景快速演示，覆盖智能转账、账单分析、理财、卡片、订阅、跨场景联动、安全拒绝和业务回执。
-
-完整的 3–5 分钟产品视频将使用真实前端操作录制，并由 Remotion 统一品牌片头、章节标题、动作快照和字幕。制作脚本与工具选型见 [产品演示视频方案](docs/demo-video-production.md)。
-
 <details>
-<summary><strong>Architecture and repository map</strong></summary>
+<summary><strong>Architecture</strong></summary>
 
 <br />
 
@@ -153,8 +145,17 @@ npm run dev
 
 打开 <http://localhost:3000>。演示身份为 `Bearer demo-user-1`，演示 MFA 验证码为 `000000`。
 
-> [!IMPORTANT]
-> 当前版本只连接本地 Mock 银行账本。没有真实账户、真实资金、真实短信/人脸认证或银行核心系统接入；所有演示数据均为合成数据。
+演示账户、交易和认证结果均为合成数据。
+
+## Repository
+
+```text
+backend/   Go API、Agent、状态机、SQLite 与集成测试
+frontend/  Next.js 对话、动作确认与 MFA 交互
+docs/      赛题解析、产品、设计、安全、OpenAPI 与技术方案
+mcp/       受控工具边界说明
+.github/   Issue 与 PR 模板
+```
 
 ## Documentation
 
