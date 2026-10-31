@@ -175,6 +175,8 @@ type Repository interface {
 	Action(context.Context, string) (Action, error)
 	UpdateAction(context.Context, Action) error
 	ExecuteTransfer(context.Context, Action, int64, string, time.Time) error
+	ExecuteCardStatus(context.Context, Action, string, string, time.Time) error
+	ExecuteSubscriptionCancel(context.Context, Action, string, time.Time) error
 	CancelAction(context.Context, string, time.Time) (bool, error)
 	RecordMFAFailure(context.Context, string, time.Time) (int, bool, error)
 	AddAudit(context.Context, AuditEvent) error

@@ -74,6 +74,39 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		}
 		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("已找到 %d 笔交易记录。", len(records)), Records: records}, trace, nil
 	}
+	if strings.Contains(text, "卡") && (strings.Contains(text, "冻结") || strings.Contains(text, "解冻")) {
+		status, verb := "frozen", "冻结"
+		if strings.Contains(text, "解冻") {
+			status, verb = "active", "解冻"
+		}
+		snapshot := map[string]any{"card_id": "card_demo", "target_status": status, "masked_number": "**** 1234"}
+		snapshotJSON, _ := json.Marshal(snapshot)
+		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "card_status_change", RiskLevel: "yellow", Status: "awaiting_confirmation", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+		if err := s.repo.CreateAction(ctx, action); err != nil {
+			return MessageResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "请确认" + verb + "卡片 **** 1234。", Action: ptr(action.Public())}, trace, nil
+	}
+	if strings.Contains(text, "订阅") && strings.Contains(text, "取消") {
+		subscriptionID := "sub_streaming"
+		merchant := "demo-streaming"
+		if strings.Contains(text, "云") || strings.Contains(text, "cloud") {
+			subscriptionID, merchant = "sub_cloud", "demo-cloud"
+		}
+		snapshot := map[string]any{"subscription_id": subscriptionID, "merchant_ref": merchant}
+		snapshotJSON, _ := json.Marshal(snapshot)
+		action := Action{ID: NewID("act"), ConversationID: conversationID, UserID: userID, Kind: "subscription_cancel", RiskLevel: "yellow", Status: "awaiting_confirmation", SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, ExpiresAt: now.Add(5 * time.Minute), CreatedAt: now, UpdatedAt: now}
+		if err := s.repo.CreateAction(ctx, action); err != nil {
+			return MessageResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, conversationID, action.ID, "action_created", "succeeded", "system", map[string]any{"kind": action.Kind, "risk_level": action.RiskLevel}, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "action_required", Text: "请确认取消" + merchant + "订阅。", Action: ptr(action.Public())}, trace, nil
+	}
 	name, amount, remark, ok := parseTransfer(text)
 	if ok {
 		accountID, err := s.repo.Beneficiary(ctx, userID, name)
@@ -415,27 +448,57 @@ func (s *Service) authorizedAction(ctx context.Context, userID, id string) (Acti
 
 func (s *Service) execute(ctx context.Context, action *Action, trace string) error {
 	now := s.now()
-	var snapshot struct {
-		AmountMinor     int64  `json:"amount_minor"`
-		Remark          string `json:"remark"`
-		BeneficiaryName string `json:"beneficiary_name"`
-	}
-	if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
-		return err
-	}
-	if err := s.repo.ExecuteTransfer(ctx, *action, snapshot.AmountMinor, "转账给"+snapshot.BeneficiaryName+" "+snapshot.Remark, now); err != nil {
-		if errors.Is(err, ErrInsufficientBalance) {
-			action.Status = "failed"
-			action.UpdatedAt = now
-			if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
-				return auditErr
-			}
+	switch action.Kind {
+	case "transfer":
+		var snapshot struct {
+			AmountMinor     int64  `json:"amount_minor"`
+			Remark          string `json:"remark"`
+			BeneficiaryName string `json:"beneficiary_name"`
 		}
-		return err
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		if err := s.repo.ExecuteTransfer(ctx, *action, snapshot.AmountMinor, "转账给"+snapshot.BeneficiaryName+" "+snapshot.Remark, now); err != nil {
+			if errors.Is(err, ErrInsufficientBalance) {
+				action.Status = "failed"
+				action.UpdatedAt = now
+				if auditErr := s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_failed", "failed", "tool", map[string]any{"reason": err.Error()}, now); auditErr != nil {
+					return auditErr
+				}
+			}
+			return err
+		}
+		action.Status = "succeeded"
+		action.UpdatedAt = now
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_succeeded", "succeeded", "tool", map[string]any{"amount_minor": snapshot.AmountMinor}, now)
+	case "card_status_change":
+		var snapshot struct {
+			CardID       string `json:"card_id"`
+			TargetStatus string `json:"target_status"`
+		}
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		if err := s.repo.ExecuteCardStatus(ctx, *action, snapshot.CardID, snapshot.TargetStatus, now); err != nil {
+			return err
+		}
+		action.Status, action.UpdatedAt = "succeeded", now
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "card_status_changed", "succeeded", "tool", map[string]any{"card_id": snapshot.CardID, "status": snapshot.TargetStatus}, now)
+	case "subscription_cancel":
+		var snapshot struct {
+			SubscriptionID string `json:"subscription_id"`
+		}
+		if err := json.Unmarshal([]byte(action.SnapshotJSON), &snapshot); err != nil {
+			return err
+		}
+		if err := s.repo.ExecuteSubscriptionCancel(ctx, *action, snapshot.SubscriptionID, now); err != nil {
+			return err
+		}
+		action.Status, action.UpdatedAt = "succeeded", now
+		return s.audit(ctx, trace, action.ConversationID, action.ID, "subscription_cancelled", "succeeded", "tool", map[string]any{"subscription_id": snapshot.SubscriptionID}, now)
+	default:
+		return ErrInvalidArgument
 	}
-	action.Status = "succeeded"
-	action.UpdatedAt = now
-	return s.audit(ctx, trace, action.ConversationID, action.ID, "transfer_succeeded", "succeeded", "tool", map[string]any{"amount_minor": snapshot.AmountMinor}, now)
 }
 
 func (s *Service) audit(ctx context.Context, trace, conversation, action, event, outcome, actor string, detail map[string]any, now time.Time) error {

@@ -349,3 +349,35 @@ func TestRedTransferRequiresMFAAndLocksAfterThreeFailures(t *testing.T) {
 		}
 	}
 }
+
+func TestCardStatusActionAndSubscriptionCancellation(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+
+	status, result, body := sendMessage(t, server.URL, conversationID, "冻结我的卡", "card-message")
+	if status != http.StatusOK || result.ReplyType != "action_required" || result.Action.Risk != "yellow" {
+		t.Fatalf("card message: status=%d result=%+v body=%s", status, result, body)
+	}
+	resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", `{}`, "card-confirm")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("card confirm: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"status":"frozen"`)) {
+		t.Fatalf("cards: status=%d body=%s", resp.StatusCode, body)
+	}
+
+	status, result, body = sendMessage(t, server.URL, conversationID, "取消我的流媒体订阅", "sub-message")
+	if status != http.StatusOK || result.ReplyType != "action_required" || result.Action.Risk != "yellow" {
+		t.Fatalf("subscription message: status=%d result=%+v body=%s", status, result, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", `{}`, "sub-confirm")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("subscription confirm: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/subscriptions?status=cancelled", "", "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"subscription_id":"sub_streaming"`)) {
+		t.Fatalf("subscriptions: status=%d body=%s", resp.StatusCode, body)
+	}
+}
