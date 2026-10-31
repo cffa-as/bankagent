@@ -3,8 +3,10 @@ package app
 import (
 	"database/sql"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/cffa-as/bankagent/internal/agent"
 	"github.com/cffa-as/bankagent/internal/domain"
 	"github.com/cffa-as/bankagent/internal/httpapi"
 	"github.com/cffa-as/bankagent/internal/store"
@@ -32,6 +34,9 @@ func New(cfg Config) (*Application, error) {
 		return nil, err
 	}
 	service := domain.NewService(store.NewRepository(db), cfg.Now)
+	if baseURL, apiKey, model := os.Getenv("BANKAGENT_LLM_BASE_URL"), os.Getenv("BANKAGENT_LLM_API_KEY"), os.Getenv("BANKAGENT_LLM_MODEL"); baseURL != "" && apiKey != "" && model != "" {
+		service.SetModelClient(agent.NewOpenAICompatibleClient(baseURL, apiKey, model))
+	}
 	if err := service.Seed(); err != nil {
 		db.Close()
 		return nil, err

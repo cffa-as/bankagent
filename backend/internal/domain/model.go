@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cffa-as/bankagent/internal/agent"
 )
 
 const DemoUserID = "user_demo"
@@ -179,8 +181,9 @@ type MessageResult struct {
 }
 
 type Service struct {
-	repo Repository
-	now  func() time.Time
+	repo  Repository
+	now   func() time.Time
+	model agent.ModelClient
 }
 
 // Repository is the small persistence boundary used by the domain service.
@@ -221,6 +224,8 @@ func NewService(repo Repository, now func() time.Time) *Service {
 	}
 	return &Service{repo: repo, now: now}
 }
+
+func (s *Service) SetModelClient(client agent.ModelClient) { s.model = client }
 
 func (s *Service) Seed() error { return s.repo.Seed(context.Background(), s.now()) }
 
