@@ -172,6 +172,14 @@ paths:
           $ref: '#/components/responses/Expired'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '423':
+          $ref: '#/components/responses/Locked'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /v1/actions/{action_id}/cancel:
     post:
       tags: [Actions]
@@ -197,13 +205,13 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
-  /v1/investments/{investment_id}/subscribe:
+  /v1/investments/products/{product_id}/subscriptions:
     post:
       tags: [Actions]
       summary: 创建理财申购动作
       operationId: subscribeInvestment
       parameters:
-        - name: investment_id
+        - name: product_id
           in: path
           required: true
           schema: { type: string, minLength: 1 }
@@ -227,13 +235,15 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
-  /v1/investments/{investment_id}/redeem:
+        '502': { $ref: '#/components/responses/BadGateway' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /v1/investments/holdings/{holding_id}/redemptions:
     post:
       tags: [Actions]
       summary: 创建理财赎回动作
       operationId: redeemInvestment
       parameters:
-        - name: investment_id
+        - name: holding_id
           in: path
           required: true
           schema: { type: string, minLength: 1 }
@@ -257,6 +267,8 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/IdempotencyConflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '502': { $ref: '#/components/responses/BadGateway' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /v1/cards/{card_id}/apply:
     post:
       tags: [Actions]
@@ -679,6 +691,15 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     RateLimited:
       description: 请求或验证频率受限
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Locked:
+      description: 当前动作的 MFA 尝试次数已耗尽并被锁定
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    BadGateway:
+      description: 受控业务工具明确拒绝或执行失败
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    ServiceUnavailable:
+      description: 服务暂时不可用或执行结果需要对账
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
     InternalError:
       description: 内部错误

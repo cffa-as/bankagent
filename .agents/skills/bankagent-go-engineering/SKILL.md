@@ -37,6 +37,8 @@ metadata:
 - 确认、取消和副作用启动必须位于可竞争的事务或原子状态转换边界；重复确认只能产生一次副作用。
 - SQLite 写操作使用明确事务；唯一约束用于幂等和关键业务不变量。不能把 SQLite 内存替身的通过结果当作生产数据库并发语义证明。
 - 业务成功只能来自 Mock 银行工具的结构化回执；日志、Trace 和审计必须脱敏，不记录密码、验证码、Token、完整账户号或真实个人信息。
+- MCP 首期默认使用进程内 Go Tool Gateway；跨进程使用 Streamable HTTP，Gateway 到工具服务使用服务端内部 Bearer Token。
+- Gateway 注入并校验 `tool_request_id`、用户、运行、动作和 Trace 上下文；只读、Mock 副作用、对账查询超时分别为 5 秒、10 秒、5 秒。资金工具不自动重试，超时或无终态回执进入 `reconciliation_required`。
 
 ## 测试与验证
 
