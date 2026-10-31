@@ -28,7 +28,7 @@ export default function Home() {
   const [liveAction, setLiveAction] = useState<Action>()
   const [liveState, setLiveState] = useState<'idle' | 'sending' | 'connected' | 'error'>('idle')
   const [liveError, setLiveError] = useState('')
-  const [mfaCode, setMfaCode] = useState('123456')
+  const [mfaCode, setMfaCode] = useState('000000')
   const [actionBusy, setActionBusy] = useState(false)
   const currentIndex = stages.findIndex((item) => item.id === stage)
   const current = stageCopy[stage]
