@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cffa-as/bankagent/internal/app"
 )
@@ -123,6 +124,59 @@ func TestYellowTransferAndIdempotency(t *testing.T) {
 	resp, secondBody := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", confirmBody, "confirm-1")
 	if resp.StatusCode != http.StatusOK || !bytes.Equal(bytes.TrimSpace(secondBody), bytes.TrimSpace(body)) {
 		t.Fatalf("idempotent replay: status=%d first=%s second=%s", resp.StatusCode, body, secondBody)
+	}
+}
+
+func TestBillSummaryQuery(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	month := time.Now().Format("2006-01")
+	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/bills/summary?month="+month, "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bill summary: status=%d body=%s", resp.StatusCode, body)
+	}
+	var result envelope
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatal(err)
+	}
+	var value struct {
+		TotalMinor       int64 `json:"total_minor"`
+		TransactionCount int64 `json:"transaction_count"`
+		Categories       []any `json:"categories"`
+	}
+	if err := json.Unmarshal(result.Data, &value); err != nil {
+		t.Fatal(err)
+	}
+	if value.TotalMinor != 31500 || value.TransactionCount != 4 || len(value.Categories) != 4 {
+		t.Fatalf("unexpected summary: %+v", value)
+	}
+}
+
+func BenchmarkBillSummaryHTTP(b *testing.B) {
+	application, err := app.New(app.Config{Database: filepath.Join(b.TempDir(), "bankagent.db")})
+	if err != nil {
+		b.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler())
+	defer server.Close()
+	month := time.Now().Format("2006-01")
+	client := server.Client()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/accounts/acct_demo/bills/summary?month="+month, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer demo-user-1")
+		resp, err := client.Do(req)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			b.Fatalf("status=%d", resp.StatusCode)
+		}
 	}
 }
 

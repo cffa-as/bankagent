@@ -20,7 +20,41 @@ func Open(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
+	if err := ensureSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate schema: %w", err)
+	}
 	return db, nil
+}
+
+func ensureSchema(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(ledger_entries)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	hasCategory := false
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == "category" {
+			hasCategory = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !hasCategory {
+		if _, err := db.Exec(`ALTER TABLE ledger_entries ADD COLUMN category TEXT NOT NULL DEFAULT 'other'`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 const schema = `
@@ -46,6 +80,7 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     account_id TEXT NOT NULL,
     direction TEXT NOT NULL,
     amount_minor INTEGER NOT NULL,
+    category TEXT NOT NULL DEFAULT 'other',
     description TEXT NOT NULL,
     created_at TEXT NOT NULL
 );

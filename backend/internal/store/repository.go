@@ -28,6 +28,22 @@ func (r *Repository) Seed(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return fmt.Errorf("seed beneficiary: %w", err)
 	}
+	entries := []struct {
+		id, category, description string
+		amount                    int64
+		at                        time.Time
+	}{
+		{"txn_seed_food", "food", "晚餐消费", 9800, now.Add(-48 * time.Hour)},
+		{"txn_seed_transport", "transport", "打车消费", 3200, now.Add(-36 * time.Hour)},
+		{"txn_seed_shopping", "shopping", "日用品消费", 12900, now.Add(-24 * time.Hour)},
+		{"txn_seed_utilities", "utilities", "生活缴费", 5600, now.Add(-12 * time.Hour)},
+	}
+	for _, entry := range entries {
+		_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, entry.id, "acct_demo", "out", entry.amount, entry.category, entry.description, entry.at.Format(time.RFC3339Nano))
+		if err != nil {
+			return fmt.Errorf("seed ledger entry: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -49,7 +65,7 @@ func (r *Repository) Account(ctx context.Context, userID string) (domain.Account
 }
 
 func (r *Repository) Transactions(ctx context.Context, userID string) ([]domain.Transaction, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT l.id,l.direction,l.amount_minor,l.description,l.created_at FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC`, userID)
+	rows, err := r.db.QueryContext(ctx, `SELECT l.id,l.direction,l.amount_minor,l.category,l.description,l.created_at FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? ORDER BY l.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +74,7 @@ func (r *Repository) Transactions(ctx context.Context, userID string) ([]domain.
 	for rows.Next() {
 		var t domain.Transaction
 		var created string
-		if err := rows.Scan(&t.ID, &t.Direction, &t.AmountMinor, &t.Description, &created); err != nil {
+		if err := rows.Scan(&t.ID, &t.Direction, &t.AmountMinor, &t.Category, &t.Description, &created); err != nil {
 			return nil, err
 		}
 		t.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
@@ -68,6 +84,40 @@ func (r *Repository) Transactions(ctx context.Context, userID string) ([]domain.
 		result = append(result, t)
 	}
 	return result, rows.Err()
+}
+
+func (r *Repository) BillSummary(ctx context.Context, userID string, month time.Time) (domain.BillSummary, error) {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return domain.BillSummary{}, err
+	}
+	month = month.In(loc)
+	start := time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, loc)
+	end := start.AddDate(0, 1, 0)
+	rows, err := r.db.QueryContext(ctx, `SELECT l.category, COALESCE(SUM(l.amount_minor),0), COUNT(*) FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.created_at>=? AND l.created_at<? GROUP BY l.category ORDER BY SUM(l.amount_minor) DESC`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
+	if err != nil {
+		return domain.BillSummary{}, err
+	}
+	defer rows.Close()
+	summary := domain.BillSummary{Month: start.Format("2006-01"), Currency: "CNY"}
+	for rows.Next() {
+		var item domain.BillCategory
+		if err := rows.Scan(&item.Category, &item.AmountMinor, &item.Count); err != nil {
+			return domain.BillSummary{}, err
+		}
+		summary.TotalMinor += item.AmountMinor
+		summary.TransactionCount += item.Count
+		summary.Categories = append(summary.Categories, item)
+	}
+	if err := rows.Err(); err != nil {
+		return domain.BillSummary{}, err
+	}
+	for i := range summary.Categories {
+		if summary.TotalMinor > 0 {
+			summary.Categories[i].ShareBPS = summary.Categories[i].AmountMinor * 10000 / summary.TotalMinor
+		}
+	}
+	return summary, nil
 }
 
 func (r *Repository) DailyOutgoing(ctx context.Context, userID string, day time.Time) (int64, error) {
@@ -151,7 +201,7 @@ func (r *Repository) ExecuteTransfer(ctx context.Context, a domain.Action, amoun
 	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET balance_minor=balance_minor-? WHERE id=?`, amount, accountID); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,account_id,direction,amount_minor,description,created_at) VALUES(?,?,?,?,?,?)`, domain.NewID("txn"), accountID, "out", amount, description, now.Format(time.RFC3339Nano)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, domain.NewID("txn"), accountID, "out", amount, "transfer", description, now.Format(time.RFC3339Nano)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='succeeded',updated_at=? WHERE id=?`, now.Format(time.RFC3339Nano), a.ID); err != nil {

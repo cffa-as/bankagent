@@ -50,6 +50,20 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		}
 		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("当前余额 %s %s。", yuan(account.BalanceMinor), account.Currency), Balance: &account}, trace, nil
 	}
+	if strings.Contains(text, "账单") || strings.Contains(text, "消费") {
+		loc, err := time.LoadLocation("Asia/Shanghai")
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		bill, err := s.repo.BillSummary(ctx, userID, now.In(loc))
+		if err != nil {
+			return MessageResult{}, trace, err
+		}
+		if err := s.audit(ctx, trace, conversationID, "", "bill_analyzed", "succeeded", "tool", map[string]any{"month": bill.Month, "transaction_count": bill.TransactionCount}, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("本月消费共 %s，共 %d 笔。", yuan(bill.TotalMinor), bill.TransactionCount), Bill: &bill}, trace, nil
+	}
 	if strings.Contains(text, "流水") || strings.Contains(text, "交易记录") {
 		records, err := s.repo.Transactions(ctx, userID)
 		if err != nil {
@@ -98,6 +112,28 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		return MessageResult{RunID: runID, ReplyType: "action_required", Text: text, Action: ptr(action.Public())}, trace, nil
 	}
 	return MessageResult{RunID: runID, ReplyType: "question", Text: "我可以帮你查询余额、交易记录，或处理预置收款人的转账。"}, trace, nil
+}
+
+func (s *Service) BillSummary(ctx context.Context, userID, accountID string, month time.Time) (BillSummary, string, error) {
+	account, err := s.repo.Account(ctx, userID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return BillSummary{}, "", ErrNotFound
+		}
+		return BillSummary{}, "", err
+	}
+	if account.ID != accountID {
+		return BillSummary{}, "", ErrForbidden
+	}
+	trace := NewID("tr")
+	summary, err := s.repo.BillSummary(ctx, userID, month)
+	if err != nil {
+		return BillSummary{}, trace, err
+	}
+	if err := s.audit(ctx, trace, "", "", "bill_analyzed", "succeeded", "tool", map[string]any{"account_id": accountID, "month": summary.Month, "transaction_count": summary.TransactionCount}, s.now()); err != nil {
+		return BillSummary{}, trace, err
+	}
+	return summary, trace, nil
 }
 
 func (s *Service) GetAction(ctx context.Context, userID, id string) (Action, error) {

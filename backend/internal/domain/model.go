@@ -44,8 +44,24 @@ type Transaction struct {
 	ID          string    `json:"transaction_id"`
 	Direction   string    `json:"direction"`
 	AmountMinor int64     `json:"amount_minor"`
+	Category    string    `json:"category,omitempty"`
 	Description string    `json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+type BillCategory struct {
+	Category    string `json:"category"`
+	AmountMinor int64  `json:"amount_minor"`
+	Count       int64  `json:"count"`
+	ShareBPS    int64  `json:"share_bps"`
+}
+
+type BillSummary struct {
+	Month            string         `json:"month"`
+	TotalMinor       int64          `json:"total_minor"`
+	Currency         string         `json:"currency"`
+	TransactionCount int64          `json:"transaction_count"`
+	Categories       []BillCategory `json:"categories"`
 }
 
 type Action struct {
@@ -93,6 +109,7 @@ type MessageResult struct {
 	Action    *Action       `json:"action,omitempty"`
 	Balance   *Account      `json:"balance,omitempty"`
 	Records   []Transaction `json:"transactions,omitempty"`
+	Bill      *BillSummary  `json:"bill,omitempty"`
 }
 
 type Service struct {
@@ -107,6 +124,7 @@ type Repository interface {
 	ConversationOwner(context.Context, string) (string, error)
 	Account(context.Context, string) (Account, error)
 	Transactions(context.Context, string) ([]Transaction, error)
+	BillSummary(context.Context, string, time.Time) (BillSummary, error)
 	DailyOutgoing(context.Context, string, time.Time) (int64, error)
 	Beneficiary(context.Context, string, string) (string, error)
 	CreateAction(context.Context, Action) error

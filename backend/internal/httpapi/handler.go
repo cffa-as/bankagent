@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cffa-as/bankagent/internal/domain"
 )
@@ -40,6 +41,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/conversations/") && strings.HasSuffix(path, "/messages") {
 		h.message(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/accounts/") && strings.HasSuffix(path, "/bills/summary") {
+		h.billSummary(w, r, userID, path)
 		return
 	}
 	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/actions/") {
@@ -123,6 +128,25 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID, path s
 	response := envelope(result, trace)
 	h.saveReplay(r, userID, path, fingerprint, http.StatusOK, response)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) billSummary(w http.ResponseWriter, r *http.Request, userID, path string) {
+	accountID := segment(path, 2)
+	month := time.Now()
+	if value := strings.TrimSpace(r.URL.Query().Get("month")); value != "" {
+		parsed, err := time.ParseInLocation("2006-01", value, time.FixedZone("CST", 8*60*60))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "month 必须使用 YYYY-MM 格式", "tr_invalid")
+			return
+		}
+		month = parsed
+	}
+	summary, trace, err := h.service.BillSummary(r.Context(), userID, accountID, month)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(summary, trace))
 }
 
 func (h *Handler) getAction(w http.ResponseWriter, r *http.Request, userID, path string) {

@@ -29,12 +29,14 @@
 需要 Go 1.27+ 和 CGO（SQLite 驱动）。
 
 ```bash
+cd backend
 go run ./cmd/bankagent
 ```
 
 可通过环境变量修改监听地址和数据库文件：
 
 ```bash
+cd backend
 BANKAGENT_ADDR=:8080 BANKAGENT_DATABASE=./bankagent.db go run ./cmd/bankagent
 ```
 

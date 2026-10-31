@@ -445,7 +445,8 @@ paths:
         - $ref: '#/components/parameters/AccountID'
         - in: query
           name: month
-          required: true
+          required: false
+          description: 账单月份；省略时使用 Asia/Shanghai 当前自然月。
           schema: { type: string, pattern: '^\\d{4}-\\d{2}$', example: '2026-10' }
       responses:
         '200':
@@ -853,7 +854,17 @@ components:
         month: { type: string, pattern: '^\\d{4}-\\d{2}$' }
         total_minor: { type: integer, format: int64 }
         currency: { type: string }
-        categories: { type: array, items: { type: object, additionalProperties: true } }
+        transaction_count: { type: integer, format: int64 }
+        categories:
+          type: array
+          items:
+            type: object
+            required: [category, amount_minor, count, share_bps]
+            properties:
+              category: { type: string }
+              amount_minor: { type: integer, format: int64 }
+              count: { type: integer, format: int64 }
+              share_bps: { type: integer, format: int64 }
         anomalies: { type: array, items: { type: object, additionalProperties: true } }
     Product:
       type: object
