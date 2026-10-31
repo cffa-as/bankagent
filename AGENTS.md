@@ -2,6 +2,13 @@
 
 本文件是仓库级约束。修改代码、产品文档、接口、数据结构或安全逻辑前先阅读；子目录可以增加更具体的 `AGENTS.md`，但不能削弱这里的安全边界。
 
+## 技术栈
+
+- 后端：Go。HTTP API、领域服务、Agent 编排、Mock 银行账本和审计链都由 Go 实现。
+- 前端：Next.js + TypeScript。负责对话界面、结果展示、确认和 MFA 输入，不承担最终授权。
+- 数据库：SQLite。首期用于 Mock 账本、动作、审计和演示数据。金额使用整数最小货币单位。
+- Go 后端编码细则见 `.agents/skills/bankagent-go-engineering/SKILL.md`。
+
 ## 项目状态与边界
 
 - 当前阶段是方案评审，未进入业务实现。
@@ -18,6 +25,7 @@
 - `docs/概要设计.md`：数据结构、API、数据库和关键业务流程。
 - `.agents/skills/bankagent-design/SKILL.md`：编写或评审上述设计文档时必须遵循。
 - `.agents/skills/bankagent-test-engineering/SKILL.md`：编写或评审测试时必须遵循。
+- `.agents/skills/bankagent-go-engineering/SKILL.md`：编写或评审 Go 后端时必须遵循。
 
 新增需求先写用户故事和验收标准；涉及多个模块、公开 API、数据模型、权限或状态流转时，先补概要设计和影响评估。
 
@@ -47,6 +55,7 @@
 ## 测试与交付检查
 
 - 纯规则、金额计算、状态机、Schema 和数据转换放单元测试；单测零外部网络、秒级可运行。
+- Go 代码提交前至少完成 `gofmt` 和受影响包的 `go test`；并发改动补 `go test -race`。
 - API、数据库事务和跨组件协作放集成测试；只验证契约和主链路，不在 E2E 重复穷举业务算法。
 - 测试替身只隔离外部边界，不 Mock 被测核心逻辑；SQLite/内存 Fake 不代表生产数据库的并发语义。
 - 涉及权限、MFA、幂等、取消竞争、提示注入或结果回执的改动，必须补正向和负向用例。
