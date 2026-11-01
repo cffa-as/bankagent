@@ -189,6 +189,62 @@ func TestRejectsShortConfiguredBearerToken(t *testing.T) {
 	}
 }
 
+func TestConfiguredMFACode(t *testing.T) {
+	application, err := app.New(app.Config{
+		Database: filepath.Join(t.TempDir(), "bankagent.db"),
+		MFACode:  "246810",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler())
+	defer func() { server.Close(); _ = application.Close() }()
+
+	conversationID := createConversation(t, server.URL)
+	status, result, raw := sendMessage(t, server.URL, conversationID, "给张三转1200元备注MFA配置", "configured-mfa-action")
+	if status != http.StatusOK || result.Action.ID == "" || result.Action.Risk != "red" {
+		t.Fatalf("create red action: status=%d result=%+v body=%s", status, result, raw)
+	}
+	resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/mfa/verify", `{"code":"000000"}`, "configured-mfa-wrong")
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("default MFA code must fail when configured code differs: status=%d body=%s", resp.StatusCode, body)
+	}
+	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/mfa/verify", `{"code":"246810"}`, "configured-mfa-right")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"status":"succeeded"`)) {
+		t.Fatalf("configured MFA code must succeed: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
+func TestRejectsInvalidMFACodeConfig(t *testing.T) {
+	_, err := app.New(app.Config{
+		Database: filepath.Join(t.TempDir(), "bankagent.db"),
+		MFACode:  "abc",
+	})
+	if err == nil {
+		t.Fatal("expected invalid MFA code configuration to be rejected")
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+
+	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/balance", "", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("balance: status=%d body=%s", resp.StatusCode, body)
+	}
+	for header, want := range map[string]string{
+		"Cache-Control":          "no-store",
+		"X-Content-Type-Options": "nosniff",
+		"X-Frame-Options":        "DENY",
+		"Referrer-Policy":        "no-referrer",
+	} {
+		if got := resp.Header.Get(header); got != want {
+			t.Errorf("%s=%q want %q", header, got, want)
+		}
+	}
+}
+
 func TestConversationEventStreamReportsServiceAuditMilestones(t *testing.T) {
 	server, cleanup := newServer(t)
 	defer cleanup()

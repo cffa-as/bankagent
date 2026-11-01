@@ -127,7 +127,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 | Security robustness | 24 攻击 + 24 良性 | ASR 0%，FPR 0%，Policy compliance 100% |
 | Replay / concurrency | 12 + 16 | 重复副作用 0，并发确认 1 成功 / 15 冲突 |
 | Browser E2E | 8 条真实业务链路 | 8 / 8 通过，console error 0，HTTP 5xx 0 |
-| Latency | 200 次 warm HTTP | p50 407 µs，p95 588 µs，p99 2568 µs |
+| Latency | 200 次 warm HTTP | p50 415 µs，p95 580 µs，p99 2551 µs |
 
 完整指标、混淆矩阵、置信区间、延迟 CDF 和全部用例明细见 [HTML 测评报告](evaluation/results/academic-report.html)。原始数据见 [academic.json](evaluation/results/academic.json) 与 [cases.csv](evaluation/results/cases.csv)。
 
@@ -197,6 +197,7 @@ pnpm dev
 
 打开 <http://localhost:3000>。本地默认使用 `BANKAGENT_AUTH_TOKEN=demo-user-1`，演示 MFA 验证码为 `000000`。
 共享环境请设置至少 24 位随机 `BANKAGENT_AUTH_TOKEN`，并由前端 `/backend` 同源代理注入，令牌不会下发到浏览器。
+`BANKAGENT_MFA_CODE` 可替换本地 MFA 测试验证码，必须为 6 位数字。
 
 > [!IMPORTANT]
 > 当前版本只连接本地 Mock 银行账本。没有真实账户、真实资金、真实短信/人脸认证或银行核心系统接入；所有演示数据均为合成数据。
@@ -213,8 +214,6 @@ pnpm dev
 | [安全自评报告](docs/submission/Vaultline-安全自评报告.pdf) | 权限分级实现说明与已知风险清单 |
 | [OpenAPI](backend/api/openapi.yaml) | 前后端共同遵循的机器可读契约 |
 | [完整测评报告](evaluation/results/academic-report.html) | 集成/E2E 指标、混淆矩阵、置信区间和完整用例明细 |
-| [品牌规范](frontend/BRAND.md) | Vaultline 视觉方向、标识和用色 |
-| [视频工程](video/README.md) | 演示视频资产与生产流程 |
 
 <p align="center">
   <sub>VAULTLINE · UNDERSTAND INTENT · GOVERN EXECUTION · PROVE THE OUTCOME</sub>

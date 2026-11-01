@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -1191,7 +1192,8 @@ func (s *Service) VerifyMFA(ctx context.Context, userID, id, code string) (Actio
 		}
 		return Action{}, trace, ErrActionExpired
 	}
-	if code != "000000" {
+	validCode := len(code) == len(s.mfaCode) && subtle.ConstantTimeCompare([]byte(code), []byte(s.mfaCode)) == 1
+	if !validCode {
 		attempts, locked, err := s.repo.RecordMFAFailure(ctx, action.ID, s.now())
 		if err != nil {
 			return Action{}, trace, err

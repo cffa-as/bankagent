@@ -180,6 +180,10 @@ def render(args) -> None:
     academic = load_json(args.academic)
     engineering = load_json(args.engineering)
     e2e = load_json(args.e2e)
+    security_tools = load_json(args.security) if Path(args.security).exists() else {
+        "frontend_prod_audit": "not_run",
+        "go_vulncheck": "not_run",
+    }
     benchmark = Path(args.benchmark).read_text(encoding="utf-8")
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -415,6 +419,17 @@ tr:last-child td {{ border-bottom: 0; }}
         <div class="callout" style="margin-top:20px">
           <strong>Evaluation boundary.</strong> The intent corpus is a curated synthetic in-domain benchmark. Integration evaluation exercises the full HTTP handler, SQLite transaction layer, auth boundary and action state machine. Browser E2E exercises the real Next.js workspace and same-origin token proxy. It does not claim production internet latency or external-bank capacity.
         </div>
+        <h3>Implemented hardening controls</h3>
+        <table>
+          <thead><tr><th>Control</th><th>Implementation</th><th>Evidence</th></tr></thead>
+          <tbody>
+            <tr><td>Gateway authentication</td><td>Environment token, SHA-256 digest, constant-time compare, same-origin proxy injection</td><td>Configured-token accept / default-token reject tests</td></tr>
+            <tr><td>MFA verifier</td><td>Environment-configurable six-digit code, constant-time compare</td><td>Custom-code success / default-code failure tests</td></tr>
+            <tr><td>Business receipts</td><td>Card and subscription actions now write structured results</td><td>Browser E2E rejects success without a receipt</td></tr>
+            <tr><td>Security headers</td><td>API no-store/nosniff/frame-deny; Web CSP, Permissions Policy and production HSTS</td><td>API tests and production build</td></tr>
+            <tr><td>Dependency security</td><td>Production-only dependency audit, Go vulnerability scan, CI and weekly Dependabot</td><td>{esc(security_tools.get("frontend_prod_audit", "not_run"))} / {esc(security_tools.get("go_vulncheck", "not_run"))}</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -559,7 +574,7 @@ BANKAGENT_ACADEMIC_OUT=../evaluation/results/academic.json \\
   go test -tags=integration -run '^TestAcademicEvaluationReport$' -count=1 -v ./internal/httpapi
 
 # Browser E2E is launched by evaluation/run.sh after starting Next.js and Go.</pre>
-        <p><a href="{esc(academic_link)}">academic.json</a> · <a href="{esc(e2e_link)}">e2e.json</a> · <a href="{esc(engineering_link)}">latest.json</a> · <a href="cases.csv">cases.csv</a> · <a href="metrics.csv">metrics.csv</a> · <a href="benchmark.txt">benchmark.txt</a></p>
+        <p><a href="{esc(academic_link)}">academic.json</a> · <a href="{esc(e2e_link)}">e2e.json</a> · <a href="{esc(engineering_link)}">latest.json</a> · <a href="cases.csv">cases.csv</a> · <a href="metrics.csv">metrics.csv</a> · <a href="security-tools.json">security-tools.json</a> · <a href="benchmark.txt">benchmark.txt</a></p>
       </div>
     </section>
   </main>
@@ -602,6 +617,7 @@ def main() -> None:
     parser.add_argument("--engineering", required=True)
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--e2e", required=True)
+    parser.add_argument("--security", required=True)
     parser.add_argument("--out-dir", required=True)
     render(parser.parse_args())
 

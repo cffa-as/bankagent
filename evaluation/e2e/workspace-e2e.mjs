@@ -85,7 +85,11 @@ async function confirmAction(buttonName, pathPattern) {
 }
 
 try {
-  await page.goto(`${BASE_URL}/workspace`, { waitUntil: 'domcontentloaded' })
+  const navigation = await page.goto(`${BASE_URL}/workspace`, { waitUntil: 'domcontentloaded' })
+  const headers = navigation?.headers() ?? {}
+  assert.equal(headers['x-content-type-options'], 'nosniff')
+  assert.equal(headers['x-frame-options'], 'DENY')
+  assert.match(headers['content-security-policy'] ?? '', /frame-ancestors 'none'/)
   await page.locator('#ws-composer').waitFor({ timeout: 20_000 })
   await page.getByText('安全通道就绪').waitFor({ timeout: 20_000 })
 

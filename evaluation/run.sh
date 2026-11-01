@@ -81,6 +81,19 @@ done
     | tee "$results/benchmark.txt"
 )
 
+if [[ "${EVALUATION_SKIP_SECURITY_SCAN:-0}" != "1" ]]; then
+  (
+    cd "$root/frontend"
+    pnpm audit --prod --audit-level high
+  ) >"$results/frontend-audit.txt" 2>&1
+  (
+    cd "$root/backend"
+    go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+  ) >"$results/govulncheck.txt" 2>&1
+  printf '{"frontend_prod_audit":"pass","go_vulncheck":"pass","frontend_policy":"high","generated_at":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$results/security-tools.json"
+fi
+
 VAULTLINE_E2E_BASE_URL="http://127.0.0.1:$web_port" \
 VAULTLINE_E2E_OUT="$results/e2e.json" \
   node "$root/evaluation/e2e/workspace-e2e.mjs"
@@ -91,6 +104,7 @@ VAULTLINE_E2E_OUT="$results/e2e.json" \
   --engineering "$results/latest.json" \
   --benchmark "$results/benchmark.txt" \
   --e2e "$results/e2e.json" \
+  --security "$results/security-tools.json" \
   --out-dir "$results"
 
 cp "$results/latest.json" "$root/benchmark/results/latest.json"

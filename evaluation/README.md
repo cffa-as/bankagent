@@ -19,6 +19,9 @@ evaluation/results/academic.json
 evaluation/results/latest.json
 evaluation/results/benchmark.txt
 evaluation/results/e2e.json
+evaluation/results/security-tools.json
+evaluation/results/frontend-audit.txt
+evaluation/results/govulncheck.txt
 evaluation/results/cases.csv
 evaluation/results/metrics.csv
 evaluation/results/academic-report.html

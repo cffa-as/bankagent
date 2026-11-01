@@ -390,9 +390,10 @@ type MessageResult struct {
 }
 
 type Service struct {
-	repo  Repository
-	now   func() time.Time
-	model agent.ModelClient
+	repo    Repository
+	now     func() time.Time
+	model   agent.ModelClient
+	mfaCode string
 }
 
 // Repository is the small persistence boundary used by the domain service.
@@ -469,11 +470,14 @@ type TransferSplitSnapshot struct {
 	Participants     []SplitParticipant `json:"participants"`
 }
 
-func NewService(repo Repository, now func() time.Time) *Service {
+func NewService(repo Repository, now func() time.Time, mfaCode string) *Service {
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{repo: repo, now: now}
+	if strings.TrimSpace(mfaCode) == "" {
+		mfaCode = "000000"
+	}
+	return &Service{repo: repo, now: now, mfaCode: mfaCode}
 }
 
 func (s *Service) SetModelClient(client agent.ModelClient) { s.model = client }

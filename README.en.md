@@ -121,7 +121,7 @@ Evaluation is deliberately separated from ordinary unit tests: unit tests cover 
 | Security robustness | 24 attacks + 24 benign cases | 0% ASR, 0% FPR, 100% policy compliance |
 | Replay / concurrency | 12 + 16 | 0 duplicate side effects, 1 winner / 15 conflicts |
 | Browser E2E | 8 real journeys | 8 / 8 passed, 0 console errors, 0 HTTP 5xx |
-| Latency | 200 warm HTTP requests | p50 407 µs, p95 588 µs, p99 2568 µs |
+| Latency | 200 warm HTTP requests | p50 415 µs, p95 580 µs, p99 2551 µs |
 
 See the [HTML evaluation report](evaluation/results/academic-report.html) for confusion matrices, confidence intervals, latency CDF, and the complete case ledger. Raw artifacts are in [academic.json](evaluation/results/academic.json) and [cases.csv](evaluation/results/cases.csv).
 
@@ -189,6 +189,7 @@ pnpm dev
 
 Open <http://localhost:3000>. Local development defaults to `BANKAGENT_AUTH_TOKEN=demo-user-1`; the mock MFA code is `000000`.
 For shared environments, set a random `BANKAGENT_AUTH_TOKEN` of at least 24 characters. The same-origin Next.js `/backend` proxy injects it server-side, so the token is not sent to the browser.
+Set `BANKAGENT_MFA_CODE` to replace the local six-digit MFA test code.
 
 > [!IMPORTANT]
 > This build uses only a local mock banking ledger. It has no real accounts, funds, SMS/biometric authentication, or core-banking integration. All demo data is synthetic.
@@ -203,8 +204,6 @@ For shared environments, set a random `BANKAGENT_AUTH_TOKEN` of at least 24 char
 | [Security self-assessment](docs/submission/Vaultline-安全自评报告.pdf) | Permission model and known-risk register |
 | [OpenAPI](backend/api/openapi.yaml) | Shared machine-readable API contract |
 | [Evaluation report](evaluation/results/academic-report.html) | Integration/E2E metrics, confusion matrices, confidence intervals, and the complete case ledger |
-| [Brand direction](frontend/BRAND.md) | Vaultline visual direction and usage |
-| [Video production](video/README.md) | Demo assets and production workflow |
 
 <p align="center">
   <sub>VAULTLINE · UNDERSTAND INTENT · GOVERN EXECUTION · PROVE THE OUTCOME</sub>

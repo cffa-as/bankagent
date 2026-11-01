@@ -18,6 +18,7 @@ type Config struct {
 	Address   string
 	Database  string
 	AuthToken string
+	MFACode   string
 	Now       func() time.Time
 }
 
@@ -26,6 +27,7 @@ func DefaultConfig() Config {
 		Address:   ":8080",
 		Database:  "bankagent.db",
 		AuthToken: strings.TrimSpace(os.Getenv("BANKAGENT_AUTH_TOKEN")),
+		MFACode:   strings.TrimSpace(os.Getenv("BANKAGENT_MFA_CODE")),
 		Now:       time.Now,
 	}
 }
@@ -41,7 +43,15 @@ func New(cfg Config) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	service := domain.NewService(store.NewRepository(db), cfg.Now)
+	mfaCode := strings.TrimSpace(cfg.MFACode)
+	if mfaCode == "" {
+		mfaCode = "000000"
+	}
+	if !validMFACode(mfaCode) {
+		db.Close()
+		return nil, errors.New("BANKAGENT_MFA_CODE must contain exactly 6 digits")
+	}
+	service := domain.NewService(store.NewRepository(db), cfg.Now, mfaCode)
 	if baseURL, apiKey, model := os.Getenv("BANKAGENT_LLM_BASE_URL"), os.Getenv("BANKAGENT_LLM_API_KEY"), os.Getenv("BANKAGENT_LLM_MODEL"); baseURL != "" && apiKey != "" && model != "" {
 		service.SetModelClient(agent.NewOpenAICompatibleClient(baseURL, apiKey, model))
 	}
@@ -70,3 +80,15 @@ func New(cfg Config) (*Application, error) {
 
 func (a *Application) Handler() http.Handler { return a.handler }
 func (a *Application) Close() error          { return a.db.Close() }
+
+func validMFACode(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	for _, char := range code {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
+}
