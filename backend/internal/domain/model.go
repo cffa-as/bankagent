@@ -19,6 +19,16 @@ import (
 const DemoUserID = "user_demo"
 const DemoStartingBalanceMinor int64 = 1_500_000
 
+const (
+	RunStatusRunning                = "running"
+	RunStatusCompleted              = "completed"
+	RunStatusFailed                 = "failed"
+	RunStatusInterrupted            = "interrupted"
+	RunStatusHumanHandoff           = "human_handoff"
+	RunStatusRolledBack             = "rolled_back"
+	RunStatusRollbackReviewRequired = "rollback_review_required"
+)
+
 var (
 	ErrNotFound            = errors.New("not found")
 	ErrForbidden           = errors.New("forbidden")
@@ -30,6 +40,7 @@ var (
 	ErrInsufficientBalance = errors.New("insufficient balance")
 	ErrBudgetNotReserved   = errors.New("workflow budget not reserved")
 	ErrIdempotencyConflict = errors.New("idempotency conflict")
+	ErrRunStateConflict    = errors.New("run state conflict")
 )
 
 type Conversation struct {
@@ -45,6 +56,25 @@ type ConversationMessage struct {
 	Role           string    `json:"role"`
 	Text           string    `json:"text"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+type Run struct {
+	ID             string     `json:"run_id"`
+	ConversationID string     `json:"conversation_id"`
+	UserID         string     `json:"-"`
+	TraceID        string     `json:"trace_id"`
+	Status         string     `json:"status"`
+	Reason         string     `json:"reason,omitempty"`
+	HandoffTo      string     `json:"handoff_to,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+}
+
+type RunRollbackResult struct {
+	Run                Run      `json:"run"`
+	CancelledActionIDs []string `json:"cancelled_action_ids"`
+	ReviewActionIDs    []string `json:"review_action_ids"`
 }
 
 type Account struct {
@@ -299,6 +329,7 @@ type TransferSplit struct {
 type Action struct {
 	ID             string    `json:"action_id"`
 	TraceID        string    `json:"trace_id"`
+	RunID          string    `json:"run_id,omitempty"`
 	ConversationID string    `json:"conversation_id"`
 	UserID         string    `json:"-"`
 	Kind           string    `json:"kind"`
@@ -346,6 +377,7 @@ type AuditEvent struct {
 
 type MessageResult struct {
 	RunID     string               `json:"run_id"`
+	RunStatus string               `json:"run_status,omitempty"`
 	ReplyType string               `json:"reply_type"`
 	Text      string               `json:"text"`
 	Action    *Action              `json:"action,omitempty"`
@@ -367,6 +399,11 @@ type Service struct {
 type Repository interface {
 	Seed(context.Context, time.Time) error
 	CreateConversation(context.Context, Conversation, AuditEvent) error
+	CreateRun(context.Context, Run, AuditEvent) error
+	Run(context.Context, string, string) (Run, error)
+	CompleteRun(context.Context, string, string, string, string, time.Time, AuditEvent) error
+	TransitionRun(context.Context, string, string, string, string, string, string, time.Time, AuditEvent) (Run, error)
+	RollbackRun(context.Context, string, string, time.Time) (RunRollbackResult, error)
 	ConversationOwner(context.Context, string) (string, error)
 	ConversationMessages(context.Context, string, string, int) ([]ConversationMessage, error)
 	AddConversationMessage(context.Context, ConversationMessage) error

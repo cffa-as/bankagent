@@ -311,14 +311,14 @@ func (s *Service) createActionRecord(ctx context.Context, userID, conversationID
 			expiresAt = scheduledAt.Add(5 * time.Minute)
 		}
 	}
-	action := Action{ID: NewID("act"), TraceID: trace, ConversationID: conversationID, UserID: userID, Kind: kind, RiskLevel: riskLevel, Status: status, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, SnapshotHash: snapshotHash(string(snapshotJSON)), ExpiresAt: expiresAt, CreatedAt: now, UpdatedAt: now}
+	action := Action{ID: NewID("act"), TraceID: trace, RunID: runIDFromContext(ctx), ConversationID: conversationID, UserID: userID, Kind: kind, RiskLevel: riskLevel, Status: status, SnapshotJSON: string(snapshotJSON), Snapshot: snapshot, SnapshotHash: snapshotHash(string(snapshotJSON)), ExpiresAt: expiresAt, CreatedAt: now, UpdatedAt: now}
 	if err := s.repo.CreateAction(ctx, action); err != nil {
 		return Action{}, trace, err
 	}
 	return action.Public(), trace, nil
 }
 
-func (s *Service) Message(ctx context.Context, userID, conversationID, text string) (MessageResult, string, error) {
+func (s *Service) Message(ctx context.Context, userID, conversationID, text string) (result MessageResult, resultTrace string, resultErr error) {
 	if strings.TrimSpace(text) == "" || len([]rune(text)) > 500 {
 		return MessageResult{}, "", ErrInvalidArgument
 	}
@@ -350,12 +350,38 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 	}); err != nil {
 		return MessageResult{}, trace, err
 	}
-	if err := s.audit(ctx, trace, conversationID, "", "agent_run_started", "succeeded", "system", nil, now); err != nil {
+	ctx, err = s.beginRun(ctx, userID, conversationID, trace, runID, now)
+	if err != nil {
 		return MessageResult{}, trace, err
 	}
+	defer func() {
+		finalCtx := context.WithoutCancel(ctx)
+		controlled, ok, stateErr := s.controlledRunResult(finalCtx, userID, runID)
+		if stateErr != nil {
+			return
+		}
+		if ok {
+			if result.Action != nil {
+				_, _ = s.repo.CancelAction(finalCtx, result.Action.ID, s.now())
+			}
+			result, resultTrace, resultErr = controlled, trace, nil
+			return
+		}
+		status := RunStatusCompleted
+		if resultErr != nil {
+			status = RunStatusFailed
+		}
+		result.RunID, result.RunStatus = runID, status
+		_ = s.finishRun(finalCtx, userID, runID, status, resultErr)
+	}()
 	continuation := strings.TrimSpace(text)
 	if len(history) > 0 && len([]rune(text)) <= 50 && isStandaloneFollowUp(text) {
 		continuation = history[len(history)-1] + " " + continuation
+	}
+	if controlled, ok, err := s.controlledRunResult(ctx, userID, runID); err != nil {
+		return MessageResult{}, trace, err
+	} else if ok {
+		return controlled, trace, nil
 	}
 	if suspiciousInputPattern.MatchString(text) {
 		if err := s.repo.RecordSecurityFailure(ctx, userID, "suspicious_input", now); err != nil {
@@ -617,6 +643,11 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		}
 		plan, modelErr := s.model.Plan(ctx, text, history)
 		if modelErr == nil && plan.Intent != "unknown" {
+			if controlled, ok, err := s.controlledRunResult(ctx, userID, runID); err != nil {
+				return MessageResult{}, trace, err
+			} else if ok {
+				return controlled, trace, nil
+			}
 			result, handled, err := s.handleIntentPlan(ctx, userID, conversationID, runID, plan, trace)
 			if err != nil {
 				return MessageResult{}, trace, err
@@ -1575,7 +1606,9 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 func (s *Service) audit(ctx context.Context, trace, conversation, action, event, outcome, actor string, detail map[string]any, now time.Time) error {
 	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	return s.repo.AddAudit(auditCtx, newAuditEvent(trace, conversation, action, event, outcome, actor, detail, now))
+	audit := newAuditEvent(trace, conversation, action, event, outcome, actor, detail, now)
+	audit.RunID = runIDFromContext(ctx)
+	return s.repo.AddAudit(auditCtx, audit)
 }
 
 func newAuditEvent(trace, conversation, action, event, outcome, actor string, detail map[string]any, now time.Time) AuditEvent {

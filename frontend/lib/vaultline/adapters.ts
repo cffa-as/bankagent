@@ -6,6 +6,8 @@ import type {
   JsonObject,
   LiveActivityEvent,
   MessageResult,
+  Run,
+  RunRollbackResult,
   Workflow,
   WorkflowAdvanceResult,
 } from './types'
@@ -17,6 +19,10 @@ import type {
 export interface VaultlineAdapter {
   createConversation(key?: string): Promise<Conversation>
   sendMessage(conversationId: string, content: string, key: string): Promise<MessageResult>
+  getRun(runId: string): Promise<Run>
+  interruptRun(runId: string, reason: string, key: string): Promise<Run>
+  handoffRun(runId: string, reason: string, key: string): Promise<Run>
+  rollbackRun(runId: string, key: string): Promise<RunRollbackResult>
   streamConversationEvents(
     conversationId: string,
     signal: AbortSignal,
@@ -39,6 +45,10 @@ export interface VaultlineAdapter {
 export const liveAdapter: VaultlineAdapter = {
   createConversation: api.createConversation,
   sendMessage: api.sendMessage,
+  getRun: api.getRun,
+  interruptRun: api.interruptRun,
+  handoffRun: api.handoffRun,
+  rollbackRun: api.rollbackRun,
   streamConversationEvents: api.streamConversationEvents,
   getAction: api.getAction,
   confirmAction: api.confirmAction,

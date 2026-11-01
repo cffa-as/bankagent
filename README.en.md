@@ -106,6 +106,8 @@ The product is designed as a regulated banking control surface, not a generic AI
 - **Idempotency** — confirmation and execution use idempotency keys to prevent duplicate side effects.
 - **Audit** — decisions, authorization evidence, and receipts are linked by Trace ID with sensitive fields redacted.
 - **Failure safety** — cancellation, expiry, MFA failure, insufficient balance, and unknown receipts have explicit states.
+- **Run controls** — users can stop a run, hand it to a human, or roll back pending actions; executed money movements require review or compensation instead of silent reversal.
+- **Channel adapter** — the web workspace and APP/IM gateways share the same Agent API through the controlled `/v1/channels/{channel}/messages` surface.
 
 ## Product film
 
@@ -178,6 +180,7 @@ Open <http://localhost:3000>. The demo identity is `Bearer demo-user-1`; the moc
 
 | Document | Purpose |
 | --- | --- |
+| [Project introduction](docs/作品简介.md) | Submission-ready Chinese project introduction |
 | [Product requirements](docs/产品需求.md) | Users, scenarios, capabilities, and interaction requirements |
 | [High-level design](docs/概要设计.md) | Data model, API, database, and key flows |
 | [OpenAPI](docs/openapi.yaml) | Shared machine-readable API contract |

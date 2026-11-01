@@ -23,6 +23,7 @@ export type ThreadItem =
 
 export type ConnectionState = 'idle' | 'connected' | 'unavailable'
 export type Gate = 'confirm' | 'mfa' | 'cancel' | 'trigger'
+export type RunControl = 'interrupt' | 'handoff' | 'rollback'
 
 export interface GateError {
   gate: Gate
@@ -34,6 +35,48 @@ const POLL_INTERVAL_MS = 2500
 
 let seq = 0
 const localId = () => `m${Date.now().toString(36)}${(seq++).toString(36)}`
+
+const ACTIVITY_PRIORITY: Record<string, number> = {
+  agent_run_started: 0,
+  model_plan_requested: 10,
+  model_plan_validated: 20,
+  model_plan_rejected: 20,
+  model_plan_unknown: 20,
+  suspicious_input_detected: 30,
+  balance_queried: 40,
+  transactions_queried: 40,
+  bill_analyzed: 40,
+  investment_products_queried: 40,
+  investment_holdings_queried: 40,
+  cards_queried: 40,
+  subscriptions_queried: 40,
+  subscription_reminders_queried: 40,
+  model_liquidity_simulation_selected: 40,
+  liquidity_simulation_completed: 45,
+  action_created: 50,
+  confirmation_succeeded: 55,
+  mfa_succeeded: 55,
+  authorization_gate_passed: 60,
+  action_scheduled: 65,
+  action_succeeded: 70,
+  action_failed: 70,
+  action_cancelled: 70,
+  action_expired: 70,
+  run_failed: 90,
+  run_completed: 90,
+  run_interrupted: 95,
+  run_human_handoff: 95,
+  run_rollback_completed: 96,
+}
+
+function orderActivity(events: LiveActivityEvent[]) {
+  return [...events].sort((left, right) => {
+    const byTime = Date.parse(left.occurredAt) - Date.parse(right.occurredAt)
+    if (byTime !== 0) return byTime
+    const byPriority = (ACTIVITY_PRIORITY[left.eventType] ?? 50) - (ACTIVITY_PRIORITY[right.eventType] ?? 50)
+    return byPriority !== 0 ? byPriority : left.eventId.localeCompare(right.eventId)
+  })
+}
 
 export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
   const [connection, setConnection] = useState<ConnectionState>('idle')
@@ -48,6 +91,7 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
   const [traces, setTraces] = useState<string[]>([])
   const [liquidity, setLiquidity] = useState<LiquiditySimulation | null>(null)
   const [activity, setActivity] = useState<LiveActivityEvent[]>([])
+  const [runControl, setRunControl] = useState<{ kind: RunControl; runId: string } | null>(null)
 
   /** Bumped on reset so late responses from an abandoned session are dropped. */
   const epochRef = useRef(0)
@@ -149,7 +193,7 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
                 ) {
                   return
                 }
-                const next = [...activityRef.current, event]
+                const next = orderActivity([...activityRef.current, event])
                 activityRef.current = next
                 setActivity(next)
                 setThread((prev) => {
@@ -192,6 +236,7 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
                   {
                     eventId: `${resultTraceId}:${event.sequence ?? index}`,
                     traceId: resultTraceId,
+                    runId: event.run_id,
                     actionId: event.action_id,
                     eventType: event.event_type,
                     outcome: event.outcome ?? 'unknown',
@@ -200,7 +245,7 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
                 ]
               })
               const merged = recovered.length
-                ? [...activityRef.current.filter((event) => event.traceId !== resultTraceId), ...recovered]
+                ? orderActivity([...activityRef.current.filter((event) => event.traceId !== resultTraceId), ...recovered])
                 : activityRef.current
               activityRef.current = merged
               setActivity(merged)
@@ -278,6 +323,105 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
       void deliver(text, key)
     },
     [deliver, sending, thread],
+  )
+
+  const appendControlNotice = useCallback((error: unknown) => {
+    const apiError = toApiError(error)
+    setConnection(apiError.kind === 'unavailable' ? 'unavailable' : 'connected')
+    rememberTrace(apiError.traceId)
+    setThread((prev) => [
+      ...prev,
+      {
+        id: localId(),
+        role: 'notice',
+        state: mapApiError(apiError),
+        code: apiError.code,
+        traceId: apiError.traceId,
+        retry: null,
+        at: Date.now(),
+      },
+    ])
+  }, [rememberTrace])
+
+  const interruptRun = useCallback(async () => {
+    const runId = activityRef.current.find((event) => event.runId)?.runId
+    if (!runId || runControl) return
+    const epoch = epochRef.current
+    setRunControl({ kind: 'interrupt', runId })
+    try {
+      const run = await adapter.interruptRun(runId, '用户停止当前运行', newIdempotencyKey())
+      if (epoch !== epochRef.current) return
+      setConnection('connected')
+      rememberTrace(run.trace_id)
+    } catch (error) {
+      if (epoch === epochRef.current) appendControlNotice(error)
+    } finally {
+      if (epoch === epochRef.current) setRunControl(null)
+    }
+  }, [adapter, appendControlNotice, rememberTrace, runControl])
+
+  const handoffRun = useCallback(async () => {
+    const runId = activityRef.current.find((event) => event.runId)?.runId
+    if (!runId || runControl) return
+    const epoch = epochRef.current
+    setRunControl({ kind: 'handoff', runId })
+    try {
+      const run = await adapter.handoffRun(runId, '用户请求人工接管', newIdempotencyKey())
+      if (epoch !== epochRef.current) return
+      setConnection('connected')
+      rememberTrace(run.trace_id)
+    } catch (error) {
+      if (epoch === epochRef.current) appendControlNotice(error)
+    } finally {
+      if (epoch === epochRef.current) setRunControl(null)
+    }
+  }, [adapter, appendControlNotice, rememberTrace, runControl])
+
+  const rollbackRun = useCallback(
+    async (runId: string) => {
+      if (!runId || runControl) return
+      const epoch = epochRef.current
+      setRunControl({ kind: 'rollback', runId })
+      try {
+        const result = await adapter.rollbackRun(runId, newIdempotencyKey())
+        if (epoch !== epochRef.current) return
+        setConnection('connected')
+        rememberTrace(result.run.trace_id)
+        setActions((prev) => {
+          const next = { ...prev }
+          for (const actionId of result.cancelled_action_ids) {
+            if (next[actionId]) next[actionId] = { ...next[actionId], status: 'cancelled' }
+          }
+          return next
+        })
+        const reviewRequired = result.review_action_ids.length > 0
+        setThread((prev) => [
+          ...prev,
+          {
+            id: localId(),
+            role: 'notice',
+            state: {
+              title: reviewRequired ? '部分动作需要人工复核' : '待执行内容已撤销',
+              body: reviewRequired
+                ? `已取消 ${result.cancelled_action_ids.length} 个待执行动作；${result.review_action_ids.length} 个已执行或处理中动作不能静默冲正，已进入人工复核。`
+                : `服务端已取消 ${result.cancelled_action_ids.length} 个待执行动作，账户未发生新的扣款。`,
+              tone: reviewRequired ? 'held' : 'done',
+              retryable: false,
+              requiresNewRequest: false,
+            },
+            code: null,
+            traceId: result.run.trace_id,
+            retry: null,
+            at: Date.now(),
+          },
+        ])
+      } catch (error) {
+        if (epoch === epochRef.current) appendControlNotice(error)
+      } finally {
+        if (epoch === epochRef.current) setRunControl(null)
+      }
+    },
+    [adapter, appendControlNotice, rememberTrace, runControl],
   )
 
   const runGate = useCallback(
@@ -377,6 +521,7 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
     setTraces([])
     setLiquidity(null)
     setActivity([])
+    setRunControl(null)
   }, [])
 
   /** The user request that produced a given action, so “修改请求” can return it to the composer. */
@@ -401,6 +546,8 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
     return tone === 'confirm' || tone === 'mfa'
   }, [activeAction?.status])
 
+  const activeRunId = useMemo(() => activity.find((event) => event.runId)?.runId ?? null, [activity])
+
   return {
     adapter,
     connection,
@@ -408,6 +555,8 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
     thread,
     sending,
     activity,
+    activeRunId,
+    runControl,
     actions,
     activeAction,
     activeActionId,
@@ -423,6 +572,9 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
     awaitingUser,
     send,
     retry,
+    interruptRun,
+    handoffRun,
+    rollbackRun,
     confirm,
     verifyMfa,
     cancel,

@@ -148,6 +148,12 @@ func ensureSchema(db *sql.DB) error {
 	if err := ensureColumn(db, "actions", "snapshot_hash", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := ensureColumn(db, "actions", "run_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_actions_run ON actions(run_id, created_at)`); err != nil {
+		return err
+	}
 	if err := ensureColumn(db, "audit_events", "run_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
@@ -208,7 +214,7 @@ AFTER INSERT ON actions
 BEGIN
     INSERT INTO audit_events(id,trace_id,run_id,conversation_id,action_id,event_type,outcome,actor,policy_version,detail_json,occurred_at,sequence)
     VALUES(
-        'evt_' || lower(hex(randomblob(8))), NEW.trace_id, '', NEW.conversation_id, NEW.id,
+        'evt_' || lower(hex(randomblob(8))), NEW.trace_id, NEW.run_id, NEW.conversation_id, NEW.id,
         'action_created', 'succeeded', 'system', 'bankagent-policy-v1',
         json_object('kind',NEW.kind,'risk_level',NEW.risk_level,'snapshot_hash',NEW.snapshot_hash,'workflow_id',json_extract(NEW.snapshot_json,'$.workflow_id')),
         NEW.created_at,
@@ -221,7 +227,7 @@ WHEN OLD.status<>NEW.status
 BEGIN
     INSERT INTO audit_events(id,trace_id,run_id,conversation_id,action_id,event_type,outcome,actor,policy_version,detail_json,occurred_at,sequence)
     VALUES(
-        'evt_' || lower(hex(randomblob(8))), NEW.trace_id, '', NEW.conversation_id, NEW.id,
+        'evt_' || lower(hex(randomblob(8))), NEW.trace_id, NEW.run_id, NEW.conversation_id, NEW.id,
         CASE
             WHEN OLD.status IN ('awaiting_confirmation','awaiting_mfa') AND NEW.status='executing' THEN 'authorization_gate_passed'
             WHEN OLD.status IN ('awaiting_confirmation','awaiting_mfa') AND NEW.status='scheduled' THEN 'action_scheduled'
@@ -287,6 +293,19 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
     role TEXT NOT NULL,
     text TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS runs (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    handoff_to TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    finished_at TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS accounts (
@@ -382,6 +401,7 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
 CREATE TABLE IF NOT EXISTS actions (
     id TEXT PRIMARY KEY,
     trace_id TEXT NOT NULL DEFAULT '',
+    run_id TEXT NOT NULL DEFAULT '',
     conversation_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -474,6 +494,8 @@ CREATE TABLE IF NOT EXISTS security_failures (
     occurred_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_actions_user ON actions(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_runs_conversation ON runs(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages ON conversation_messages(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_cashflow_events_user ON cashflow_events(user_id, expected_at);
 CREATE INDEX IF NOT EXISTS idx_liquidity_simulations_user ON liquidity_simulations(user_id, created_at);

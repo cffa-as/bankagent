@@ -12,6 +12,8 @@ import type {
   MfaState,
   QueryKind,
   QueryResult,
+  Run,
+  RunRollbackResult,
   Workflow,
   WorkflowAdvanceResult,
   WorkflowNode,
@@ -322,6 +324,8 @@ export function normalizeMessage(value: unknown, traceId: string | null): Messag
   const query = normalizeMessageQuery(source)
 
   return {
+    run_id: asText(source.run_id),
+    run_status: asText(source.run_status),
     reply_type: replyType,
     reply_text: asText(pick(source, 'reply_text', 'text', 'message')),
     action: normalizeAction(source.action, traceId),
@@ -369,6 +373,7 @@ export function normalizeAudit(value: unknown, traceId: string): AuditTrace {
       if (!event || !type) return null
       return {
         sequence: asNumber(pick(event, 'sequence', 'seq')),
+        run_id: asText(event.run_id),
         event_type: type,
         actor: asText(event.actor),
         outcome: asText(pick(event, 'outcome', 'result', 'decision')),
@@ -381,4 +386,32 @@ export function normalizeAudit(value: unknown, traceId: string): AuditTrace {
     .filter((e): e is AuditEvent => e !== null)
     .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
   return { trace_id: asText(source?.trace_id) ?? traceId, events }
+}
+
+export function normalizeRun(value: unknown, traceId: string | null): Run | null {
+  const source = asObject(value)
+  const id = asText(source?.run_id)
+  if (!source || !id) return null
+  return {
+    run_id: id,
+    conversation_id: asText(source.conversation_id) ?? '',
+    trace_id: asText(source.trace_id) ?? traceId ?? '',
+    status: asText(source.status) ?? 'unknown',
+    reason: asText(source.reason),
+    handoff_to: asText(source.handoff_to),
+    created_at: asText(source.created_at),
+    updated_at: asText(source.updated_at),
+    finished_at: asText(source.finished_at),
+  }
+}
+
+export function normalizeRunRollback(value: unknown, traceId: string | null): RunRollbackResult | null {
+  const source = asObject(value)
+  const run = normalizeRun(source?.run, traceId)
+  if (!source || !run) return null
+  return {
+    run,
+    cancelled_action_ids: asArray(source.cancelled_action_ids).map(asText).filter((id): id is string => Boolean(id)),
+    review_action_ids: asArray(source.review_action_ids).map(asText).filter((id): id is string => Boolean(id)),
+  }
 }

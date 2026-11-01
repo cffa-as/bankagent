@@ -165,12 +165,32 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, userID, path str
 		h.createConversation(w, r, userID)
 		return
 	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/channels/") && strings.HasSuffix(path, "/messages") {
+		h.channelMessage(w, r, userID, path)
+		return
+	}
 	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/conversations/") && strings.HasSuffix(path, "/messages") {
 		h.message(w, r, userID, path)
 		return
 	}
 	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/conversations/") && strings.HasSuffix(path, "/events") {
 		h.conversationEvents(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/runs/") {
+		h.getRun(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/runs/") && strings.HasSuffix(path, "/interrupt") {
+		h.interruptRun(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/runs/") && strings.HasSuffix(path, "/handoff") {
+		h.handoffRun(w, r, userID, path)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/runs/") && strings.HasSuffix(path, "/rollback") {
+		h.rollbackRun(w, r, userID, path)
 		return
 	}
 	if r.Method == http.MethodGet && path == "/v1/investments/products" {
@@ -338,9 +358,40 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID, path s
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (h *Handler) channelMessage(w http.ResponseWriter, r *http.Request, userID, path string) {
+	channel := segment(path, 2)
+	if channel != "app" && channel != "im" && channel != "wecom" && channel != "feishu" && channel != "dingtalk" {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "不支持的渠道", "tr_channel")
+		return
+	}
+	var request struct {
+		ConversationID string `json:"conversation_id"`
+		Text           string `json:"text"`
+	}
+	if _, err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_channel")
+		return
+	}
+	if strings.TrimSpace(request.ConversationID) == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "缺少 conversation_id", "tr_channel")
+		return
+	}
+	result, trace, err := h.service.Message(r.Context(), userID, request.ConversationID, request.Text)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(map[string]any{
+		"channel":         channel,
+		"conversation_id": request.ConversationID,
+		"message":         result,
+	}, trace))
+}
+
 type liveAuditEvent struct {
 	ID         string    `json:"event_id"`
 	TraceID    string    `json:"trace_id"`
+	RunID      string    `json:"run_id,omitempty"`
 	ActionID   string    `json:"action_id,omitempty"`
 	EventType  string    `json:"event_type"`
 	Outcome    string    `json:"outcome"`
@@ -409,6 +460,7 @@ func (h *Handler) conversationEvents(w http.ResponseWriter, r *http.Request, use
 				if err := writeSSE(w, "step", liveAuditEvent{
 					ID:         event.ID,
 					TraceID:    event.TraceID,
+					RunID:      event.RunID,
 					ActionID:   event.ActionID,
 					EventType:  event.EventType,
 					Outcome:    event.Outcome,
@@ -420,6 +472,78 @@ func (h *Handler) conversationEvents(w http.ResponseWriter, r *http.Request, use
 			}
 		}
 	}
+}
+
+func (h *Handler) getRun(w http.ResponseWriter, r *http.Request, userID, path string) {
+	run, err := h.service.GetRun(r.Context(), userID, segment(path, 2))
+	if err != nil {
+		writeServiceError(w, err, "tr_run")
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(run, run.TraceID))
+}
+
+func (h *Handler) interruptRun(w http.ResponseWriter, r *http.Request, userID, path string) {
+	reason, err := readRunReason(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_run")
+		return
+	}
+	run, trace, err := h.service.InterruptRun(r.Context(), userID, segment(path, 2), reason)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(run, trace))
+}
+
+func (h *Handler) handoffRun(w http.ResponseWriter, r *http.Request, userID, path string) {
+	reason, err := readRunReason(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_run")
+		return
+	}
+	run, trace, err := h.service.HandoffRun(r.Context(), userID, segment(path, 2), reason)
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(run, trace))
+}
+
+func (h *Handler) rollbackRun(w http.ResponseWriter, r *http.Request, userID, path string) {
+	body, err := readBody(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请求体无效", "tr_run")
+		return
+	}
+	if len(bytes.TrimSpace(body)) != 0 && string(bytes.TrimSpace(body)) != "{}" {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "撤销请求不接受字段", "tr_run")
+		return
+	}
+	result, trace, err := h.service.RollbackRun(r.Context(), userID, segment(path, 2))
+	if err != nil {
+		writeServiceError(w, err, trace)
+		return
+	}
+	writeJSON(w, http.StatusOK, envelope(result, trace))
+}
+
+func readRunReason(r *http.Request) (string, error) {
+	body, err := readBody(r)
+	if err != nil {
+		return "", err
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return "", nil
+	}
+	var request struct {
+		Reason string `json:"reason"`
+	}
+	if err := decodeBody(body, &request); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(request.Reason), nil
 }
 
 func (h *Handler) createTransfer(w http.ResponseWriter, r *http.Request, userID string) {
@@ -1064,6 +1188,8 @@ func writeServiceError(w http.ResponseWriter, err error, trace string) {
 		writeError(w, http.StatusGone, "ACTION_EXPIRED", "动作已过期", trace)
 	case errors.Is(err, domain.ErrActionStateConflict):
 		writeError(w, http.StatusConflict, "ACTION_STATE_CONFLICT", "动作当前状态不允许此操作", trace)
+	case errors.Is(err, domain.ErrRunStateConflict):
+		writeError(w, http.StatusConflict, "RUN_STATE_CONFLICT", "运行当前状态不允许此操作", trace)
 	case errors.Is(err, domain.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "幂等键已用于不同请求", trace)
 	case errors.Is(err, domain.ErrBudgetNotReserved):

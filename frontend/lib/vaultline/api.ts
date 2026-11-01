@@ -7,6 +7,8 @@ import {
   normalizeErrorBody,
   normalizeLiquidity,
   normalizeMessage,
+  normalizeRun,
+  normalizeRunRollback,
   normalizeWorkflow,
   normalizeWorkflowList,
 } from './normalize'
@@ -17,6 +19,8 @@ import type {
   JsonObject,
   LiveActivityEvent,
   MessageResult,
+  Run,
+  RunRollbackResult,
   Workflow,
   WorkflowAdvanceResult,
 } from './types'
@@ -131,6 +135,24 @@ export async function sendMessage(conversationId: string, content: string, key: 
   return normalizeMessage(data, traceId)
 }
 
+/* ---------- Runs ---------- */
+
+async function runCall(method: 'GET' | 'POST', path: string, body: unknown, key: string): Promise<Run> {
+  const { data, traceId } = await call(method, path, body, key)
+  return requireValue(normalizeRun(data, traceId), ' run_id')
+}
+
+export const getRun = (id: string) => runCall('GET', `/v1/runs/${seg(id)}`, undefined, '')
+export const interruptRun = (id: string, reason: string, key: string) =>
+  runCall('POST', `/v1/runs/${seg(id)}/interrupt`, { reason }, key)
+export const handoffRun = (id: string, reason: string, key: string) =>
+  runCall('POST', `/v1/runs/${seg(id)}/handoff`, { reason }, key)
+
+export async function rollbackRun(id: string, key: string): Promise<RunRollbackResult> {
+  const { data, traceId } = await call('POST', `/v1/runs/${seg(id)}/rollback`, {}, key)
+  return requireValue(normalizeRunRollback(data, traceId), ' run_id')
+}
+
 /**
  * Consume the conversation audit stream with a bearer-authenticated fetch.
  * Native EventSource cannot set Authorization, so frames are parsed from ReadableStream.
@@ -205,6 +227,7 @@ export async function streamConversationEvents(
         onEvent({
           eventId,
           traceId,
+          runId: asText(source?.run_id),
           actionId: asText(source?.action_id),
           eventType,
           outcome: asText(source?.outcome) ?? 'unknown',

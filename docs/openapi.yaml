@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: bankagent API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     银行 AI 智能体公开 HTTP API。所有业务操作运行在本地演示账本上。
     LLM 只产生结构化意图和候选计划；授权、风险、动作状态和业务结果由 Go 服务端决定。
@@ -117,13 +117,169 @@ paths:
                 data: {"conversation_id":"conv_demo"}
 
                 event: step
-                data: {"event_id":"evt_demo","trace_id":"tr_demo","event_type":"agent_run_started","outcome":"succeeded","occurred_at":"2026-10-31T12:00:00Z"}
+                data: {"event_id":"evt_demo","trace_id":"tr_demo","run_id":"run_demo","event_type":"agent_run_started","outcome":"succeeded","occurred_at":"2026-10-31T12:00:00Z"}
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/channels/{channel}/messages:
+    post:
+      tags: [Conversations]
+      summary: 从 APP 或 IM 网关提交消息
+      description: |
+        同一 Banking Agent 的受控渠道适配入口。渠道网关必须先完成终端用户认证，
+        只使用服务端签发的演示 Bearer 身份调用；`conversation_id` 由渠道会话映射维护。
+        当前支持 `app`、`im`、`wecom`、`feishu` 和 `dingtalk` 标签，不包含各平台原始 Webhook 验签。
+      operationId: createChannelMessage
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema: { type: string, enum: [app, im, wecom, feishu, dingtalk] }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelMessageRequest'
+      responses:
+        '200':
+          description: 渠道消息已处理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeChannelMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /v1/runs/{run_id}:
+    get:
+      tags: [Conversations]
+      summary: 查询 Agent 运行状态
+      description: 返回运行归属、状态、人工接管信息和结束时间。
+      operationId: getRun
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+      responses:
+        '200':
+          description: 运行状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeRun'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/runs/{run_id}/interrupt:
+    post:
+      tags: [Conversations]
+      summary: 停止当前 Agent 运行
+      description: 只允许 `running` 运行进入 `interrupted`。已在创建但尚未执行的 Action 不会返回给客户端，后续工具调用被阻止。
+      operationId: interruptRun
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunControlRequest'
+      responses:
+        '200':
+          description: 运行已停止
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/runs/{run_id}/handoff:
+    post:
+      tags: [Conversations]
+      summary: 转人工接管
+      description: 只允许 `running` 运行进入 `human_handoff`。Agent 冻结后续推进，等待人工处理。
+      operationId: handoffRun
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunControlRequest'
+      responses:
+        '200':
+          description: 已转人工接管
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /v1/runs/{run_id}/rollback:
+    post:
+      tags: [Conversations]
+      summary: 撤销运行中尚未执行的业务动作
+      description: 取消 `awaiting_confirmation`、`awaiting_mfa`、`scheduled` 动作；已经执行或处理中动作不会静默冲正，而是进入人工复核。
+      operationId: rollbackRun
+      parameters:
+        - $ref: '#/components/parameters/RunID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: 撤销结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeRunRollback'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalError'
   /v1/actions/{action_id}:
@@ -1001,6 +1157,11 @@ components:
       in: path
       required: true
       schema: { type: string, minLength: 1 }
+    RunID:
+      name: run_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
     ActionID:
       name: action_id
       in: path
@@ -1093,6 +1254,7 @@ components:
             - PERMISSION_DENIED
             - NOT_FOUND
             - ACTION_STATE_CONFLICT
+            - RUN_STATE_CONFLICT
             - IDEMPOTENCY_CONFLICT
             - IDEMPOTENCY_IN_PROGRESS
             - IDEMPOTENCY_UNAVAILABLE
@@ -1121,6 +1283,53 @@ components:
       properties:
         conversation_id: { type: string }
         created_at: { type: string, format: date-time }
+    ChannelMessageRequest:
+      type: object
+      required: [conversation_id, text]
+      additionalProperties: false
+      properties:
+        conversation_id: { type: string, minLength: 1 }
+        text: { type: string, minLength: 1, maxLength: 500 }
+    ChannelMessage:
+      type: object
+      required: [channel, conversation_id, message]
+      properties:
+        channel: { type: string, enum: [app, im, wecom, feishu, dingtalk] }
+        conversation_id: { type: string }
+        message:
+          $ref: '#/components/schemas/MessageResult'
+    Run:
+      type: object
+      required: [run_id, conversation_id, trace_id, status, created_at, updated_at]
+      properties:
+        run_id: { type: string }
+        conversation_id: { type: string }
+        trace_id: { type: string }
+        status:
+          type: string
+          enum: [running, completed, failed, interrupted, human_handoff, rolled_back, rollback_review_required]
+        reason: { type: string }
+        handoff_to: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    RunControlRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, maxLength: 200 }
+    RunRollbackResult:
+      type: object
+      required: [run, cancelled_action_ids, review_action_ids]
+      properties:
+        run:
+          $ref: '#/components/schemas/Run'
+        cancelled_action_ids:
+          type: array
+          items: { type: string }
+        review_action_ids:
+          type: array
+          items: { type: string }
     CreateMessageRequest:
       type: object
       required: [text]
@@ -1132,6 +1341,9 @@ components:
       required: [run_id, reply_type]
       properties:
         run_id: { type: string }
+        run_status:
+          type: string
+          enum: [running, completed, failed, interrupted, human_handoff, rolled_back, rollback_review_required]
         reply_type:
           type: string
           enum: [question, query_result, action_required, workflow_created, rejected]
@@ -1596,6 +1808,18 @@ components:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:
         data: { $ref: '#/components/schemas/Conversation' }
+    EnvelopeRun:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/Run' }
+    EnvelopeRunRollback:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/RunRollbackResult' }
+    EnvelopeChannelMessage:
+      allOf: [{ $ref: '#/components/schemas/Envelope' }]
+      properties:
+        data: { $ref: '#/components/schemas/ChannelMessage' }
     EnvelopeMessageResult:
       allOf: [{ $ref: '#/components/schemas/Envelope' }]
       properties:

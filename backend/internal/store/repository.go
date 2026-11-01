@@ -115,6 +115,191 @@ func (r *Repository) CreateConversation(ctx context.Context, c domain.Conversati
 	return tx.Commit()
 }
 
+func (r *Repository) CreateRun(ctx context.Context, run domain.Run, audit domain.AuditEvent) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,conversation_id,user_id,trace_id,status,reason,handoff_to,created_at,updated_at,finished_at) VALUES(?,?,?,?,?,?,?,?,?,'')`,
+		run.ID, run.ConversationID, run.UserID, run.TraceID, run.Status, run.Reason, run.HandoffTo, run.CreatedAt.Format(time.RFC3339Nano), run.UpdatedAt.Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if err := insertAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func scanRun(scanner interface{ Scan(...any) error }, userID *string) (domain.Run, error) {
+	var run domain.Run
+	var created, updated, finished string
+	if err := scanner.Scan(&run.ID, &run.ConversationID, userID, &run.TraceID, &run.Status, &run.Reason, &run.HandoffTo, &created, &updated, &finished); err != nil {
+		return run, err
+	}
+	if userID != nil {
+		run.UserID = *userID
+	}
+	var err error
+	if run.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+		return run, err
+	}
+	if run.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated); err != nil {
+		return run, err
+	}
+	if finished != "" {
+		value, err := time.Parse(time.RFC3339Nano, finished)
+		if err != nil {
+			return run, err
+		}
+		run.FinishedAt = &value
+	}
+	return run, nil
+}
+
+func (r *Repository) Run(ctx context.Context, userID, id string) (domain.Run, error) {
+	var ignoredOwner string
+	return scanRun(r.db.QueryRowContext(ctx, `SELECT id,conversation_id,user_id,trace_id,status,reason,handoff_to,created_at,updated_at,finished_at FROM runs WHERE id=? AND user_id=?`, id, userID), &ignoredOwner)
+}
+
+func (r *Repository) CompleteRun(ctx context.Context, userID, id, status, reason string, now time.Time, audit domain.AuditEvent) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE runs SET status=?,reason=?,updated_at=?,finished_at=? WHERE id=? AND user_id=? AND status=?`,
+		status, reason, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), id, userID, domain.RunStatusRunning)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return domain.ErrRunStateConflict
+	}
+	if err := insertAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *Repository) TransitionRun(ctx context.Context, userID, id, fromStatus, toStatus, reason, handoffTo string, now time.Time, audit domain.AuditEvent) (domain.Run, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	defer tx.Rollback()
+	var owner string
+	run, err := scanRun(tx.QueryRowContext(ctx, `SELECT id,conversation_id,user_id,trace_id,status,reason,handoff_to,created_at,updated_at,finished_at FROM runs WHERE id=? AND user_id=?`, id, userID), &owner)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	if run.Status == toStatus {
+		return run, tx.Commit()
+	}
+	if run.Status != fromStatus {
+		return domain.Run{}, domain.ErrRunStateConflict
+	}
+	finished := ""
+	if toStatus == domain.RunStatusInterrupted || toStatus == domain.RunStatusHumanHandoff {
+		finished = now.Format(time.RFC3339Nano)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE runs SET status=?,reason=?,handoff_to=?,updated_at=?,finished_at=? WHERE id=? AND user_id=? AND status=?`,
+		toStatus, reason, handoffTo, now.Format(time.RFC3339Nano), finished, id, userID, fromStatus); err != nil {
+		return domain.Run{}, err
+	}
+	if err := insertAudit(ctx, tx, audit); err != nil {
+		return domain.Run{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.Run{}, err
+	}
+	run.Status, run.Reason, run.HandoffTo, run.UpdatedAt = toStatus, reason, handoffTo, now
+	if finished != "" {
+		run.FinishedAt = &now
+	}
+	return run, nil
+}
+
+func (r *Repository) RollbackRun(ctx context.Context, userID, id string, now time.Time) (domain.RunRollbackResult, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.RunRollbackResult{}, err
+	}
+	defer tx.Rollback()
+	var owner string
+	run, err := scanRun(tx.QueryRowContext(ctx, `SELECT id,conversation_id,user_id,trace_id,status,reason,handoff_to,created_at,updated_at,finished_at FROM runs WHERE id=? AND user_id=?`, id, userID), &owner)
+	if err != nil {
+		return domain.RunRollbackResult{}, err
+	}
+	switch run.Status {
+	case domain.RunStatusCompleted, domain.RunStatusInterrupted, domain.RunStatusHumanHandoff, domain.RunStatusRolledBack, domain.RunStatusRollbackReviewRequired:
+	default:
+		return domain.RunRollbackResult{}, domain.ErrRunStateConflict
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id,status FROM actions WHERE run_id=? AND user_id=? ORDER BY created_at,id`, id, userID)
+	if err != nil {
+		return domain.RunRollbackResult{}, err
+	}
+	var cancelled, review []string
+	for rows.Next() {
+		var actionID, status string
+		if err := rows.Scan(&actionID, &status); err != nil {
+			rows.Close()
+			return domain.RunRollbackResult{}, err
+		}
+		switch status {
+		case "awaiting_confirmation", "awaiting_mfa", "scheduled":
+			cancelled = append(cancelled, actionID)
+		case "executing", "processing", "reconciliation_required", "succeeded":
+			review = append(review, actionID)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return domain.RunRollbackResult{}, err
+	}
+	for _, actionID := range cancelled {
+		if _, err := tx.ExecContext(ctx, `UPDATE actions SET status='cancelled',updated_at=? WHERE id=? AND user_id=? AND status IN ('awaiting_confirmation','awaiting_mfa','scheduled')`,
+			now.Format(time.RFC3339Nano), actionID, userID); err != nil {
+			return domain.RunRollbackResult{}, err
+		}
+	}
+	status := domain.RunStatusRolledBack
+	reason := "待执行动作已取消"
+	if len(review) > 0 {
+		status = domain.RunStatusRollbackReviewRequired
+		reason = "存在已执行或执行中的动作，必须进入人工复核或补偿流程"
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE runs SET status=?,reason=?,updated_at=?,finished_at=CASE WHEN finished_at='' THEN ? ELSE finished_at END WHERE id=? AND user_id=?`,
+		status, reason, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), id, userID); err != nil {
+		return domain.RunRollbackResult{}, err
+	}
+	audit := domain.AuditEvent{
+		ID: domain.NewID("evt"), TraceID: run.TraceID, RunID: run.ID, ConversationID: run.ConversationID,
+		EventType: "run_rollback_completed", Outcome: "succeeded", Actor: "user", PolicyVersion: "bankagent-policy-v1",
+		Detail: map[string]any{
+			"cancelled_action_ids": cancelled,
+			"review_action_ids":    review,
+			"rollback_status":      status,
+		},
+		OccurredAt: now, Sequence: 1,
+	}
+	if err := insertAudit(ctx, tx, audit); err != nil {
+		return domain.RunRollbackResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.RunRollbackResult{}, err
+	}
+	run.Status, run.Reason, run.UpdatedAt = status, reason, now
+	if run.FinishedAt == nil {
+		run.FinishedAt = &now
+	}
+	return domain.RunRollbackResult{Run: run, CancelledActionIDs: cancelled, ReviewActionIDs: review}, nil
+}
+
 func (r *Repository) ConversationOwner(ctx context.Context, id string) (string, error) {
 	var userID string
 	err := r.db.QueryRowContext(ctx, `SELECT user_id FROM conversations WHERE id=?`, id).Scan(&userID)
@@ -509,14 +694,14 @@ func (r *Repository) CreateAction(ctx context.Context, a domain.Action) error {
 }
 
 func insertAction(ctx context.Context, executor sqlExecutor, a domain.Action) error {
-	_, err := executor.ExecContext(ctx, `INSERT INTO actions(id,trace_id,conversation_id,user_id,kind,risk_level,status,snapshot_json,snapshot_hash,result_json,expires_at,created_at,updated_at,mfa_attempts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.TraceID, a.ConversationID, a.UserID, a.Kind, a.RiskLevel, a.Status, a.SnapshotJSON, a.SnapshotHash, a.ResultJSON, a.ExpiresAt.Format(time.RFC3339Nano), a.CreatedAt.Format(time.RFC3339Nano), a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts)
+	_, err := executor.ExecContext(ctx, `INSERT INTO actions(id,trace_id,run_id,conversation_id,user_id,kind,risk_level,status,snapshot_json,snapshot_hash,result_json,expires_at,created_at,updated_at,mfa_attempts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.TraceID, a.RunID, a.ConversationID, a.UserID, a.Kind, a.RiskLevel, a.Status, a.SnapshotJSON, a.SnapshotHash, a.ResultJSON, a.ExpiresAt.Format(time.RFC3339Nano), a.CreatedAt.Format(time.RFC3339Nano), a.UpdatedAt.Format(time.RFC3339Nano), a.MFAAttempts)
 	return err
 }
 
 func (r *Repository) Action(ctx context.Context, id string) (domain.Action, error) {
 	var a domain.Action
 	var expires, created, updated string
-	err := r.db.QueryRowContext(ctx, `SELECT id,trace_id,conversation_id,user_id,kind,risk_level,status,snapshot_json,snapshot_hash,result_json,expires_at,created_at,updated_at,mfa_attempts FROM actions WHERE id=?`, id).Scan(&a.ID, &a.TraceID, &a.ConversationID, &a.UserID, &a.Kind, &a.RiskLevel, &a.Status, &a.SnapshotJSON, &a.SnapshotHash, &a.ResultJSON, &expires, &created, &updated, &a.MFAAttempts)
+	err := r.db.QueryRowContext(ctx, `SELECT id,trace_id,run_id,conversation_id,user_id,kind,risk_level,status,snapshot_json,snapshot_hash,result_json,expires_at,created_at,updated_at,mfa_attempts FROM actions WHERE id=?`, id).Scan(&a.ID, &a.TraceID, &a.RunID, &a.ConversationID, &a.UserID, &a.Kind, &a.RiskLevel, &a.Status, &a.SnapshotJSON, &a.SnapshotHash, &a.ResultJSON, &expires, &created, &updated, &a.MFAAttempts)
 	if err != nil {
 		return a, err
 	}
@@ -997,7 +1182,7 @@ func (r *Repository) Audit(ctx context.Context, traceID string) ([]domain.AuditE
 }
 
 func (r *Repository) AuditEventsByConversation(ctx context.Context, conversationID string) ([]domain.AuditEvent, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id,trace_id,conversation_id,action_id,event_type,outcome,actor,occurred_at FROM audit_events WHERE conversation_id=? ORDER BY occurred_at,rowid`, conversationID)
+	rows, err := r.db.QueryContext(ctx, `SELECT id,trace_id,run_id,conversation_id,action_id,event_type,outcome,actor,occurred_at FROM audit_events WHERE conversation_id=? ORDER BY occurred_at,rowid`, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -1006,7 +1191,7 @@ func (r *Repository) AuditEventsByConversation(ctx context.Context, conversation
 	for rows.Next() {
 		var event domain.AuditEvent
 		var occurred string
-		if err := rows.Scan(&event.ID, &event.TraceID, &event.ConversationID, &event.ActionID, &event.EventType, &event.Outcome, &event.Actor, &occurred); err != nil {
+		if err := rows.Scan(&event.ID, &event.TraceID, &event.RunID, &event.ConversationID, &event.ActionID, &event.EventType, &event.Outcome, &event.Actor, &occurred); err != nil {
 			return nil, err
 		}
 		event.OccurredAt, err = time.Parse(time.RFC3339Nano, occurred)

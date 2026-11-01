@@ -36,10 +36,33 @@ export interface Conversation {
   conversation_id: string
 }
 
+export type RunStatus = Open<
+  'running' | 'completed' | 'failed' | 'interrupted' | 'human_handoff' | 'rolled_back' | 'rollback_review_required'
+>
+
+export interface Run {
+  run_id: string
+  conversation_id: string
+  trace_id: string
+  status: RunStatus
+  reason: string | null
+  handoff_to: string | null
+  created_at: string | null
+  updated_at: string | null
+  finished_at: string | null
+}
+
+export interface RunRollbackResult {
+  run: Run
+  cancelled_action_ids: string[]
+  review_action_ids: string[]
+}
+
 /** A server-authored audit milestone. Details stay server-side; this is not model chain-of-thought. */
 export interface LiveActivityEvent {
   eventId: string
   traceId: string
+  runId: string | null
   actionId: string | null
   eventType: string
   outcome: string
@@ -153,6 +176,8 @@ export interface Workflow {
 }
 
 export interface MessageResult {
+  run_id: string | null
+  run_status: RunStatus | null
   reply_type: ReplyType | null
   reply_text: string | null
   action: BankAction | null
@@ -174,6 +199,7 @@ export interface WorkflowAdvanceResult {
 
 export interface AuditEvent {
   sequence: number | null
+  run_id: string | null
   event_type: string
   actor: string | null
   outcome: string | null

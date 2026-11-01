@@ -110,6 +110,8 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 - **Idempotency / 幂等**：确认与执行支持幂等键，同一请求只能产生一次副作用。
 - **Audit / 审计**：决策链、授权证据和业务回执通过 Trace ID 关联，敏感字段脱敏。
 - **Failure-safe / 失败安全**：取消、过期、MFA 失败、余额不足和未知回执都有明确状态，不盲目重试。
+- **Run controls / 运行控制**：支持停止当前运行、转人工接管，以及撤销待执行动作；已执行资金动作只能进入人工复核或补偿，不能被静默冲正。
+- **Channel adapter / 渠道适配**：Web 工作台复用同一 Agent API；APP 与 IM 网关可通过受控的 `/v1/channels/{channel}/messages` 入口接入。
 
 <a id="product-film"></a>
 
@@ -190,6 +192,7 @@ pnpm dev
 
 | Document | Purpose |
 | --- | --- |
+| [作品简介](docs/作品简介.md) | 报名系统提交版项目介绍 |
 | [产品需求](docs/产品需求.md) | 用户、场景、功能和交互要求 |
 | [概要设计](docs/概要设计.md) | 数据模型、API、数据库和关键流程 |
 | [OpenAPI](docs/openapi.yaml) | 前后端共同遵循的机器可读契约 |

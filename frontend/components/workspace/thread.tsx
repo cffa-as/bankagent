@@ -5,10 +5,10 @@ import { VaultlineSeal } from '@/components/vaultline/seal'
 import { cn } from '@/lib/utils'
 import { describeKind, formatMoney } from '@/lib/vaultline/format'
 import { describeRisk, describeStatus, describeWorkflowStatus, VERDICT } from '@/lib/vaultline/status'
-import type { BankAction, MessageResult } from '@/lib/vaultline/types'
+import type { BankAction, LiveActivityEvent, MessageResult } from '@/lib/vaultline/types'
 import type { ThreadItem, WorkspaceSession } from '@/lib/vaultline/use-workspace-session'
 import { actionAmount, actionCurrency, actionTarget } from './action-snapshot'
-import { AgentStatus } from './agent-activity'
+import { AgentActivity } from './agent-activity'
 import { Callout, StatusPill } from './primitives'
 import { QueryResultView } from './query-results'
 
@@ -105,19 +105,35 @@ function AssistantShell({ children }: { children: React.ReactNode }) {
 
 function AssistantMessage({
   result,
+  activity,
   session,
   onInspectAction,
   onOpenLiquidity,
   onOpenWorkflow,
-}: { result: MessageResult } & ThreadProps) {
+}: { result: MessageResult; activity: LiveActivityEvent[] } & ThreadProps) {
   const live = result.action ? (session.actions[result.action.action_id] ?? result.action) : null
   const rejected = result.reply_type === 'rejected'
+  const activityRunId = activity.find((event) => event.runId)?.runId ?? null
+  const rollbackAvailable =
+    Boolean(activityRunId) &&
+    result.run_status === 'completed' &&
+    Boolean(live && ['awaiting_confirmation', 'awaiting_mfa', 'scheduled'].includes(live.status))
   const verdict = result.liquidity?.verdict ? VERDICT[result.liquidity.verdict] : null
   const workflowStatus = result.workflow ? describeWorkflowStatus(result.workflow.status) : null
 
   return (
     <AssistantShell>
       {result.reply_text && <p className="whitespace-pre-wrap text-pretty pt-0.5 text-[15px] leading-relaxed">{result.reply_text}</p>}
+
+      {activity.length > 0 && (
+        <AgentActivity
+          events={activity}
+          running={false}
+          runId={activityRunId}
+          control={session.runControl?.runId === activityRunId ? session.runControl.kind : null}
+          onRollback={rollbackAvailable ? () => void session.rollbackRun(activityRunId as string) : undefined}
+        />
+      )}
 
       {rejected && (
         <Callout tone="fail" title="这项业务暂时无法办理">
@@ -185,7 +201,7 @@ function Item({ item, ...props }: { item: ThreadItem } & ThreadProps) {
       </AssistantShell>
     )
   }
-  return <AssistantMessage result={item.result} {...props} />
+  return <AssistantMessage result={item.result} activity={item.activity} {...props} />
 }
 
 export function Thread(props: ThreadProps) {
@@ -197,7 +213,14 @@ export function Thread(props: ThreadProps) {
       ))}
       {session.sending && (
         <AssistantShell>
-          <AgentStatus events={session.activity} />
+          <AgentActivity
+            events={session.activity}
+            running
+            runId={session.activeRunId}
+            control={session.runControl?.runId === session.activeRunId ? session.runControl.kind : null}
+            onInterrupt={() => void session.interruptRun()}
+            onHandoff={() => void session.handoffRun()}
+          />
         </AssistantShell>
       )}
     </ol>

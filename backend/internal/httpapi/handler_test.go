@@ -29,6 +29,8 @@ type conversation struct {
 }
 
 type messageResult struct {
+	RunID     string `json:"run_id"`
+	RunStatus string `json:"run_status"`
 	ReplyType string `json:"reply_type"`
 	Action    struct {
 		ID   string `json:"action_id"`
@@ -189,6 +191,7 @@ func TestConversationEventStreamReportsServiceAuditMilestones(t *testing.T) {
 		var step struct {
 			EventID   string `json:"event_id"`
 			TraceID   string `json:"trace_id"`
+			RunID     string `json:"run_id"`
 			EventType string `json:"event_type"`
 			Outcome   string `json:"outcome"`
 		}
@@ -199,6 +202,9 @@ func TestConversationEventStreamReportsServiceAuditMilestones(t *testing.T) {
 			t.Fatalf("incomplete step metadata: %s", data)
 		}
 		if step.EventType == "agent_run_started" || step.EventType == "balance_queried" {
+			if step.RunID == "" {
+				t.Fatalf("missing run_id on run milestone: %s", data)
+			}
 			seen[step.EventType] = true
 		}
 	}
@@ -220,6 +226,168 @@ func nextSSEEvent(scanner *bufio.Scanner) (string, string, bool) {
 		}
 	}
 	return "", "", false
+}
+
+func TestRunInterruptStopsAgentBeforeAction(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-release
+		plan, err := json.Marshal(map[string]any{
+			"intent": "transfer",
+			"entities": map[string]any{
+				"beneficiary_name": "张三", "amount_minor": 20000, "remark": "interrupt test",
+			},
+			"missing_fields": []string{},
+			"candidate_plan": []map[string]string{{"kind": "transfer.prepare"}},
+		})
+		if err != nil {
+			t.Errorf("marshal plan: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": string(plan)}}}})
+	}))
+	defer modelServer.Close()
+	t.Setenv("BANKAGENT_LLM_BASE_URL", modelServer.URL)
+	t.Setenv("BANKAGENT_LLM_API_KEY", "test-key")
+	t.Setenv("BANKAGENT_LLM_MODEL", "test-model")
+
+	server, dbPath, cleanup := newServerWithClockAndPath(t, nil)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	type response struct {
+		status int
+		body   []byte
+	}
+	responseCh := make(chan response, 1)
+	go func() {
+		resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/conversations/"+conversationID+"/messages", `{"text":"帮我安排这周给张三的房租"}`, "run-interrupt-message-1")
+		responseCh <- response{status: resp.StatusCode, body: body}
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("model request did not start")
+	}
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var runID string
+	if err := db.QueryRow(`SELECT id FROM runs ORDER BY created_at DESC LIMIT 1`).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/runs/"+runID+"/interrupt", `{"reason":"用户停止"}`, "run-interrupt-control-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"interrupted"`)) {
+		t.Fatalf("interrupt run: status=%d body=%s", resp.StatusCode, raw)
+	}
+	close(release)
+	message := <-responseCh
+	if message.status != http.StatusOK || !bytes.Contains(message.body, []byte(`"run_status":"interrupted"`)) || bytes.Contains(message.body, []byte(`"action_id":"act_`)) {
+		t.Fatalf("interrupted message: status=%d body=%s", message.status, message.body)
+	}
+	var actionCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM actions WHERE run_id=?`, runID).Scan(&actionCount); err != nil {
+		t.Fatal(err)
+	}
+	if actionCount != 0 {
+		t.Fatalf("interrupted run created actions: %d", actionCount)
+	}
+	var interruptedAudit int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM audit_events WHERE run_id=? AND event_type='run_interrupted'`, runID).Scan(&interruptedAudit); err != nil {
+		t.Fatal(err)
+	}
+	if interruptedAudit != 1 {
+		t.Fatalf("missing interruption audit: %d", interruptedAudit)
+	}
+}
+
+func TestRunHandoffStopsAgentBeforeAction(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-release
+		plan, err := json.Marshal(map[string]any{
+			"intent": "transfer",
+			"entities": map[string]any{
+				"beneficiary_name": "张三", "amount_minor": 20000,
+			},
+			"missing_fields": []string{},
+			"candidate_plan": []map[string]string{{"kind": "transfer.prepare"}},
+		})
+		if err != nil {
+			t.Errorf("marshal plan: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": string(plan)}}}})
+	}))
+	defer modelServer.Close()
+	t.Setenv("BANKAGENT_LLM_BASE_URL", modelServer.URL)
+	t.Setenv("BANKAGENT_LLM_API_KEY", "test-key")
+	t.Setenv("BANKAGENT_LLM_MODEL", "test-model")
+
+	server, dbPath, cleanup := newServerWithClockAndPath(t, nil)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	responseCh := make(chan []byte, 1)
+	go func() {
+		_, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/conversations/"+conversationID+"/messages", `{"text":"帮我安排这周给张三的房租"}`, "run-handoff-message-1")
+		responseCh <- body
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("model request did not start")
+	}
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var runID string
+	if err := db.QueryRow(`SELECT id FROM runs ORDER BY created_at DESC LIMIT 1`).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/runs/"+runID+"/handoff", `{"reason":"需要人工核实"}`, "run-handoff-control-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"human_handoff"`)) || !bytes.Contains(raw, []byte(`"handoff_to":"human_agent"`)) {
+		t.Fatalf("handoff run: status=%d body=%s", resp.StatusCode, raw)
+	}
+	close(release)
+	body := <-responseCh
+	if !bytes.Contains(body, []byte(`"run_status":"human_handoff"`)) || bytes.Contains(body, []byte(`"action_id":"act_`)) {
+		t.Fatalf("handoff message: %s", body)
+	}
+}
+
+func TestRunRollbackCancelsPendingAction(t *testing.T) {
+	server, dbPath, cleanup := newServerWithClockAndPath(t, nil)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	status, result, body := sendMessage(t, server.URL, conversationID, "给张三转300元，备注撤销测试", "run-rollback-message-1")
+	if status != http.StatusOK || result.ReplyType != "action_required" || result.RunID == "" || result.Action.ID == "" {
+		t.Fatalf("create pending action: status=%d result=%+v body=%s", status, result, body)
+	}
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/runs/"+result.RunID+"/rollback", `{}`, "run-rollback-control-1")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(raw, []byte(`"status":"rolled_back"`)) || !bytes.Contains(raw, []byte(result.Action.ID)) {
+		t.Fatalf("rollback run: status=%d body=%s", resp.StatusCode, raw)
+	}
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var actionStatus string
+	if err := db.QueryRow(`SELECT status FROM actions WHERE id=?`, result.Action.ID).Scan(&actionStatus); err != nil {
+		t.Fatal(err)
+	}
+	if actionStatus != "cancelled" {
+		t.Fatalf("action status=%s", actionStatus)
+	}
 }
 
 func TestYellowTransferAndIdempotency(t *testing.T) {
@@ -491,6 +659,24 @@ func TestMessageReadOnlyQueriesUseServerData(t *testing.T) {
 		if tc.name == "subscriptions" && !bytes.Contains(body, []byte(`"reminders"`)) {
 			t.Fatalf("%s: response missing reminders: %s", tc.name, body)
 		}
+	}
+}
+
+func TestChannelAdapterRoutesToBankingAgent(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+	body := `{"conversation_id":"` + conversationID + `","text":"查一下我的余额"}`
+	resp, raw := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/channels/im/messages", body, "channel-im-message-1")
+	if resp.StatusCode != http.StatusOK ||
+		!bytes.Contains(raw, []byte(`"channel":"im"`)) ||
+		!bytes.Contains(raw, []byte(`"reply_type":"query_result"`)) ||
+		!bytes.Contains(raw, []byte(`"balance"`)) {
+		t.Fatalf("channel message: status=%d body=%s", resp.StatusCode, raw)
+	}
+	resp, raw = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/channels/unknown/messages", body, "channel-unknown-message-1")
+	if resp.StatusCode != http.StatusBadRequest || !bytes.Contains(raw, []byte("INVALID_ARGUMENT")) {
+		t.Fatalf("unknown channel: status=%d body=%s", resp.StatusCode, raw)
 	}
 }
 
