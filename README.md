@@ -84,7 +84,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 | Capability | 用户可以直接说 | 服务端必须给出 |
 | --- | --- | --- |
 | **智能转账 / Transfers** | “转 500 元给王明，备注房租” | 动作快照、风险等级、Action ID、执行回执 |
-| **账单分析 / Bill analysis** | “看看这个月钱花在哪了” | 分类统计、异常交易解释、Trace ID |
+| **账单分析 / Bill analysis** | “看看这个月钱花在哪了” | 分类统计、异常交易识别（大额偏离 / 凌晨交易 / 重复扣款 / 首次商户）、Trace ID |
 | **理财操作 / Investments** | “比较稳健型产品，申购 100 元” | 产品/持仓事实、风险分级、MFA 执行门 |
 | **卡片管理 / Card controls** | “冻结尾号 8842 的卡” | 卡片状态、授权路径、变更记录 |
 | **订阅代扣 / Subscriptions** | “找出不用的订阅并取消” | 周期扣费证据、取消快照、可审计结果 |

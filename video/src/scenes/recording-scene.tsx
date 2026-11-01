@@ -26,6 +26,74 @@ function useCamera(keys: CameraKey[]) {
 
 const TONE: Record<Tone, string> = {green: COLORS.teal, amber: COLORS.amber, red: COLORS.red, cobalt: COLORS.cobalt}
 
+type Spot = {at: number; until: number; tone: Tone; x: number; y: number; w: number; h: number}
+type Box = Pick<Spot, 'x' | 'y' | 'w' | 'h'>
+
+const BRIDGE_GAP = 1.5
+const FADE_IN = 0.5
+const FADE_OUT = 0.45
+const MAX_SPOT_ZOOM = 1.6
+
+const lerpBox = (a: Box, b: Box, p: number): Box => ({
+  x: a.x + (b.x - a.x) * p,
+  y: a.y + (b.y - a.y) * p,
+  w: a.w + (b.w - a.w) * p,
+  h: a.h + (b.h - a.h) * p,
+})
+
+/** Where the spotlight sits at a moment, and how strongly it is applied (0–1). */
+function spotFocus(spots: Spot[], seconds: number): {box: Box; tone: Tone; strength: number; key: number} | null {
+  for (let i = 0; i < spots.length; i++) {
+    const spot = spots[i]
+    const previous = spots[i - 1]
+    const next = spots[i + 1]
+    const bridgedIn = previous !== undefined && spot.at - previous.until < BRIDGE_GAP
+    const bridgedOut = next !== undefined && next.at - spot.until < BRIDGE_GAP
+    if (seconds >= spot.at - (bridgedIn ? 0 : 0.01) && seconds <= spot.until) {
+      const fadeIn = bridgedIn ? 1 : interpolate(seconds, [spot.at, spot.at + FADE_IN], [0, 1], clamp)
+      const fadeOut = bridgedOut ? 1 : interpolate(seconds, [spot.until - FADE_OUT, spot.until], [1, 0], clamp)
+      return {box: spot, tone: spot.tone, strength: Math.min(fadeIn, fadeOut), key: i}
+    }
+    if (bridgedOut && next && seconds > spot.until && seconds < next.at) {
+      const p = interpolate(seconds, [spot.until, next.at], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)})
+      return {box: lerpBox(spot, next, p), tone: p < 0.5 ? spot.tone : next.tone, strength: 1, key: i}
+    }
+  }
+  return null
+}
+
+function spotCamera(box: Box) {
+  const zoom = Math.min(MAX_SPOT_ZOOM, Math.max(1, Math.min((CONTENT_W * 0.6) / box.w, (CONTENT_H * 0.62) / box.h)))
+  const half = 0.5 / zoom
+  return {
+    zoom,
+    x: Math.min(1 - half, Math.max(half, (box.x + box.w / 2) / CONTENT_W)),
+    y: Math.min(1 - half, Math.max(half, (box.y + box.h / 2) / CONTENT_H)),
+  }
+}
+
+const Spotlight = ({box, tone, strength}: {box: Box; tone: Tone; strength: number}) => {
+  const color = TONE[tone]
+  const ring = interpolate(strength, [0, 1], [1.035, 1], clamp)
+  return (
+    <div
+      style={{
+        border: `2px solid ${color}`,
+        borderRadius: 12,
+        boxShadow: `0 0 0 4000px rgba(7, 17, 31, ${0.52 * strength}), 0 0 0 6px ${color}2e, 0 0 48px ${color}66`,
+        height: box.h,
+        left: box.x,
+        opacity: strength,
+        pointerEvents: 'none',
+        position: 'absolute',
+        top: CHROME_H + box.y,
+        transform: `scale(${ring})`,
+        width: box.w,
+      }}
+    />
+  )
+}
+
 const ChapterRail = ({chapter}: {chapter: string}) => {
   const frame = useCurrentFrame()
   const fill = interpolate(frame, [10, 34], [0, 1], {...clamp, easing: Easing.out(Easing.cubic)})
@@ -108,9 +176,16 @@ export const RecordingScene = ({
 }) => {
   const frame = useCurrentFrame()
   const {fps} = useVideoConfig()
-  const clip = timeline.clips[id as keyof typeof timeline.clips]
-  const {zoom, x, y} = useCamera(camera)
+  const clip = timeline.clips[id as keyof typeof timeline.clips] as {src: string; trimBeforeSeconds: number; spots?: Spot[]}
+  const base = useCamera(camera)
   const seconds = frame / fps
+  const spots = (clip.spots ?? []).map((spot) => ({...spot, at: spot.at / speed, until: spot.until / speed}))
+  const focus = spotFocus(spots, seconds)
+  const focusCamera = focus ? spotCamera(focus.box) : null
+  const pull = focus ? Easing.inOut(Easing.cubic)(focus.strength) : 0
+  const zoom = focusCamera ? base.zoom + (focusCamera.zoom - base.zoom) * pull : base.zoom
+  const x = focusCamera ? base.x + (focusCamera.x - base.x) * pull : base.x
+  const y = focusCamera ? base.y + (focusCamera.y - base.y) * pull : base.y
   const activeNote = notes.find((note) => seconds >= note.at && seconds < note.until)
   const noteSide = activeNote && interpolate(activeNote.at, camera.map((key) => key.at), camera.map((key) => key.x), clamp) > 0.62 ? 'left' : 'right'
   const enter = spring({fps, frame, config: {damping: 200}, durationInFrames: 22})
@@ -182,6 +257,7 @@ export const RecordingScene = ({
             muted
             style={{display: 'block', height: CONTENT_H, width: CONTENT_W}}
           />
+          {focus && <Spotlight box={focus.box} tone={focus.tone} strength={focus.strength} />}
         </div>
 
         <div

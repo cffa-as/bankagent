@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/cffa-as/bankagent/internal/domain"
@@ -81,15 +83,41 @@ func (r *Repository) Seed(ctx context.Context, now time.Time) error {
 			return fmt.Errorf("seed cashflow event: %w", err)
 		}
 	}
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return err
+	}
+	local := now.In(loc)
+	monthStart := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, loc)
+	// Seed spending must land in the current month, otherwise early-month demos show an empty bill.
+	inMonth := func(back time.Duration, fallback float64) time.Time {
+		at := now.Add(-back)
+		if at.Before(monthStart) {
+			at = monthStart.Add(time.Duration(float64(now.Sub(monthStart)) * fallback))
+		}
+		return at
+	}
+	lateNight := time.Date(local.Year(), local.Month(), local.Day(), 3, 12, 0, 0, loc)
+	if lateNight.After(now) {
+		lateNight = lateNight.AddDate(0, 0, -1)
+	}
+	if lateNight.Before(monthStart) {
+		lateNight = monthStart.Add(now.Sub(monthStart) / 2)
+	}
+	duplicateAt := inMonth(30*time.Hour, 0.55)
 	entries := []struct {
 		id, category, description string
 		amount                    int64
 		at                        time.Time
 	}{
-		{"txn_seed_food", "food", "晚餐消费", 9800, now.Add(-48 * time.Hour)},
-		{"txn_seed_transport", "transport", "打车消费", 3200, now.Add(-36 * time.Hour)},
-		{"txn_seed_shopping", "shopping", "日用品消费", 12900, now.Add(-24 * time.Hour)},
-		{"txn_seed_utilities", "utilities", "生活缴费", 5600, now.Add(-12 * time.Hour)},
+		{"txn_seed_phone", "utilities", "话费充值", 10000, inMonth(6*24*time.Hour, 0.1)},
+		{"txn_seed_food", "food", "晚餐消费", 9800, inMonth(48*time.Hour, 0.3)},
+		{"txn_seed_transport", "transport", "打车消费", 3200, inMonth(36*time.Hour, 0.4)},
+		{"txn_seed_stream_1", "subscription", "视频会员续费", 2500, duplicateAt},
+		{"txn_seed_stream_2", "subscription", "视频会员续费", 2500, duplicateAt.Add(90 * time.Second)},
+		{"txn_seed_shopping", "shopping", "日用品消费", 12900, inMonth(24*time.Hour, 0.65)},
+		{"txn_seed_utilities", "utilities", "生活缴费", 5600, inMonth(12*time.Hour, 0.8)},
+		{"txn_seed_overseas", "digital", "境外商户 GLOBALPAY*DIGITAL", 238000, lateNight},
 	}
 	for _, entry := range entries {
 		_, err = r.db.ExecContext(ctx, `INSERT OR IGNORE INTO ledger_entries(id,account_id,direction,amount_minor,category,description,created_at) VALUES(?,?,?,?,?,?,?)`, entry.id, "acct_demo", "out", entry.amount, entry.category, entry.description, entry.at.Format(time.RFC3339Nano))
@@ -648,20 +676,130 @@ func (r *Repository) BillSummaryRange(ctx context.Context, userID string, start,
 			summary.Categories[i].ShareBPS = summary.Categories[i].AmountMinor * 10000 / summary.TotalMinor
 		}
 	}
-	anomalyRows, err := r.db.QueryContext(ctx, `SELECT l.id,l.amount_minor,l.category,l.description FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE a.user_id=? AND l.direction='out' AND l.amount_minor>=? AND datetime(l.created_at)>=datetime(?) AND datetime(l.created_at)<datetime(?) ORDER BY l.amount_minor DESC`, userID, int64(10000), start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
+	anomalies, err := r.detectAnomalies(ctx, userID, start, end, loc)
 	if err != nil {
 		return domain.BillSummary{}, err
 	}
-	defer anomalyRows.Close()
-	for anomalyRows.Next() {
-		var item domain.BillAnomaly
-		if err := anomalyRows.Scan(&item.TransactionID, &item.AmountMinor, &item.Category, &item.Description); err != nil {
-			return domain.BillSummary{}, err
-		}
-		item.Reason = "金额超过演示异常阈值"
-		summary.Anomalies = append(summary.Anomalies, item)
+	summary.Anomalies = anomalies
+	return summary, nil
+}
+
+type spendEntry struct {
+	id, category, description string
+	amount                    int64
+	at                        time.Time
+}
+
+// Transfers, investments and workflow orders are excluded: each one was explicitly confirmed and audited inside Vaultline.
+const anomalyEligibleFilter = `a.user_id=? AND l.direction='out' AND l.category NOT IN ('transfer','investment','workflow_order')`
+
+func (r *Repository) spendEntries(ctx context.Context, userID string, start, end time.Time) ([]spendEntry, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT l.id,l.amount_minor,l.category,l.description,l.created_at FROM ledger_entries l JOIN accounts a ON a.id=l.account_id WHERE `+anomalyEligibleFilter+` AND datetime(l.created_at)>=datetime(?) AND datetime(l.created_at)<datetime(?) ORDER BY datetime(l.created_at), l.id`, userID, start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
 	}
-	return summary, anomalyRows.Err()
+	defer rows.Close()
+	var entries []spendEntry
+	for rows.Next() {
+		var entry spendEntry
+		var createdAt string
+		if err := rows.Scan(&entry.id, &entry.amount, &entry.category, &entry.description, &createdAt); err != nil {
+			return nil, err
+		}
+		if entry.at, err = time.Parse(time.RFC3339Nano, createdAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
+func (r *Repository) detectAnomalies(ctx context.Context, userID string, start, end time.Time, loc *time.Location) ([]domain.BillAnomaly, error) {
+	history, err := r.spendEntries(ctx, userID, start.AddDate(0, 0, -90), start)
+	if err != nil {
+		return nil, err
+	}
+	period, err := r.spendEntries(ctx, userID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(history))
+	amounts := make([]int64, 0, len(history)+len(period))
+	for _, entry := range history {
+		seen[entry.description] = true
+		amounts = append(amounts, entry.amount)
+	}
+	for _, entry := range period {
+		amounts = append(amounts, entry.amount)
+	}
+	median := medianAmount(amounts)
+
+	var anomalies []domain.BillAnomaly
+	for i, entry := range period {
+		local := entry.at.In(loc)
+		var signals []string
+		severe, duplicate := false, false
+		if len(amounts) >= 5 && median > 0 && entry.amount >= 50000 && entry.amount >= 5*median {
+			signals = append(signals, fmt.Sprintf("金额是日常消费的 %d 倍", entry.amount/median))
+			severe = true
+		}
+		if local.Hour() < 5 && entry.amount >= 20000 {
+			signals = append(signals, fmt.Sprintf("凌晨 %s 发生", local.Format("15:04")))
+			severe = true
+		}
+		for j := i - 1; j >= 0; j-- {
+			previous := period[j]
+			if entry.at.Sub(previous.at) > 10*time.Minute {
+				break
+			}
+			if previous.description == entry.description && previous.amount == entry.amount {
+				signals = append(signals, fmt.Sprintf("%d 秒内重复扣款", int(entry.at.Sub(previous.at).Seconds())))
+				duplicate = true
+				break
+			}
+		}
+		if severe && !duplicate && !seen[entry.description] {
+			signals = append(signals, "首次出现的商户")
+		}
+		seen[entry.description] = true
+		if len(signals) == 0 {
+			continue
+		}
+		risk := "medium"
+		if severe && len(signals) >= 2 {
+			risk = "high"
+		}
+		anomalies = append(anomalies, domain.BillAnomaly{
+			TransactionID: entry.id,
+			AmountMinor:   entry.amount,
+			Category:      entry.category,
+			Description:   entry.description,
+			Reason:        strings.Join(signals, " · "),
+			Signals:       signals,
+			RiskLevel:     risk,
+			OccurredAt:    entry.at,
+		})
+	}
+	sort.SliceStable(anomalies, func(a, b int) bool {
+		if anomalies[a].RiskLevel != anomalies[b].RiskLevel {
+			return anomalies[a].RiskLevel == "high"
+		}
+		return anomalies[a].AmountMinor > anomalies[b].AmountMinor
+	})
+	return anomalies, nil
+}
+
+func medianAmount(values []int64) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := append([]int64(nil), values...)
+	sort.Slice(sorted, func(a, b int) bool { return sorted[a] < sorted[b] })
+	mid := len(sorted) / 2
+	if len(sorted)%2 == 0 {
+		return (sorted[mid-1] + sorted[mid]) / 2
+	}
+	return sorted[mid]
 }
 
 func (r *Repository) DailyOutgoing(ctx context.Context, userID string, day time.Time) (int64, error) {
