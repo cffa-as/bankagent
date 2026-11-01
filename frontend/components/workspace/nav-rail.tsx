@@ -36,7 +36,7 @@ export function NavRail({ view, onChange, onNewSession, canReset, connection, pe
     <aside aria-label="工作台导航" className="hidden w-[248px] shrink-0 flex-col border-r border-border bg-card md:flex">
       <div className="flex h-16 items-center px-5">
         <Link href="/" aria-label="返回 Vaultline 首页" className="rounded-md">
-          <VaultlineLockup descriptor="个人银行" />
+          <VaultlineLockup descriptor="银行助理" />
         </Link>
       </div>
 

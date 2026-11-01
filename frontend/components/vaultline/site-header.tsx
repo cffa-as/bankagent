@@ -18,7 +18,7 @@ export function SiteHeader() {
       </a>
       <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-5 md:px-8">
         <Link href="/" aria-label="Vaultline 首页" className="rounded-md">
-          <VaultlineLockup tone="reverse" descriptor="个人银行" />
+          <VaultlineLockup tone="reverse" descriptor="安全银行工作台" />
         </Link>
         <nav aria-label="主导航" className="flex items-center gap-1">
           {LINKS.map((l) => (

@@ -1,17 +1,10 @@
 # Vaultline Films
 
-This workspace produces two deliverables:
-
-- a 30-second brand film;
-- a 3:46 product demo captured from the real Next.js frontend and Go API.
+This workspace produces the full product demo captured from the real Next.js frontend and Go API.
 
 ## Current Output
 
-- `frontend/public/demo/vaultline-launch.mp4` — 30s, 1920×1080, H.264/AAC
-- `frontend/public/demo/vaultline-launch-cover.png` — README cover
-- `frontend/public/demo/vaultline-launch-poster.png` — player poster
 - `frontend/public/demo/vaultline-product.mp4` — 3:46, 1920×1080, H.264/AAC
-- `frontend/public/demo/vaultline-product-cover.png` — full-demo cover
 - `frontend/public/demo/vaultline-product-poster.png` — full-demo still
 
 ## Product Demo

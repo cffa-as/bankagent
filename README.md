@@ -3,20 +3,19 @@
 </p>
 
 <p align="center">
-  <img src="frontend/public/brand/vaultline-readme-banner.png" width="100%" alt="Vaultline — 安全 AI 银行工作台" />
+  <img src="frontend/app/icon.svg" width="56" height="56" alt="Vaultline" />
 </p>
 
-<h3 align="center">让银行业务，一句话开始。</h3>
-
+<h1 align="center">Vaultline</h1>
 <p align="center">
-  面向真实银行业务的安全 AI 工作台<br />
-  <sub>Secure banking intelligence where the server remains in control.</sub>
+  <strong>安全 AI 银行工作台</strong><br />
+  让银行业务，一句话开始。<br />
+  <sub>模型提议，银行服务端裁决。</sub>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-MVP-315BFF?style=flat-square" alt="MVP" />
   <img src="https://img.shields.io/badge/Next.js-16-07111F?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
-  <img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Go-1.27-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
   <img src="https://img.shields.io/badge/SQLite-WAL-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite" />
   <img src="https://img.shields.io/badge/security-server%20governed-0B1423?style=flat-square" alt="Server governed" />
@@ -28,7 +27,7 @@
   ·
   <a href="#security-model">安全模型</a>
   ·
-  <a href="#product-film">产品视频</a>
+  <a href="#product-film">产品演示</a>
   ·
   <a href="#quick-start">快速开始</a>
   ·
@@ -36,19 +35,19 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-launch.mp4">
-    <img src="frontend/public/demo/vaultline-launch-cover.png" width="100%" alt="Vaultline 30 秒产品宣传片 — 受控银行执行层" />
+  <a href="frontend/public/demo/vaultline-product.mp4">
+    <img src="frontend/public/product/workspace-assistant.png" width="100%" alt="Vaultline 工作台" />
   </a>
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-launch.mp4"><strong>▶ 观看 30 秒产品宣传片</strong></a>
+  <a href="frontend/public/demo/vaultline-product.mp4"><strong>▶ 观看 3:46 完整产品演示</strong></a>
   <br />
-  <sub>30-second launch film · Real UI · Server-governed actions · Synthetic data only</sub>
+  <sub>真实前端 · 真实 Go API · Server-governed actions · Synthetic data only</sub>
 </p>
 
 > [!NOTE]
-> 30 秒品牌片由代码化动效流程生成，配乐和音效在本地合成；完整业务演示由自动录屏驱动真实前端和 Go API 生成。所有账户、金额、动作与回执均为合成演示数据。
+> 产品演示由真实前端和 Go API 自动录制生成。所有账户、金额、动作与回执均为合成演示数据。
 
 <a id="product"></a>
 
@@ -115,15 +114,13 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 
 <a id="product-film"></a>
 
-## 产品视频 / Product film
+## 产品演示 / Product demo
 
-30 秒品牌片用一条控制线贯穿从意图到回执的核心链路：
+完整演示沿一条控制线展开：
 
 `自然语言输入 → 动作快照 → 风险判定 → Action-bound MFA → 业务回执 → 审计追踪`
 
-品牌片使用真实工作台截图和真实服务端状态重新编排，不伪造界面、进度或成功结果。3:46 完整业务演示保留了查询、理财、卡片、订阅、流动性预演和工作流等逐项操作。
-
-The 30-second launch film uses a code-driven motion pipeline and a locally synthesized score. The full business demo is captured automatically from the real Next.js UI and Go API. All funds, balances, and receipts are synthetic.
+演示使用真实工作台和真实服务端状态，不伪造界面、进度或成功结果。当前版本覆盖查询、账单、理财、卡片、订阅、流动性预演、工作流、确认、MFA 和审计等流程。
 
 [观看完整业务演示](frontend/public/demo/vaultline-product.mp4) · 制作流程见 [产品演示视频方案](docs/demo-video-production.md) 和 [视频工程说明](video/README.md)。
 

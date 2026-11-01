@@ -3,20 +3,19 @@
 </p>
 
 <p align="center">
-  <img src="frontend/public/brand/vaultline-readme-banner.png" width="100%" alt="Vaultline — secure AI banking workspace" />
+  <img src="frontend/app/icon.svg" width="56" height="56" alt="Vaultline" />
 </p>
 
-<h3 align="center">Banking starts with a sentence.</h3>
-
+<h1 align="center">Vaultline</h1>
 <p align="center">
-  A secure AI workspace for real banking operations<br />
-  <sub>Understand intent. Govern execution. Prove the outcome.</sub>
+  <strong>Secure AI banking workspace</strong><br />
+  Banking starts with a sentence.<br />
+  <sub>The model proposes. The bank server decides.</sub>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-MVP-315BFF?style=flat-square" alt="MVP" />
   <img src="https://img.shields.io/badge/Next.js-16-07111F?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
-  <img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Go-1.27-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
   <img src="https://img.shields.io/badge/SQLite-WAL-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite" />
   <img src="https://img.shields.io/badge/security-server%20governed-0B1423?style=flat-square" alt="Server governed" />
@@ -28,7 +27,7 @@
   ·
   <a href="#security-model">Security</a>
   ·
-  <a href="#product-film">Product film</a>
+  <a href="#product-film">Product demo</a>
   ·
   <a href="#quick-start">Quick start</a>
   ·
@@ -36,19 +35,19 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-launch.mp4">
-    <img src="frontend/public/demo/vaultline-launch-cover.png" width="100%" alt="Vaultline 30-second launch film — the controlled banking execution layer" />
+  <a href="frontend/public/demo/vaultline-product.mp4">
+    <img src="frontend/public/product/workspace-assistant.png" width="100%" alt="Vaultline workspace" />
   </a>
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-launch.mp4"><strong>▶ Watch the 30-second launch film</strong></a>
+  <a href="frontend/public/demo/vaultline-product.mp4"><strong>▶ Watch the 3:46 product demo</strong></a>
   <br />
-  <sub>30-second launch film · Real UI · Server-governed actions · Synthetic data only</sub>
+  <sub>Real UI · Real Go API · Server-governed actions · Synthetic data only</sub>
 </p>
 
 > [!NOTE]
-> The 30-second launch film uses a code-driven motion pipeline and a locally synthesized score. The full business demo is captured automatically from the real Next.js frontend and Go API. All accounts, balances, actions, and receipts are synthetic demo data.
+> The product demo is captured automatically from the real Next.js frontend and Go API. All accounts, balances, actions, and receipts are synthetic demo data.
 
 ## Product
 
@@ -109,13 +108,13 @@ The product is designed as a regulated banking control surface, not a generic AI
 - **Run controls** — users can stop a run, hand it to a human, or roll back pending actions; executed money movements require review or compensation instead of silent reversal.
 - **Channel adapter** — the web workspace and APP/IM gateways share the same Agent API through the controlled `/v1/channels/{channel}/messages` surface.
 
-## Product film
+## Product demo
 
-The launch film follows one control line from intent to proof:
+The full demo follows one control line from intent to proof:
 
 `natural language → immutable action → risk decision → Action-bound MFA → server receipt → audit trail`
 
-The launch film rebuilds real workspace captures into motion shots and never fabricates UI, progress, or success states. The longer business demo preserves the working query, investment, card, subscription, liquidity, and workflow flows.
+The demo uses real workspace captures and real server states. It never fabricates UI, progress, or success outcomes. The current cut covers queries, bills, investments, cards, subscriptions, liquidity, workflows, confirmation, MFA, and audit.
 
 [Watch the full business demo](frontend/public/demo/vaultline-product.mp4) · See the [production plan](docs/demo-video-production.md) and the [video production guide](video/README.md).
 
