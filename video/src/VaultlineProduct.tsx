@@ -3,7 +3,7 @@ import {AbsoluteFill, Sequence, interpolate, staticFile, useVideoConfig} from 'r
 import {clamp} from './components/brand'
 import {SCENES, placeBeats, sceneSeconds, type FilmScene} from './film-plan'
 import {RecordingScene} from './scenes/recording-scene'
-import {CoverageScene, IntroScene, OutroScene, PassportScene, ProblemScene} from './scenes/title-scenes'
+import {CoverageScene, IntroScene, MechanismsScene, OutroScene, PassportScene, TiersScene} from './scenes/title-scenes'
 import {COLORS, FPS} from './theme'
 
 type Placed = {scene: FilmScene; from: number; durationInFrames: number}
@@ -30,8 +30,10 @@ const SceneBody = ({scene, durationInFrames}: {scene: FilmScene; durationInFrame
   switch (scene.kind) {
     case 'intro':
       return <IntroScene scene={scene} durationInFrames={durationInFrames} />
-    case 'problem':
-      return <ProblemScene scene={scene} durationInFrames={durationInFrames} />
+    case 'tiers':
+      return <TiersScene scene={scene} durationInFrames={durationInFrames} />
+    case 'mechanisms':
+      return <MechanismsScene scene={scene} durationInFrames={durationInFrames} />
     case 'passport':
       return <PassportScene scene={scene} durationInFrames={durationInFrames} />
     case 'coverage':

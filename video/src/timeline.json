@@ -3,12 +3,12 @@
   "clips": {
     "dag-create": {
       "src": "recordings/dag-create.mp4",
-      "trimBeforeSeconds": 0.68,
-      "seconds": 17.473,
+      "trimBeforeSeconds": 0.686,
+      "seconds": 17.454,
       "spots": [
         {
-          "at": 5.781,
-          "until": 7.781,
+          "at": 5.756,
+          "until": 7.756,
           "tone": "cobalt",
           "x": 576,
           "y": 255,
@@ -16,8 +16,8 @@
           "h": 82
         },
         {
-          "at": 9.466,
-          "until": 17.466,
+          "at": 9.445,
+          "until": 17.445,
           "tone": "cobalt",
           "x": 272,
           "y": 281,
@@ -26,18 +26,18 @@
         }
       ],
       "cues": {
-        "card": 5.774,
-        "dag": 9.183
+        "card": 5.749,
+        "dag": 9.168
       }
     },
     "twin": {
       "src": "recordings/twin.mp4",
-      "trimBeforeSeconds": 0.712,
-      "seconds": 30.003,
+      "trimBeforeSeconds": 0.67,
+      "seconds": 30.005,
       "spots": [
         {
-          "at": 4.597,
-          "until": 7.997,
+          "at": 4.561,
+          "until": 7.961,
           "tone": "red",
           "x": 917,
           "y": 84,
@@ -45,8 +45,8 @@
           "h": 125
         },
         {
-          "at": 8.009,
-          "until": 11.009,
+          "at": 7.969,
+          "until": 10.969,
           "tone": "amber",
           "x": 915,
           "y": 332,
@@ -54,8 +54,8 @@
           "h": 49
         },
         {
-          "at": 11.611,
-          "until": 18.011,
+          "at": 11.576,
+          "until": 17.976,
           "tone": "cobalt",
           "x": 915,
           "y": 130,
@@ -63,8 +63,8 @@
           "h": 460
         },
         {
-          "at": 19.01,
-          "until": 25.41,
+          "at": 18.992,
+          "until": 25.392,
           "tone": "green",
           "x": 915,
           "y": 89,
@@ -73,19 +73,19 @@
         }
       ],
       "cues": {
-        "drawer": 4.227,
-        "chart": 11.605,
-        "alternatives": 19.004
+        "drawer": 4.231,
+        "chart": 11.569,
+        "alternatives": 18.985
       }
     },
     "green": {
       "src": "recordings/green.mp4",
-      "trimBeforeSeconds": 0.676,
-      "seconds": 9.002,
+      "trimBeforeSeconds": 0.671,
+      "seconds": 9.004,
       "spots": [
         {
-          "at": 2.758,
-          "until": 6.758,
+          "at": 2.811,
+          "until": 6.811,
           "tone": "green",
           "x": 574,
           "y": 262,
@@ -94,17 +94,17 @@
         }
       ],
       "cues": {
-        "result": 2.752
+        "result": 2.803
       }
     },
     "yellow": {
       "src": "recordings/yellow.mp4",
-      "trimBeforeSeconds": 0.699,
+      "trimBeforeSeconds": 0.684,
       "seconds": 24.004,
       "spots": [
         {
-          "at": 3.462,
-          "until": 7.662,
+          "at": 3.453,
+          "until": 7.653,
           "tone": "amber",
           "x": 1137,
           "y": 575,
@@ -112,8 +112,8 @@
           "h": 34
         },
         {
-          "at": 7.672,
-          "until": 10.272,
+          "at": 7.665,
+          "until": 10.265,
           "tone": "amber",
           "x": 1139,
           "y": 272,
@@ -131,15 +131,15 @@
         }
       ],
       "cues": {
-        "snapshot": 3.454,
-        "receipt": 11.032,
-        "replay": 15.376
+        "snapshot": 3.443,
+        "receipt": 11.031,
+        "replay": 15.37
       }
     },
     "cov-bill": {
       "src": "recordings/cov-bill.mp4",
-      "trimBeforeSeconds": 1.886,
-      "seconds": 9.003,
+      "trimBeforeSeconds": 1.885,
+      "seconds": 9.002,
       "spots": [
         {
           "at": 0.009,
@@ -155,42 +155,286 @@
     },
     "cov-invest": {
       "src": "recordings/cov-invest.mp4",
-      "trimBeforeSeconds": 2.05,
-      "seconds": 8.002,
+      "trimBeforeSeconds": 2.094,
+      "seconds": 8.003,
       "spots": [],
       "cues": {}
     },
     "cov-card": {
       "src": "recordings/cov-card.mp4",
-      "trimBeforeSeconds": 2.248,
-      "seconds": 8.001,
+      "trimBeforeSeconds": 2.276,
+      "seconds": 8.003,
       "spots": [],
       "cues": {}
     },
     "cov-subscription": {
       "src": "recordings/cov-subscription.mp4",
-      "trimBeforeSeconds": 2.265,
-      "seconds": 8.002,
+      "trimBeforeSeconds": 2.266,
+      "seconds": 8.003,
       "spots": [],
       "cues": {}
+    },
+    "dag-run": {
+      "src": "recordings/dag-run.mp4",
+      "trimBeforeSeconds": 1.601,
+      "seconds": 50.006,
+      "spots": [
+        {
+          "at": 0.796,
+          "until": 3.196,
+          "tone": "green",
+          "x": 315,
+          "y": 311,
+          "w": 1194,
+          "h": 81
+        },
+        {
+          "at": 4.63,
+          "until": 7.43,
+          "tone": "green",
+          "x": 917,
+          "y": 84,
+          "w": 599,
+          "h": 125
+        },
+        {
+          "at": 8.915,
+          "until": 11.115,
+          "tone": "red",
+          "x": 1137,
+          "y": 184,
+          "w": 387,
+          "h": 82
+        },
+        {
+          "at": 14.35,
+          "until": 17.35,
+          "tone": "green",
+          "x": 1139,
+          "y": 79,
+          "w": 383,
+          "h": 298
+        },
+        {
+          "at": 20.208,
+          "until": 22.808,
+          "tone": "amber",
+          "x": 1137,
+          "y": 468,
+          "w": 387,
+          "h": 34
+        },
+        {
+          "at": 23.964,
+          "until": 26.364,
+          "tone": "green",
+          "x": 1137,
+          "y": 610,
+          "w": 387,
+          "h": 254
+        },
+        {
+          "at": 29.111,
+          "until": 31.111,
+          "tone": "amber",
+          "x": 315,
+          "y": 609,
+          "w": 782,
+          "h": 81
+        },
+        {
+          "at": 34,
+          "until": 41,
+          "tone": "cobalt",
+          "x": 272,
+          "y": 281,
+          "w": 1240,
+          "h": 412
+        }
+      ],
+      "cues": {
+        "reminder": 0.788,
+        "budget": 4.621,
+        "budget-ok": 13.833,
+        "flowers": 20.201,
+        "cake": 29.103,
+        "cancel": 33.338
+      }
+    },
+    "audit": {
+      "src": "recordings/audit.mp4",
+      "trimBeforeSeconds": 0.691,
+      "seconds": 16.003,
+      "spots": [
+        {
+          "at": 5.352,
+          "until": 11.752,
+          "tone": "cobalt",
+          "x": 291,
+          "y": 209,
+          "w": 650,
+          "h": 240
+        },
+        {
+          "at": 11.763,
+          "until": 15.363,
+          "tone": "green",
+          "x": 321,
+          "y": 388,
+          "w": 618,
+          "h": 59
+        }
+      ],
+      "cues": {
+        "timeline": 4.232
+      }
+    },
+    "red": {
+      "src": "recordings/red.mp4",
+      "trimBeforeSeconds": 0.692,
+      "seconds": 25.287,
+      "spots": [
+        {
+          "at": 3.764,
+          "until": 6.764,
+          "tone": "red",
+          "x": 1137,
+          "y": 184,
+          "w": 387,
+          "h": 82
+        },
+        {
+          "at": 19.365,
+          "until": 22.565,
+          "tone": "red",
+          "x": 1139,
+          "y": 54,
+          "w": 383,
+          "h": 298
+        },
+        {
+          "at": 22.578,
+          "until": 25.178,
+          "tone": "red",
+          "x": 1139,
+          "y": 549,
+          "w": 383,
+          "h": 108
+        }
+      ],
+      "cues": {
+        "mfa": 3.754,
+        "wrong": 6.766,
+        "locked": 18.839
+      }
+    },
+    "injection": {
+      "src": "recordings/injection.mp4",
+      "trimBeforeSeconds": 0.689,
+      "seconds": 20.003,
+      "spots": [
+        {
+          "at": 2.634,
+          "until": 4.634,
+          "tone": "cobalt",
+          "x": 574,
+          "y": 262,
+          "w": 676,
+          "h": 73
+        },
+        {
+          "at": 8.814,
+          "until": 13.014,
+          "tone": "red",
+          "x": 589,
+          "y": 678,
+          "w": 646,
+          "h": 65
+        },
+        {
+          "at": 14.347,
+          "until": 17.547,
+          "tone": "green",
+          "x": 574,
+          "y": 527,
+          "w": 676,
+          "h": 73
+        }
+      ],
+      "cues": {
+        "typing": 4.635,
+        "injection": 8.408,
+        "balance": 14.342
+      }
+    },
+    "breaker": {
+      "src": "recordings/breaker.mp4",
+      "trimBeforeSeconds": 0.69,
+      "seconds": 14.676,
+      "spots": [
+        {
+          "at": 9.673,
+          "until": 14.673,
+          "tone": "red",
+          "x": 589,
+          "y": 678,
+          "w": 646,
+          "h": 65
+        }
+      ],
+      "cues": {
+        "attempts": 6.61,
+        "locked": 9.264
+      }
     }
   },
   "evidence": {
     "dag": {
-      "dueAt": 1793542620000
+      "dueAt": 1793542980000,
+      "workflowId": "wf_e89f8878115649bf",
+      "status": "cancelled",
+      "nodes": [
+        {
+          "id": "birthday_reminder",
+          "status": "succeeded"
+        },
+        {
+          "id": "budget_lock",
+          "status": "succeeded"
+        },
+        {
+          "id": "flowers",
+          "status": "succeeded"
+        },
+        {
+          "id": "cake",
+          "status": "skipped"
+        }
+      ],
+      "passport": "stills/passport-verified.png"
     },
     "yellow": {
-      "actionId": "act_5f42fd6f19a48c9f",
-      "traceId": "tr_018321d87b5b1c7c",
+      "actionId": "act_8e4226979d29e504",
+      "traceId": "tr_425cc9070d1ac1ce",
       "snapshotHash": "4840f1755881121a5726d7dffe32d426579e822d23ee8f6dd78f1c3e34016375",
       "status": "succeeded",
       "replay": {
         "method": "POST",
-        "path": "/v1/actions/act_5f42fd6f19a48c9f/confirm",
+        "path": "/v1/actions/act_8e4226979d29e504/confirm",
         "status": 409,
         "code": "ACTION_STATE_CONFLICT",
         "message": "动作当前状态不允许此操作"
       }
+    },
+    "red": {
+      "lockedCode": "MFA_LOCKED",
+      "passport": "stills/passport-locked.png"
+    },
+    "breaker": {
+      "code": "SECURITY_LOCKED",
+      "threshold": 6,
+      "windowMinutes": 10,
+      "lockMinutes": 15
     }
   }
 }

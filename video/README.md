@@ -9,20 +9,18 @@ This workspace produces the full product demo captured from the real Next.js fro
 
 ## Product Demo
 
-The long-form film is a user-facing product story:
+The film leads with the security requirements and keeps the extras short:
 
-1. brand opening and the banking interaction problem;
-2. a request in natural language;
-3. transactions and bill analysis;
-4. live Agent activity and server-authored execution milestones;
-5. investments, cards and subscriptions;
-6. 30-day liquidity preflight;
-7. a multi-step fund plan and its dependencies;
-8. confirmation before execution;
-9. action-bound MFA for high-risk operations;
-10. prompt-injection resistance;
-11. operation history and audit evidence;
-12. closing brand statement.
+1. opening: the hard part is permissioned money movement, not chat;
+2. three-tier permission model (green / yellow / red);
+3. green balance query, yellow ¥300 transfer with snapshot, receipt and a real 409 replay;
+4. red ¥1,800 transfer with action-bound MFA, three failures and lock;
+5. prompt-injection rejection, account-level circuit breaker and the audit timeline;
+6. recap of the five safety mechanisms;
+7. extra: 30-day liquidity preflight (short);
+8. complex task: a four-node DAG executed step by step and cancelled mid-plan;
+9. coverage of the six banking scenarios;
+10. trusted execution passport and closing statement.
 
 Scene order, minimum durations and camera keyframes are defined in `src/film-plan.ts`.
 
@@ -44,9 +42,10 @@ Requirements:
 - Google Chrome
 - Go and a local synthetic ledger
 
-Start the backend:
+Start the backend once to create the ledger, stop it, raise the opening balance, then start it again (the tier and circuit-breaker shots depend on a fresh ledger):
 
 ```bash
+node video/scripts/film-ledger.mjs backend/vaultline-film.db
 cd backend
 BANKAGENT_ADDR=:8090 \
 BANKAGENT_DATABASE=./vaultline-film.db \

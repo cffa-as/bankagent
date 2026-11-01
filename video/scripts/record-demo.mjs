@@ -51,7 +51,7 @@ const sceneMs = {
 // The birthday plan's reminder falls due two days before the event. Placing the event just past
 // the server's 48-hour minimum makes the reminder due a few minutes after the plan is created, so
 // the same take can later advance it without any clock override.
-const BIRTHDAY_LEAD_MS = 48 * 3600_000 + 5 * 60_000
+const BIRTHDAY_LEAD_MS = 48 * 3600_000 + 4 * 60_000
 
 const overlayCss = `
   html { scroll-behavior: auto !important; }
@@ -486,7 +486,8 @@ try {
     await page.waitForTimeout(700)
     mark()
     const steps = page.getByRole('list', {name: '计划步骤'})
-    const node = (text) => steps.locator('li').filter({hasText: text}).last()
+    // Match on the exact node title: later nodes mention earlier ones in their "依赖 …" line.
+    const node = (title) => steps.locator('li').filter({has: page.getByText(title, {exact: true})}).last()
     const next = page.getByRole('button', {name: '办理下一步'}).first()
     const panel = panelOf(page)
 

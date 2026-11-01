@@ -83,7 +83,7 @@ export const SCENES: FilmScene[] = [
     id: 'yellow',
     kind: 'recording',
     clip: 'yellow',
-    speed: 1.15,
+    speed: 1.1,
     chapter: tiers(TIER.yellow),
     minSeconds: 18,
     beats: [{id: 'yellow-1'}, {id: 'yellow-2', cue: 'snapshot'}, {id: 'yellow-3', cue: 'receipt', offset: -1.2}, {id: 'yellow-4', cue: 'replay'}],
@@ -117,7 +117,7 @@ export const SCENES: FilmScene[] = [
     speed: 1.1,
     chapter: security('异常熔断', TIER.guard),
     minSeconds: 10,
-    beats: [{id: 'breaker-1'}, {id: 'breaker-2', cue: 'locked'}],
+    beats: [{id: 'breaker-1'}, {id: 'breaker-2', cue: 'locked', offset: -1.5}],
     notes: [{cue: 'locked', offset: 0.3, seconds: 5, text: '10 分钟内 6 次异常 → 写操作锁定 15 分钟', tone: 'red'}],
   },
   {
@@ -146,7 +146,7 @@ export const SCENES: FilmScene[] = [
     clip: 'dag-create',
     chapter: planning(TIER.plan),
     minSeconds: 14,
-    beats: [{id: 'dag-1'}, {id: 'dag-2', cue: 'dag'}],
+    beats: [{id: 'dag-1'}, {id: 'dag-2', cue: 'dag', offset: -2}],
   },
   {
     id: 'dag-run',
@@ -154,7 +154,7 @@ export const SCENES: FilmScene[] = [
     clip: 'dag-run',
     speed: 1.2,
     chapter: planning(TIER.plan),
-    minSeconds: 36,
+    minSeconds: 34,
     beats: [{id: 'dag-3', cue: 'reminder', offset: -0.6}, {id: 'dag-4', cue: 'budget'}, {id: 'dag-5', cue: 'flowers'}, {id: 'dag-6', cue: 'cake'}],
     notes: [
       {cue: 'budget-ok', offset: 0.2, seconds: 3.6, text: '预算锁定：现金流预检 + 动作绑定 MFA + 银行回执', tone: 'red'},
