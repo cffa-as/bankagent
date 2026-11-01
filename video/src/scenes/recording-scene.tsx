@@ -31,13 +31,13 @@ const ChapterRail = ({chapter}: {chapter: string}) => {
   const fill = interpolate(frame, [10, 34], [0, 1], {...clamp, easing: Easing.out(Easing.cubic)})
   const current = Number(chapter)
   return (
-    <div style={{display: 'flex', gap: 6, left: (1920 - CONTENT_W) / 2, position: 'absolute', top: 16, width: CONTENT_W}}>
+    <div style={{display: 'flex', gap: 5, paddingLeft: 46}}>
       {CHAPTERS.map((item) => {
         const index = Number(item.chapter)
         const done = index < current
         const active = index === current
         return (
-          <div key={item.id} style={{background: 'rgba(183, 201, 226, 0.14)', borderRadius: 99, flex: 1, height: 4, overflow: 'hidden'}}>
+          <div key={item.id} style={{background: 'rgba(183, 201, 226, 0.18)', borderRadius: 99, flex: 1, height: 4, minWidth: 14, overflow: 'hidden'}}>
             <div
               style={{
                 background: active ? TONE[item.tier.tone] : COLORS.steel,
@@ -92,6 +92,7 @@ export const RecordingScene = ({
   chapter,
   title,
   tier,
+  speed,
   camera,
   notes,
   durationInFrames,
@@ -100,6 +101,7 @@ export const RecordingScene = ({
   chapter: string
   title: string
   tier: {label: string; tone: Tone}
+  speed: number
   camera: CameraKey[]
   notes: Note[]
   durationInFrames: number
@@ -176,6 +178,7 @@ export const RecordingScene = ({
           <Video
             src={staticFile(clip.src)}
             trimBefore={Math.round(clip.trimBeforeSeconds * fps)}
+            playbackRate={speed}
             muted
             style={{display: 'block', height: CONTENT_H, width: CONTENT_W}}
           />
@@ -183,20 +186,22 @@ export const RecordingScene = ({
 
         <div
           style={{
-            alignItems: 'center',
-            background: 'rgba(7, 17, 31, 0.86)',
-            borderRadius: 999,
+            alignItems: 'stretch',
+            background: 'rgba(7, 17, 31, 0.88)',
+            borderRadius: 22,
             boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
             display: 'flex',
-            gap: 14,
+            flexDirection: 'column',
+            gap: 12,
             left: 64,
             opacity: chapterIn,
-            padding: '12px 24px 12px 14px',
+            padding: '12px 24px 14px 14px',
             position: 'absolute',
             top: 64,
             transform: `translateX(${chapterX}px)`,
           }}
         >
+          <div style={{alignItems: 'center', display: 'flex', gap: 14}}>
           <span
             style={{
               alignItems: 'center',
@@ -233,10 +238,11 @@ export const RecordingScene = ({
             <span style={{background: TONE[tier.tone], borderRadius: 99, height: 8, width: 8}} />
             {tier.label}
           </span>
+          </div>
+          <ChapterRail chapter={chapter} />
         </div>
 
         {activeNote && noteSide && <Callout key={activeNote.text} note={activeNote} side={noteSide} />}
-        <ChapterRail chapter={chapter} />
         <Subtitles id={id} />
       </AbsoluteFill>
     </Canvas>

@@ -156,6 +156,7 @@ export const SCENES: FilmScene[] = [
     tier: TIER.mfa,
     minSeconds: 14,
     subtitles: true,
+    speed: 1.35,
     camera: [
       {at: 0, zoom: 1.08, x: 0.55, y: 0.75},
       {at: 3, zoom: 1.2, x: CHAT, y: 0.4},
@@ -173,6 +174,7 @@ export const SCENES: FilmScene[] = [
     tier: TIER.confirm,
     minSeconds: 12,
     subtitles: true,
+    speed: 1.35,
     camera: [
       {at: 0, zoom: 1.08, x: 0.55, y: 0.75},
       {at: 3, zoom: 1.22, x: CHAT, y: 0.35},
@@ -210,7 +212,7 @@ export const SCENES: FilmScene[] = [
     tier: TIER.plan,
     minSeconds: 28,
     subtitles: true,
-    speed: 1.3,
+    speed: 1.4,
     camera: [
       {at: 0, zoom: 1.1, x: 0.5, y: 0.45},
       {at: 4, zoom: 1.04, x: 0.52, y: 0.5},
@@ -232,6 +234,7 @@ export const SCENES: FilmScene[] = [
     tier: TIER.control,
     minSeconds: 15,
     subtitles: true,
+    speed: 1.35,
     camera: [
       {at: 0, zoom: 1.08, x: 0.55, y: 0.78},
       {at: 2.6, zoom: 1.36, x: 0.6, y: 0.22},
@@ -252,6 +255,7 @@ export const SCENES: FilmScene[] = [
     tier: TIER.security,
     minSeconds: 16,
     subtitles: true,
+    speed: 1.35,
     camera: [
       {at: 0, zoom: 1.08, x: 0.55, y: 0.78},
       {at: 4.5, zoom: 1.36, x: PANEL, y: 0.66},

@@ -8,6 +8,50 @@
     "overview": {
       "src": "recordings/overview.webm",
       "trimBeforeSeconds": 1.699
+    },
+    "transfer-confirm": {
+      "src": "recordings/transfer-confirm.webm",
+      "trimBeforeSeconds": 1.754
+    },
+    "audit": {
+      "src": "recordings/audit.webm",
+      "trimBeforeSeconds": 3.253
+    },
+    "transfer-mfa": {
+      "src": "recordings/transfer-mfa.webm",
+      "trimBeforeSeconds": 1.655
+    },
+    "scheduled": {
+      "src": "recordings/scheduled.webm",
+      "trimBeforeSeconds": 1.769
+    },
+    "aa": {
+      "src": "recordings/aa.webm",
+      "trimBeforeSeconds": 1.669
+    },
+    "invest": {
+      "src": "recordings/invest.webm",
+      "trimBeforeSeconds": 1.779
+    },
+    "card": {
+      "src": "recordings/card.webm",
+      "trimBeforeSeconds": 1.65
+    },
+    "subscription": {
+      "src": "recordings/subscription.webm",
+      "trimBeforeSeconds": 1.702
+    },
+    "control": {
+      "src": "recordings/control.webm",
+      "trimBeforeSeconds": 1.746
+    },
+    "security": {
+      "src": "recordings/security.webm",
+      "trimBeforeSeconds": 1.775
+    },
+    "birthday-run": {
+      "src": "recordings/birthday-run.webm",
+      "trimBeforeSeconds": 4.049
     }
   }
 }
