@@ -593,7 +593,7 @@ func TestBillSummaryQuery(t *testing.T) {
 	if err := json.Unmarshal(result.Data, &value); err != nil {
 		t.Fatal(err)
 	}
-	if value.TotalMinor != 31500 || value.TransactionCount != 4 || len(value.Categories) != 4 {
+	if value.TotalMinor != 284500 || value.TransactionCount != 8 || len(value.Categories) != 6 {
 		t.Fatalf("unexpected summary: %+v", value)
 	}
 }
@@ -718,7 +718,7 @@ func TestAccountBalanceAndTransactions(t *testing.T) {
 	if err := json.Unmarshal(transactionsResult.Data, &page); err != nil {
 		t.Fatal(err)
 	}
-	if page.Page != 2 || page.PageSize != 2 || page.Total != 4 || len(page.Items) != 2 {
+	if page.Page != 2 || page.PageSize != 2 || page.Total != 8 || len(page.Items) != 2 {
 		t.Fatalf("unexpected page: %+v", page)
 	}
 
@@ -1762,13 +1762,53 @@ func TestNegatedBankingIntentCreatesNoOppositeAction(t *testing.T) {
 	}
 }
 
+func TestBillAnomaliesExplainSignals(t *testing.T) {
+	for _, base := range []time.Time{
+		time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60)),
+		time.Date(2026, 11, 1, 10, 30, 0, 0, time.FixedZone("CST", 8*60*60)),
+	} {
+		server, cleanup := newServerWithClock(t, func() time.Time { return base })
+		resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/bills/summary?month="+base.Format("2006-01"), "", "")
+		cleanup()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("bill summary at %s: status=%d body=%s", base, resp.StatusCode, body)
+		}
+		var result envelope
+		if err := json.Unmarshal(body, &result); err != nil {
+			t.Fatal(err)
+		}
+		var value struct {
+			TransactionCount int64 `json:"transaction_count"`
+			Anomalies        []struct {
+				TransactionID string   `json:"transaction_id"`
+				RiskLevel     string   `json:"risk_level"`
+				Signals       []string `json:"signals"`
+			} `json:"anomalies"`
+		}
+		if err := json.Unmarshal(result.Data, &value); err != nil {
+			t.Fatal(err)
+		}
+		if value.TransactionCount != 8 || len(value.Anomalies) != 2 {
+			t.Fatalf("at %s: expected 8 transactions and 2 anomalies, got %+v", base, value)
+		}
+		overseas, duplicate := value.Anomalies[0], value.Anomalies[1]
+		joined := strings.Join(overseas.Signals, "|")
+		if overseas.TransactionID != "txn_seed_overseas" || overseas.RiskLevel != "high" || !strings.Contains(joined, "凌晨 03:12") || !strings.Contains(joined, "倍") || !strings.Contains(joined, "首次出现的商户") {
+			t.Fatalf("at %s: unexpected overseas anomaly %+v", base, overseas)
+		}
+		if duplicate.TransactionID != "txn_seed_stream_2" || duplicate.RiskLevel != "medium" || len(duplicate.Signals) != 1 || !strings.Contains(duplicate.Signals[0], "重复扣款") {
+			t.Fatalf("at %s: unexpected duplicate anomaly %+v", base, duplicate)
+		}
+	}
+}
+
 func TestAnnualBillAndSubscriptionReminderQueries(t *testing.T) {
 	base := time.Date(2026, 11, 15, 9, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	server, cleanup := newServerWithClock(t, func() time.Time { return base })
 	defer cleanup()
 	year := "2026"
 	resp, body := request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/accounts/acct_demo/bills/summary?year="+year, "", "")
-	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"period":"`+year+`"`)) || !bytes.Contains(body, []byte(`"total_minor":31500`)) || !bytes.Contains(body, []byte(`"transaction_id":"txn_seed_shopping"`)) {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"period":"`+year+`"`)) || !bytes.Contains(body, []byte(`"total_minor":284500`)) || !bytes.Contains(body, []byte(`"transaction_id":"txn_seed_overseas"`)) {
 		t.Fatalf("annual bill: status=%d body=%s", resp.StatusCode, body)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/subscriptions/reminders?days=11", "", "")

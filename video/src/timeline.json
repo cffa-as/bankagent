@@ -3,55 +3,135 @@
   "clips": {
     "birthday-create": {
       "src": "recordings/birthday-create.webm",
-      "trimBeforeSeconds": 1.893
+      "trimBeforeSeconds": 1.651,
+      "spots": []
     },
     "overview": {
       "src": "recordings/overview.webm",
-      "trimBeforeSeconds": 1.699
+      "trimBeforeSeconds": 1.626,
+      "spots": [
+        {
+          "at": 6.411,
+          "until": 9.211,
+          "tone": "red",
+          "x": 574,
+          "y": 298,
+          "w": 676,
+          "h": 259
+        },
+        {
+          "at": 9.606,
+          "until": 18.606,
+          "tone": "red",
+          "x": 579,
+          "y": 344,
+          "w": 666,
+          "h": 110
+        },
+        {
+          "at": 18.995,
+          "until": 23.795,
+          "tone": "amber",
+          "x": 579,
+          "y": 443,
+          "w": 666,
+          "h": 109
+        }
+      ]
     },
     "transfer-confirm": {
       "src": "recordings/transfer-confirm.webm",
-      "trimBeforeSeconds": 1.754
+      "trimBeforeSeconds": 1.586,
+      "spots": [
+        {
+          "at": 3.645,
+          "until": 8.145,
+          "tone": "amber",
+          "x": 1124,
+          "y": 0,
+          "w": 412,
+          "h": 864
+        },
+        {
+          "at": 9.43,
+          "until": 12.03,
+          "tone": "green",
+          "x": 1124,
+          "y": 0,
+          "w": 412,
+          "h": 864
+        }
+      ]
     },
     "audit": {
       "src": "recordings/audit.webm",
-      "trimBeforeSeconds": 3.253
+      "trimBeforeSeconds": 3.194,
+      "spots": []
     },
     "transfer-mfa": {
       "src": "recordings/transfer-mfa.webm",
-      "trimBeforeSeconds": 1.655
+      "trimBeforeSeconds": 1.599,
+      "spots": [
+        {
+          "at": 3.552,
+          "until": 7.552,
+          "tone": "amber",
+          "x": 1124,
+          "y": 0,
+          "w": 412,
+          "h": 864
+        }
+      ]
     },
     "scheduled": {
       "src": "recordings/scheduled.webm",
-      "trimBeforeSeconds": 1.769
+      "trimBeforeSeconds": 1.6,
+      "spots": []
     },
     "aa": {
       "src": "recordings/aa.webm",
-      "trimBeforeSeconds": 1.669
+      "trimBeforeSeconds": 1.563,
+      "spots": [
+        {
+          "at": 4.96,
+          "until": 8.76,
+          "tone": "cobalt",
+          "x": 1135,
+          "y": 290,
+          "w": 391,
+          "h": 186
+        }
+      ]
     },
     "invest": {
       "src": "recordings/invest.webm",
-      "trimBeforeSeconds": 1.779
+      "trimBeforeSeconds": 1.633,
+      "spots": []
     },
     "card": {
       "src": "recordings/card.webm",
-      "trimBeforeSeconds": 1.65
+      "trimBeforeSeconds": 1.64,
+      "spots": []
     },
     "subscription": {
       "src": "recordings/subscription.webm",
-      "trimBeforeSeconds": 1.702
+      "trimBeforeSeconds": 1.57,
+      "spots": []
     },
     "control": {
       "src": "recordings/control.webm",
-      "trimBeforeSeconds": 1.746
+      "trimBeforeSeconds": 1.586,
+      "spots": []
     },
     "security": {
       "src": "recordings/security.webm",
-      "trimBeforeSeconds": 1.775
+      "trimBeforeSeconds": 1.578,
+      "spots": []
     },
     "birthday-run": {
       "src": "recordings/birthday-run.webm",
-      "trimBeforeSeconds": 4.049
+      "trimBeforeSeconds": 3.688,
+      "spots": []
     }
   }
 }

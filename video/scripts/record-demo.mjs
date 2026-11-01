@@ -17,7 +17,7 @@ const videoSize = viewport
 
 const sceneMs = {
   'birthday-create': 18_000,
-  overview: 22_000,
+  overview: 32_000,
   'transfer-confirm': 20_000,
   audit: 15_000,
   'transfer-mfa': 18_000,
@@ -161,8 +161,31 @@ async function recordClip(id, run) {
     const mark = () => {
       markedAt = Date.now()
     }
+    const capturedSpots = []
+    // Records where an element sits on screen so the film can light it up and
+    // push the camera toward it, then holds so the moment is readable.
+    const spot = async (locator, {hold = 2_400, tone = 'cobalt', pad = 10} = {}) => {
+      const target = locator.first()
+      const box = await target.boundingBox({timeout: 3_000}).catch(() => null)
+      if (!box) {
+        console.warn(`spot skipped in ${id}: element not found`)
+        return
+      }
+      const x = Math.max(0, box.x - pad)
+      const y = Math.max(0, box.y - pad)
+      capturedSpots.push({
+        startedAt: Date.now(),
+        hold,
+        tone,
+        x: Math.round(x),
+        y: Math.round(y),
+        w: Math.round(Math.min(viewport.width - x, box.width + pad * 2)),
+        h: Math.round(Math.min(viewport.height - y, box.height + pad * 2)),
+      })
+      await page.waitForTimeout(hold)
+    }
     const startedAt = Date.now()
-    await run(page, mark)
+    await run(page, mark, spot)
     await holdUntil(page, markedAt, sceneMs[id])
 
     await page.close()
@@ -172,7 +195,14 @@ async function recordClip(id, run) {
     const target = path.join(recordingsDir, `${id}.webm`)
     await copyFile(source, target)
     const trimBeforeSeconds = Number(((markedAt - videoStartedAt) / 1000).toFixed(3))
-    timeline.clips[id] = {src: `recordings/${id}.webm`, trimBeforeSeconds}
+    const spots = capturedSpots
+      .map(({startedAt: at, hold, ...rest}) => ({
+        at: Number(((at - markedAt) / 1000).toFixed(3)),
+        until: Number(((at + hold - markedAt) / 1000).toFixed(3)),
+        ...rest,
+      }))
+      .filter((item) => item.until > 0)
+    timeline.clips[id] = {src: `recordings/${id}.webm`, trimBeforeSeconds, spots}
     await writeFile(timelinePath, `${JSON.stringify(timeline, null, 2)}\n`)
     console.log(`recorded ${id}: trim=${trimBeforeSeconds}s total=${((Date.now() - startedAt) / 1000).toFixed(1)}s`)
   } finally {
@@ -202,7 +232,7 @@ async function advancePlan(page) {
   const closeReport = page.getByRole('button', {name: /关闭报告/})
   const pendingRow = page.locator('li').filter({hasText: '待授权'}).getByRole('button', {name: '查看动作'})
   const otp = page.locator('input[autocomplete="one-time-code"]').filter({visible: true})
-  const confirm = page.getByRole('button', {name: /^确认/}).filter({visible: true})
+  const confirm = page.getByRole('button', {name: /^确���/}).filter({visible: true})
   await closeReport.or(otp).or(confirm).first().waitFor({timeout: 8_000}).catch(() => {})
   await page.waitForTimeout(400)
 
@@ -259,23 +289,37 @@ try {
     }
   })
 
-  await recordClip('overview', async (page) => {
-    for (const name of ['余额与收支', '转账汇款', '账单分析', '理财产品', '卡片管理', '订阅代扣']) {
-      await glide(page, page.getByRole('button', {name: new RegExp(name)}).first(), 24)
-      await page.waitForTimeout(650)
+  await recordClip('overview', async (page, mark, spot) => {
+    for (const name of ['余额与收支', '转账汇款', '账单分析']) {
+      await glide(page, page.getByRole('button', {name: new RegExp(name)}).first(), 20)
+      await page.waitForTimeout(420)
     }
     await typeAndSend(page, '分析本月消费和异常交易', 60)
-    await waitForText(page, '账单分析')
-    await page.waitForTimeout(1_500)
-    await page.mouse.move(760, 420, {steps: 30})
+    // The quick-action card also reads “账单分析”, so wait for the result panel itself.
+    const panel = page.getByRole('region', {name: '异常交易'}).last()
+    await panel.waitFor({timeout: 25_000})
+    await page.waitForTimeout(700)
+    await panel.scrollIntoViewIfNeeded()
+    await page.mouse.move(1180, 760, {steps: 12})
+    await page.waitForTimeout(500)
+    await spot(panel, {hold: 2_800, tone: 'red'})
+    const rows = panel.locator('li[data-anomaly-risk]')
+    await glide(page, rows.nth(0), 22)
+    await spot(rows.nth(0), {hold: 9_000, tone: 'red', pad: 6})
+    await glide(page, rows.nth(1), 22)
+    await spot(rows.nth(1), {hold: 4_800, tone: 'amber', pad: 6})
+    await page.mouse.move(1180, 760, {steps: 24})
   })
 
-  await recordClip('transfer-confirm', async (page) => {
+  await recordClip('transfer-confirm', async (page, mark, spot) => {
     await typeAndSend(page, '给张三转 300 元，备注项目款')
     await page.getByRole('button', {name: /确认转账/}).waitFor({timeout: 20_000})
-    await page.waitForTimeout(5_200)
+    await page.waitForTimeout(700)
+    await spot(page.locator('[aria-label="业务办理"]'), {hold: 4_500, tone: 'amber', pad: 0})
     await moveAndClick(page, page.getByRole('button', {name: /确认转账/}).first())
     await waitForText(page, '办理成功')
+    await page.waitForTimeout(500)
+    await spot(page.locator('[aria-label="业务办理"]'), {hold: 2_600, tone: 'green', pad: 0})
   })
 
   await recordClip('audit', async (page, mark) => {
@@ -293,10 +337,11 @@ try {
     await page.mouse.move(760, 520, {steps: 40})
   })
 
-  await recordClip('transfer-mfa', async (page) => {
+  await recordClip('transfer-mfa', async (page, mark, spot) => {
     await typeAndSend(page, '给张三转 1500 元，备注房租')
     await page.getByRole('button', {name: '验证并继续'}).waitFor({timeout: 20_000})
-    await page.waitForTimeout(4_600)
+    await page.waitForTimeout(600)
+    await spot(page.locator('[aria-label="业务办理"]'), {hold: 4_000, tone: 'amber', pad: 0})
     await verifyMfa(page)
     await waitForText(page, '办理成功')
   })
@@ -312,11 +357,12 @@ try {
     await glide(page, page.getByRole('button', {name: '取消办理'}).first(), 30)
   })
 
-  await recordClip('aa', async (page) => {
+  await recordClip('aa', async (page, mark, spot) => {
     await typeAndSend(page, '聚餐 1200 元，我和张三、李四、王五四人 AA，由我收款', 48)
     const start = page.getByRole('button', {name: /确认发起/}).filter({visible: true})
     await start.first().waitFor({timeout: 20_000})
-    await page.waitForTimeout(4_400)
+    await page.waitForTimeout(600)
+    await spot(page.getByRole('list', {name: 'AA 分摊明细'}).filter({visible: true}), {hold: 3_800, tone: 'cobalt'})
     await moveAndClick(page, start.last())
     await waitForText(page, '办理成功')
   })

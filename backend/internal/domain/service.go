@@ -417,7 +417,7 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		if err := s.audit(ctx, trace, conversationID, "", "bill_analyzed", "succeeded", "tool", map[string]any{"month": bill.Month, "transaction_count": bill.TransactionCount}, now); err != nil {
 			return MessageResult{}, trace, err
 		}
-		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("本月消费共 %s，共 %d 笔。", yuan(bill.TotalMinor), bill.TransactionCount), Bill: &bill}, trace, nil
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: billReplyText(bill), Bill: &bill}, trace, nil
 	}
 	if strings.Contains(text, "流水") || strings.Contains(text, "交易记录") {
 		records, err := s.repo.Transactions(ctx, userID)
@@ -725,7 +725,7 @@ func (s *Service) handleIntentPlan(ctx context.Context, userID, conversationID, 
 		if err := s.audit(ctx, trace, conversationID, "", "bill_analyzed", "succeeded", "tool", map[string]any{"month": bill.Month, "transaction_count": bill.TransactionCount}, s.now()); err != nil {
 			return MessageResult{}, true, err
 		}
-		return MessageResult{RunID: runID, ReplyType: "query_result", Text: fmt.Sprintf("本月消费共 %s，发现 %d 笔异常交易。", yuan(bill.TotalMinor), len(bill.Anomalies)), Bill: &bill}, true, nil
+		return MessageResult{RunID: runID, ReplyType: "query_result", Text: billReplyText(bill), Bill: &bill}, true, nil
 	case "investment_query":
 		products, err := s.repo.Products(ctx, "")
 		if err != nil {

@@ -1450,13 +1450,19 @@ components:
             $ref: '#/components/schemas/BillAnomaly'
     BillAnomaly:
       type: object
-      required: [transaction_id, amount_minor, category, description, reason]
+      required: [transaction_id, amount_minor, category, description, reason, signals, risk_level, occurred_at]
       properties:
         transaction_id: { type: string }
         amount_minor: { type: integer, format: int64 }
         category: { type: string }
         description: { type: string }
-        reason: { type: string }
+        reason: { type: string, description: 'Signals joined with " · ".' }
+        signals:
+          type: array
+          description: Detection rules that matched (large deviation, late night, duplicate charge, first-seen merchant).
+          items: { type: string }
+        risk_level: { type: string, enum: [high, medium] }
+        occurred_at: { type: string, format: date-time }
     Product:
       type: object
       required: [product_id, name, risk_level, minimum_amount_minor]

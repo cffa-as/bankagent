@@ -39,7 +39,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:45</strong></a>
+  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:58</strong></a>
   <br />
   <sub>点击封面或标题播放 · 真实前端 · 真实 Go API · Synthetic data only</sub>
 </p>
@@ -84,7 +84,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 | Capability | 用户可以直接说 | 服务端必须给出 |
 | --- | --- | --- |
 | **智能转账 / Transfers** | “转 500 元给王明，备注房租” | 动作快照、风险等级、Action ID、执行回执 |
-| **账单分析 / Bill analysis** | “看看这个月钱花在哪了” | 分类统计、异常交易解释、Trace ID |
+| **账单分析 / Bill analysis** | “看看这个月钱花在哪了” | 分类统计、异常交易识别（大额偏离 / 凌晨交易 / 重复扣款 / 首次商户）、Trace ID |
 | **理财操作 / Investments** | “比较稳健型产品，申购 100 元” | 产品/持仓事实、风险分级、MFA 执行门 |
 | **卡片管理 / Card controls** | “冻结尾号 8842 的卡” | 卡片状态、授权路径、变更记录 |
 | **订阅代扣 / Subscriptions** | “找出不用的订阅并取消” | 周期扣费证据、取消快照、可审计结果 |
@@ -125,7 +125,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 | Browser E2E | 8 条真实业务链路 | 8 / 8 通过，console error 0，HTTP 5xx 0 |
 | Latency | 200 次 warm HTTP | p50 413 µs，p95 599 µs，p99 2498 µs |
 
-完整指标、混淆矩阵、置信区间、延迟 CDF 和全部用例明细见 [HTML 测评报告](evaluation/results/academic-report.html)。原始数据见 [academic.json](evaluation/results/academic.json) 与 [cases.csv](evaluation/results/cases.csv)。
+完整指标、混淆矩阵、置信区间、延迟 CDF 和全部用例明细见 [HTML 测评报���](evaluation/results/academic-report.html)。原始数据见 [academic.json](evaluation/results/academic.json) 与 [cases.csv](evaluation/results/cases.csv)。
 
 <details>
 <summary><strong>Architecture / 架构</strong></summary>

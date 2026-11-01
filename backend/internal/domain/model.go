@@ -176,11 +176,14 @@ type BillCategory struct {
 }
 
 type BillAnomaly struct {
-	TransactionID string `json:"transaction_id"`
-	AmountMinor   int64  `json:"amount_minor"`
-	Category      string `json:"category"`
-	Description   string `json:"description"`
-	Reason        string `json:"reason"`
+	TransactionID string    `json:"transaction_id"`
+	AmountMinor   int64     `json:"amount_minor"`
+	Category      string    `json:"category"`
+	Description   string    `json:"description"`
+	Reason        string    `json:"reason"`
+	Signals       []string  `json:"signals"`
+	RiskLevel     string    `json:"risk_level"`
+	OccurredAt    time.Time `json:"occurred_at"`
 }
 
 type BillSummary struct {
@@ -565,3 +568,12 @@ func parseTransfer(text string) (name string, amountMinor int64, remark string, 
 }
 
 func yuan(minor int64) string { return fmt.Sprintf("%.2f", float64(minor)/100) }
+
+func billReplyText(bill BillSummary) string {
+	text := fmt.Sprintf("本月消费共 %s，共 %d 笔。", yuan(bill.TotalMinor), bill.TransactionCount)
+	if len(bill.Anomalies) == 0 {
+		return text + "未发现异常交易。"
+	}
+	top := bill.Anomalies[0]
+	return text + fmt.Sprintf("发现 %d 笔异常交易，最需要关注的是「%s」%s 元：%s。", len(bill.Anomalies), top.Description, yuan(top.AmountMinor), top.Reason)
+}

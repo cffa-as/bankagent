@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ShieldAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { formatBps, formatDateTime, formatField, formatMoney, labelField } from '@/lib/vaultline/format'
@@ -48,6 +48,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   income: '收入',
   salary: '工资',
   investment: '理财',
+  digital: '数字服务',
   other: '其他',
 }
 
@@ -185,6 +186,8 @@ function BillSummary({ data }: { data: unknown }) {
         </div>
       </div>
 
+      {anomalies.length > 0 && <AnomalyPanel anomalies={anomalies} currency={currency} />}
+
       {categories.length > 0 && (
         <div className="flex flex-col gap-2">
           <SectionLabel>类别分布</SectionLabel>
@@ -208,23 +211,66 @@ function BillSummary({ data }: { data: unknown }) {
         </div>
       )}
 
-      {anomalies.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <SectionLabel>异常交易</SectionLabel>
-          <ul className="flex flex-col">
-            {anomalies.map((a, i) => (
-              <li key={text(a, 'transaction_id', 'id') ?? i} className="flex items-start justify-between gap-4 border-b border-border py-2 last:border-b-0">
-                <div className="min-w-0">
-                  <p className="text-[14px]">{text(a, 'description', 'merchant', 'label') ?? '未返回描述'}</p>
-                  <p className="text-[13px] leading-relaxed text-amber-ink">{text(a, 'reason', 'anomaly_reason') ?? '未说明原因'}</p>
-                </div>
-                <span className="shrink-0 font-mono text-[13px]">{formatMoney(money(a, 'amount'), currency)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
+  )
+}
+
+function AnomalyPanel({ anomalies, currency }: { anomalies: JsonObject[]; currency: string }) {
+  const highCount = anomalies.filter((a) => text(a, 'risk_level') === 'high').length
+  return (
+    <section aria-label="异常交易" className="flex flex-col overflow-hidden rounded-lg border border-red/30 bg-red-soft/60">
+      <header className="flex items-center justify-between gap-3 border-b border-red/20 px-3.5 py-2.5">
+        <p className="flex items-center gap-2 text-[13.5px] font-medium text-red-ink">
+          <ShieldAlert className="size-4" aria-hidden />
+          发现 {anomalies.length} 笔异常交易
+        </p>
+        {highCount > 0 && <span className="text-[12px] text-red-ink">{highCount} 笔高风险</span>}
+      </header>
+      <ul className="flex flex-col">
+        {anomalies.map((a, i) => {
+          const high = text(a, 'risk_level') === 'high'
+          const signals = asArray(a.signals).map(asText).filter((s): s is string => Boolean(s))
+          const reason = text(a, 'reason', 'anomaly_reason')
+          const occurredAt = text(a, 'occurred_at', 'created_at')
+          return (
+            <li
+              key={text(a, 'transaction_id', 'id') ?? i}
+              data-anomaly-risk={high ? 'high' : 'medium'}
+              className="flex flex-col gap-2 border-b border-red/15 bg-card px-3.5 py-3 last:border-b-0"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <p className="flex flex-wrap items-center gap-2 text-[14px] font-medium">
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 text-[11.5px] font-medium',
+                        high ? 'bg-red text-primary-foreground' : 'bg-amber-soft text-amber-ink',
+                      )}
+                    >
+                      {high ? '高风险' : '需留意'}
+                    </span>
+                    <span className="truncate">{text(a, 'description', 'merchant', 'label') ?? '未返回描述'}</span>
+                  </p>
+                  {occurredAt && <p className="font-mono text-[12px] text-muted-foreground">{formatDateTime(occurredAt)}</p>}
+                </div>
+                <span className={cn('shrink-0 font-mono text-[15px] font-medium', high && 'text-red-ink')}>{formatMoney(money(a, 'amount'), currency)}</span>
+              </div>
+              {signals.length > 0 ? (
+                <ul className="flex flex-wrap gap-1.5" aria-label="触发的风险信号">
+                  {signals.map((signal) => (
+                    <li key={signal} className={cn('rounded-md border px-2 py-0.5 text-[12px]', high ? 'border-red/30 text-red-ink' : 'border-amber/40 text-amber-ink')}>
+                      {signal}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[13px] leading-relaxed text-amber-ink">{reason ?? '未说明原因'}</p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
