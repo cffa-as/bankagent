@@ -1,10 +1,9 @@
 import {Audio} from '@remotion/media'
 import {AbsoluteFill, Sequence, interpolate, staticFile, useVideoConfig} from 'remotion'
 import {clamp} from './components/brand'
-import {NARRATION, NARRATION_DELAY, SCENES, sceneSeconds, type FilmScene} from './film-plan'
-import {AgentScene} from './scenes/agent-scene'
+import {SCENES, placeBeats, sceneSeconds, type FilmScene} from './film-plan'
 import {RecordingScene} from './scenes/recording-scene'
-import {CoverageScene, IntroScene, OutroScene, PrinciplesScene, ProblemScene} from './scenes/title-scenes'
+import {CoverageScene, IntroScene, OutroScene, PassportScene, ProblemScene} from './scenes/title-scenes'
 import {COLORS, FPS} from './theme'
 
 type Placed = {scene: FilmScene; from: number; durationInFrames: number}
@@ -16,47 +15,31 @@ const PLACED: Placed[] = SCENES.reduce<Placed[]>((list, scene) => {
 
 export const FILM_FRAMES = PLACED[PLACED.length - 1].from + PLACED[PLACED.length - 1].durationInFrames
 
-const SPEECH: [start: number, end: number][] = PLACED.flatMap(({scene, from}) => {
-  const entry = NARRATION[scene.id]
-  if (!entry) return []
-  const start = from + NARRATION_DELAY * FPS
-  return [[start, start + entry.duration * FPS] as [number, number]]
-})
+const SPEECH: [start: number, end: number][] = PLACED.flatMap(({scene, from}) =>
+  placeBeats(scene).map((beat) => [from + beat.start * FPS, from + beat.end * FPS] as [number, number]),
+)
 
 function scoreVolume(frame: number) {
   const fade = interpolate(frame, [0, 45, FILM_FRAMES - 120, FILM_FRAMES], [0, 1, 1, 0], clamp)
   const distance = Math.min(...SPEECH.map(([start, end]) => (frame < start ? start - frame : frame > end ? frame - end : 0)))
-  const duck = interpolate(distance, [0, 18], [0.32, 1], clamp)
-  return 0.55 * fade * duck
+  const duck = interpolate(distance, [0, 18], [0.3, 1], clamp)
+  return 0.5 * fade * duck
 }
 
 const SceneBody = ({scene, durationInFrames}: {scene: FilmScene; durationInFrames: number}) => {
   switch (scene.kind) {
     case 'intro':
-      return <IntroScene durationInFrames={durationInFrames} />
+      return <IntroScene scene={scene} durationInFrames={durationInFrames} />
     case 'problem':
-      return <ProblemScene durationInFrames={durationInFrames} />
-    case 'agent':
-      return <AgentScene durationInFrames={durationInFrames} />
+      return <ProblemScene scene={scene} durationInFrames={durationInFrames} />
+    case 'passport':
+      return <PassportScene scene={scene} durationInFrames={durationInFrames} />
     case 'coverage':
-      return <CoverageScene durationInFrames={durationInFrames} />
-    case 'principles':
-      return <PrinciplesScene durationInFrames={durationInFrames} />
+      return <CoverageScene scene={scene} durationInFrames={durationInFrames} />
     case 'outro':
-      return <OutroScene durationInFrames={durationInFrames} />
+      return <OutroScene scene={scene} durationInFrames={durationInFrames} />
     case 'recording':
-      return (
-        <RecordingScene
-          id={scene.id}
-          chapter={scene.chapter}
-          title={scene.title}
-          tier={scene.tier}
-          speed={scene.speed ?? 1}
-          camera={scene.camera}
-          notes={scene.notes}
-          durationInFrames={durationInFrames}
-        />
-      )
+      return <RecordingScene spec={scene} durationInFrames={durationInFrames} />
   }
 }
 
@@ -68,11 +51,11 @@ export const VaultlineProduct = () => {
       {PLACED.map(({scene, from, durationInFrames}) => (
         <Sequence key={scene.id} from={from} durationInFrames={durationInFrames} name={scene.id}>
           <SceneBody scene={scene} durationInFrames={durationInFrames} />
-          {NARRATION[scene.id] && (
-            <Sequence from={Math.round(NARRATION_DELAY * fps)} layout="none">
-              <Audio src={staticFile(`audio/${scene.id}.mp3`)} />
+          {placeBeats(scene).map((beat) => (
+            <Sequence key={beat.id} from={Math.round(beat.start * fps)} layout="none" name={beat.id}>
+              <Audio src={staticFile(`audio/${beat.id}.mp3`)} />
             </Sequence>
-          )}
+          ))}
         </Sequence>
       ))}
     </AbsoluteFill>

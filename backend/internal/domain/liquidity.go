@@ -364,42 +364,6 @@ func liquidityRecommendation(verdict string, maxSafeBudget, buffer int64, curren
 func buildLiquidityAlternatives(startAt time.Time, horizonDays int, profile HistoricalSpending, startingAvailable, proposedBudget, maxSafeBudget, buffer int64, baseEvents []LiquidityEvent) []LiquidityAlternative {
 	var alternatives []LiquidityAlternative
 	startDate := startAt.Format("2006-01-02")
-	add := func(id, label, description string, conditional bool, condition string, total int64, reservations []LiquidityReservation, tradeoff string) {
-		events := append([]LiquidityEvent{}, baseEvents...)
-		for i, reservation := range reservations {
-			if reservation.AmountMinor <= 0 {
-				continue
-			}
-			events = append(events, LiquidityEvent{
-				Date: reservation.Date, Kind: "proposed_budget", Direction: "out",
-				Description: "计划预留预算", AmountMinor: reservation.AmountMinor, SourceID: fmt.Sprintf("%s_%d", id, i),
-			})
-		}
-		sortLiquidityEvents(events)
-		expected := projectLiquidityScenario("expected", profile.AverageDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
-		conservative := projectLiquidityScenario("conservative", profile.ConservativeDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
-		incomeStress := projectLiquidityScenario("income_stress", profile.ConservativeDailyMinor, startingAvailable, startAt, horizonDays, buffer, withoutInflows(events))
-		status := combineLiquidityStatus(expected.Status, conservative.Status, incomeStress.Status)
-		alternatives = append(alternatives, LiquidityAlternative{
-			ID: id, Label: label, Description: description, TotalBudgetMinor: total,
-			Conditional: conditional, Condition: condition,
-			Reservations: reservations, Status: status,
-			ExpectedMinimumAvailableMinor: expected.MinimumAvailableMinor, ExpectedMinimumDate: expected.MinimumDate,
-			ConservativeMinimumAvailable: conservative.MinimumAvailableMinor, ConservativeMinimumDate: conservative.MinimumDate,
-			IncomeStressMinimumAvailable: incomeStress.MinimumAvailableMinor, IncomeStressMinimumDate: incomeStress.MinimumDate,
-			ExpectedPoints: expected.Points, Tradeoff: tradeoff,
-		})
-	}
-	add("current", "保持原计划", "立即按原金额预留预算。", false, "", proposedBudget, []LiquidityReservation{{Date: startDate, AmountMinor: proposedBudget}}, "执行最简单，但会立即降低可用余额。")
-	if maxSafeBudget != proposedBudget {
-		label := "降至缓冲内额度"
-		description := fmt.Sprintf("将预算调整为 %s，保留必要支出缓冲。", yuan(maxSafeBudget))
-		if maxSafeBudget == 0 {
-			label = "暂不预留"
-			description = "当前不占用预算，等待资金状况改善。"
-		}
-		add("buffer_preserving", label, description, false, "", maxSafeBudget, []LiquidityReservation{{Date: startDate, AmountMinor: maxSafeBudget}}, "会减少可执行预算，但优先保护必要支出。")
-	}
 	nextIncomeDate := ""
 	for _, event := range baseEvents {
 		if event.Direction == "in" && event.Date > startDate {
@@ -407,12 +371,56 @@ func buildLiquidityAlternatives(startAt time.Time, horizonDays int, profile Hist
 			break
 		}
 	}
+	// incomeGate is the income date a conditional reservation waits for. A gated reservation
+	// never executes when that income is missing, so the income-stress projection excludes it.
+	add := func(id, label, description, incomeGate, condition string, total int64, reservations []LiquidityReservation, tradeoff string) {
+		events := append([]LiquidityEvent{}, baseEvents...)
+		stressEvents := withoutInflows(baseEvents)
+		for i, reservation := range reservations {
+			if reservation.AmountMinor <= 0 {
+				continue
+			}
+			event := LiquidityEvent{
+				Date: reservation.Date, Kind: "proposed_budget", Direction: "out",
+				Description: "计划预留预算", AmountMinor: reservation.AmountMinor, SourceID: fmt.Sprintf("%s_%d", id, i),
+			}
+			events = append(events, event)
+			if incomeGate == "" || reservation.Date < incomeGate {
+				stressEvents = append(stressEvents, event)
+			}
+		}
+		sortLiquidityEvents(events)
+		sortLiquidityEvents(stressEvents)
+		expected := projectLiquidityScenario("expected", profile.AverageDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
+		conservative := projectLiquidityScenario("conservative", profile.ConservativeDailyMinor, startingAvailable, startAt, horizonDays, buffer, events)
+		incomeStress := projectLiquidityScenario("income_stress", profile.ConservativeDailyMinor, startingAvailable, startAt, horizonDays, buffer, stressEvents)
+		status := combineLiquidityStatus(expected.Status, conservative.Status, incomeStress.Status)
+		alternatives = append(alternatives, LiquidityAlternative{
+			ID: id, Label: label, Description: description, TotalBudgetMinor: total,
+			Conditional: incomeGate != "", Condition: condition,
+			Reservations: reservations, Status: status,
+			ExpectedMinimumAvailableMinor: expected.MinimumAvailableMinor, ExpectedMinimumDate: expected.MinimumDate,
+			ConservativeMinimumAvailable: conservative.MinimumAvailableMinor, ConservativeMinimumDate: conservative.MinimumDate,
+			IncomeStressMinimumAvailable: incomeStress.MinimumAvailableMinor, IncomeStressMinimumDate: incomeStress.MinimumDate,
+			ExpectedPoints: expected.Points, Tradeoff: tradeoff,
+		})
+	}
+	add("current", "保持原计划", "立即按原金额预留预算。", "", "", proposedBudget, []LiquidityReservation{{Date: startDate, AmountMinor: proposedBudget}}, "执行最简单，但会立即降低可用余额。")
+	if maxSafeBudget != proposedBudget {
+		label := "降至缓冲内额度"
+		description := fmt.Sprintf("将预算调整为 %s，保留必要支出缓冲。", yuan(maxSafeBudget))
+		if maxSafeBudget == 0 {
+			label = "暂不预留"
+			description = "当前不占用预算，等待资金状况改善。"
+		}
+		add("buffer_preserving", label, description, "", "", maxSafeBudget, []LiquidityReservation{{Date: startDate, AmountMinor: maxSafeBudget}}, "会减少可执行预算，但优先保护必要支出。")
+	}
 	if nextIncomeDate != "" {
 		condition := fmt.Sprintf("仅在 %s 收入确认入账后执行。", nextIncomeDate)
-		add("after_income", "等待下一笔收入", fmt.Sprintf("在 %s 收入到账后预留完整预算。", nextIncomeDate), true, condition, proposedBudget, []LiquidityReservation{{Date: nextIncomeDate, AmountMinor: proposedBudget}}, "资金缓冲更稳，但依赖尚未确认的收入。")
+		add("after_income", "等待下一笔收入", fmt.Sprintf("在 %s 收入到账后预留完整预算。", nextIncomeDate), nextIncomeDate, condition, proposedBudget, []LiquidityReservation{{Date: nextIncomeDate, AmountMinor: proposedBudget}}, "资金缓冲更稳，但依赖尚未确认的收入。")
 		if proposedBudget > 1 {
 			first, second := proposedBudget/2, proposedBudget-proposedBudget/2
-			add("split", "分两笔预留", "现在预留一半，下一笔收入到账后补齐。", true, condition, proposedBudget, []LiquidityReservation{
+			add("split", "分两笔预留", "现在预留一半，下一笔收入到账后补齐。", nextIncomeDate, condition, proposedBudget, []LiquidityReservation{
 				{Date: startDate, AmountMinor: first}, {Date: nextIncomeDate, AmountMinor: second},
 			}, "兼顾当前预算与资金安全，但需要两次授权。")
 		}
