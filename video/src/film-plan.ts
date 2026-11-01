@@ -29,7 +29,7 @@ export type RecordingSpec = Base & {
   evidence?: 'replay'
 }
 
-export type FilmScene = (Base & {kind: 'intro' | 'tiers' | 'mechanisms' | 'passport' | 'coverage' | 'outro'}) | RecordingSpec
+export type FilmScene = (Base & {kind: 'intro' | 'problem' | 'tiers' | 'mechanisms' | 'passport' | 'coverage' | 'outro'}) | RecordingSpec
 
 type Clip = {src: string; trimBeforeSeconds: number; seconds: number; spots: unknown[]; cues: Record<string, number>}
 export const CLIPS = timeline.clips as unknown as Record<string, Clip>
@@ -68,7 +68,8 @@ const security = (title: string, tier: Chapter['tier']): Chapter => ({number: '0
 const planning = (tier: Chapter['tier']): Chapter => ({number: '04', title: '复杂任务 DAG', tier, highlight: CORE})
 
 export const SCENES: FilmScene[] = [
-  {id: 'intro', kind: 'intro', minSeconds: 11, beats: [{id: 'intro', offset: 2.4}]},
+  {id: 'intro', kind: 'intro', minSeconds: 10, beats: [{id: 'intro', offset: 1.8}]},
+  {id: 'problem', kind: 'problem', minSeconds: 14, beats: [{id: 'problem', offset: 0.2}]},
   {id: 'tiers', kind: 'tiers', chapter: tiers(TIER.rules), minSeconds: 15, beats: [{id: 'tiers', offset: 0.6}]},
   {
     id: 'green',
@@ -165,7 +166,7 @@ export const SCENES: FilmScene[] = [
     id: 'coverage',
     kind: 'coverage',
     chapter: {number: '05', title: '同一条边界，六类场景', tier: TIER.coverage},
-    minSeconds: 28,
+    minSeconds: 22,
     beats: [{id: 'coverage', offset: 0.6}],
   },
   {
@@ -175,7 +176,7 @@ export const SCENES: FilmScene[] = [
     minSeconds: 20,
     beats: [{id: 'passport', offset: 0.6}],
   },
-  {id: 'outro', kind: 'outro', minSeconds: 10, beats: [{id: 'outro', offset: 1.0}]},
+  {id: 'outro', kind: 'outro', minSeconds: 9.5, beats: [{id: 'outro', offset: 1.0}]},
 ]
 
 /** One entry per chapter number, in film order; several scenes may share a chapter. */

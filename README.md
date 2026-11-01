@@ -39,7 +39,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:47</strong></a>
+  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:58</strong></a>
   <br />
   <sub>点击封面或标题播放 · 真实前端 · 真实 Go API · Synthetic data only</sub>
 </p>
@@ -118,7 +118,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 [《人工智能安全治理框架》2.0 版](https://www.cac.gov.cn/2025-09/15/c_1759653448369123.htm) 与
 [OWASP GenAI LLM Top 10 2026](https://github.com/GenAI-Security-Project/GenAI-LLM-Top10) 的风险分类和生命周期治理思路。
 
-## 测评 / Evaluation
+## ��评 / Evaluation
 
 测评不是把单测换个名字。项目分成三层：普通单元测试、带 `integration` 标签的 API/SQLite 集成评测，以及 Playwright 驱动的真实浏览器 E2E。
 

@@ -4,14 +4,14 @@ This workspace produces the full product demo captured from the real Next.js fro
 
 ## Current Output
 
-- `frontend/public/demo/vaultline-product.mp4` — 4:47, 1920×1080, H.264/AAC
+- `frontend/public/demo/vaultline-product.mp4` — 4:58, 1920×1080, H.264/AAC
 - `frontend/public/demo/vaultline-product-poster.png` — full-demo still
 
 ## Product Demo
 
 The film leads with the security requirements and keeps the extras short:
 
-1. opening: the hard part is permissioned money movement, not chat;
+1. opening: the hard part is permissioned money movement, not chat; why deep bank menus and general-purpose agents both fall short;
 2. three-tier permission model (green / yellow / red);
 3. green balance query, yellow ¥300 transfer with snapshot, receipt and a real 409 replay;
 4. red ¥1,800 transfer with action-bound MFA, three failures and lock;
