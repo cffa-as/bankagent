@@ -67,16 +67,180 @@ export const IntroScene = ({scene, durationInFrames}: {scene: FilmScene; duratio
   )
 }
 
+const BlockedArrow = () => (
+  <span style={{alignItems: 'center', display: 'flex', height: 24, position: 'relative', width: 64}}>
+    <span style={{background: COLORS.steel, height: 2, width: '100%'}} />
+    {[45, -45].map((angle) => (
+      <span key={angle} style={{background: COLORS.red, borderRadius: 2, height: 4, left: 22, position: 'absolute', top: 10, transform: `rotate(${angle}deg)`, width: 22}} />
+    ))}
+  </span>
+)
+
+const MENU = ['首页', '转账汇款', '预约转账', '选择收款人', '填写金额与用途', '安全验证']
+
+const DilemmaCard = ({title, caption, tone, children, p}: {title: string; caption: string; tone: Tone; children: React.ReactNode; p: number}) => (
+  <div
+    style={{
+      background: COLORS.panel,
+      border: `1px solid ${COLORS.line}`,
+      borderRadius: 24,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 28,
+      height: 560,
+      opacity: p,
+      padding: '36px 40px',
+      transform: `translateY(${(1 - p) * 24}px)`,
+      width: 640,
+    }}
+  >
+    <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+      <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 36, fontWeight: 800}}>{title}</span>
+      <span style={{color: TONE[tone], fontFamily: FONTS.sans, fontSize: 22, fontWeight: 700, letterSpacing: '0.06em'}}>{caption}</span>
+    </div>
+    {children}
+  </div>
+)
+
+const PROMISE_LINE: {label: string; color: string; x: number}[] = [
+  {label: '模型提议', color: COLORS.platinum, x: 0.08},
+  {label: '服务端裁决', color: COLORS.cobalt, x: 0.5},
+  {label: '回执证明结果', color: COLORS.teal, x: 0.92},
+]
+
+const BoundaryLine = ({seconds, at}: {seconds: number; at: number}) => {
+  const draw = interpolate(seconds, [at, at + 1.4], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)})
+  return (
+    <div style={{height: 120, position: 'relative', width: 1240}}>
+      <div style={{background: COLORS.line, height: 2, left: 0, position: 'absolute', right: 0, top: 30}} />
+      <div style={{background: `linear-gradient(90deg, ${COLORS.platinum}, ${COLORS.cobalt}, ${COLORS.teal})`, height: 2, left: 0, position: 'absolute', top: 30, width: `${draw * 100}%`}} />
+      {PROMISE_LINE.map((part, index) => {
+        const p = appear(seconds, at + 0.6 + index * 0.55, 0.5)
+        return (
+          <div
+            key={part.label}
+            style={{
+              alignItems: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 22,
+              left: `${part.x * 100}%`,
+              opacity: p,
+              position: 'absolute',
+              top: 22,
+              transform: `translate(-50%, ${(1 - p) * 10}px)`,
+            }}
+          >
+            <span style={{background: COLORS.navy, border: `3px solid ${part.color}`, borderRadius: 99, height: 18, width: 18}} />
+            <span style={{color: part.color, fontFamily: FONTS.sans, fontSize: 38, fontWeight: 800, letterSpacing: '0.04em', whiteSpace: 'nowrap'}}>{part.label}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export const ProblemScene = ({scene, durationInFrames}: {scene: FilmScene; durationInFrames: number}) => {
+  const seconds = useSeconds()
+  const s = [0, 1, 2].map((index) => sentenceAt(scene, index))
+  const dilemma = interpolate(seconds, [s[0] - 0.4, s[0] + 0.2, s[2] - 0.6, s[2] - 0.1], [0, 1, 1, 0], ease)
+  const answer = appear(seconds, s[2] - 0.1, 0.7)
+
+  return (
+    <Canvas>
+      <SceneExit durationInFrames={durationInFrames}>
+        {dilemma > 0 && (
+          <AbsoluteFill style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 36, justifyContent: 'center', opacity: dilemma, paddingBottom: 60}}>
+            <Eyebrow>为什么现有方式都不够</Eyebrow>
+            <div style={{display: 'flex', gap: 56}}>
+              <DilemmaCard title="传统银行入口" caption="入口深 · 层层查找" tone="amber" p={appear(seconds, s[0])}>
+                <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                  {MENU.map((item, index) => {
+                    const p = appear(seconds, s[0] + 0.3 + index * 0.35, 0.35)
+                    const last = index === MENU.length - 1
+                    return (
+                      <div key={item} style={{alignItems: 'center', display: 'flex', gap: 14, opacity: p, paddingLeft: index * 26}}>
+                        <span style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 22}}>{index === 0 ? '' : '›'}</span>
+                        <span
+                          style={{
+                            background: last ? `${COLORS.amber}22` : 'rgba(183, 201, 226, 0.08)',
+                            borderRadius: 10,
+                            color: last ? COLORS.amber : COLORS.platinum,
+                            fontFamily: FONTS.sans,
+                            fontSize: 24,
+                            fontWeight: 600,
+                            padding: '7px 16px',
+                          }}
+                        >
+                          {item}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </DilemmaCard>
+              <DilemmaCard title="通用 Agent" caption="能理解需求 · 不能直接拿到资金权限" tone="red" p={appear(seconds, s[1] - 0.2)}>
+                <div style={{display: 'flex', flexDirection: 'column', gap: 28}}>
+                  <div
+                    style={{
+                      alignSelf: 'flex-end',
+                      background: COLORS.cobalt,
+                      borderRadius: '20px 20px 6px 20px',
+                      color: COLORS.white,
+                      fontFamily: FONTS.sans,
+                      fontSize: 26,
+                      fontWeight: 600,
+                      opacity: appear(seconds, s[1] + 0.3),
+                      padding: '16px 22px',
+                    }}
+                  >
+                    帮我把房租和装修的钱安排一下
+                  </div>
+                  <div style={{alignItems: 'center', display: 'flex', gap: 18, opacity: appear(seconds, s[1] + 1.2)}}>
+                    <span style={{background: 'rgba(183, 201, 226, 0.08)', borderRadius: 12, color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 600, padding: '12px 18px'}}>
+                      模型直接调用转账
+                    </span>
+                    <BlockedArrow />
+                    <span style={{border: `1px dashed ${COLORS.red}`, borderRadius: 12, color: COLORS.red, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 700, padding: '12px 18px'}}>
+                      资金权限
+                    </span>
+                  </div>
+                  <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 22, lineHeight: 1.5, opacity: appear(seconds, s[1] + 2)}}>
+                    模型输出不可预测，单靠提示词无法守住资金边界
+                  </div>
+                </div>
+              </DilemmaCard>
+            </div>
+          </AbsoluteFill>
+        )}
+
+        {answer > 0 && (
+          <AbsoluteFill style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 56, justifyContent: 'center', opacity: answer, paddingBottom: 60}}>
+            <div style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 26}}>
+              <Lockup size={56} />
+              <Eyebrow>资金动作的可信执行层</Eyebrow>
+            </div>
+            <BoundaryLine seconds={seconds} at={s[2] + 0.4} />
+          </AbsoluteFill>
+        )}
+        <Subtitles beats={placeBeats(scene)} />
+      </SceneExit>
+    </Canvas>
+  )
+}
+
 const TIER_COLUMNS: {tone: Tone; name: string; strategy: string; ops: string[]; gate: string}[] = [
   {tone: 'green', name: '绿色', strategy: '自动执行', ops: ['余额查询', '交易记录查询', '账单分析', '理财收益查询'], gate: '纯查询 · 确认意图后直接执行'},
   {tone: 'amber', name: '黄色', strategy: '用户确认', ops: ['小额转账（日累计 ≤ 1000 元）', '订阅取消', '虚拟卡申请', '卡片临时冻结'], gate: '展示动作快照 · 明确确认后执行'},
-  {tone: 'red', name: '红色', strategy: '强验证', ops: ['大额转账（日累计 > 1000 元）', '卡片挂失 / 解挂', '卡片额度调整', '理财申购 / 赎回'], gate: '动作绑定 MFA · 一次性执行门'},
+  {tone: 'red', name: '红色', strategy: '强验证', ops: ['大额转账（日累计 > 1000 元）', '卡片挂失 / 解挂', '卡片额度调整', '理财申购 / 赎回'], gate: '动作绑定 MFA · 演示用动态验证码'},
 ]
 
 export const TiersScene = ({scene, durationInFrames}: {scene: FilmScene; durationInFrames: number}) => {
   const seconds = useSeconds()
-  const active = activeSentence(scene, seconds, 5)
-  const rule = appear(seconds, sentenceAt(scene, 4), 0.6)
+  const ruleIndex = (NARRATION[placeBeats(scene)[0].id]?.sentences.length ?? 5) - 1
+  const active = activeSentence(scene, seconds, ruleIndex + 1)
+  const litColumn = active >= 1 && active < ruleIndex ? Math.min(active, TIER_COLUMNS.length) - 1 : -1
+  const rule = appear(seconds, sentenceAt(scene, ruleIndex), 0.6)
   return (
     <Canvas>
       <SceneExit durationInFrames={durationInFrames}>
@@ -84,8 +248,8 @@ export const TiersScene = ({scene, durationInFrames}: {scene: FilmScene; duratio
           <div style={{display: 'flex', gap: 36}}>
             {TIER_COLUMNS.map((column, index) => {
               const p = appear(seconds, 0.4 + index * 0.25, 0.7)
-              const lit = active === index + 1
-              const dim = active >= 1 && active <= 3 && !lit
+              const lit = litColumn === index
+              const dim = litColumn >= 0 && !lit
               const color = TONE[column.tone]
               return (
                 <div
@@ -306,7 +470,7 @@ const COVERAGE: CoverageItem[] = [
   {clip: 'cov-subscription', title: '订阅', tier: '绿色 · 续费提醒', tone: 'green', speed: 1},
   {clip: 'dag-run', title: '跨场景资金计划', tier: '计划 · 分步授权', tone: 'amber', speed: 1.3, fromCue: 'flowers', lead: 0.6},
 ]
-const ITEM_SECONDS = 4.6
+const ITEM_SECONDS = 3.55
 const WINDOW_W = 1240
 const WINDOW_H = (WINDOW_W * 864) / 1536
 
