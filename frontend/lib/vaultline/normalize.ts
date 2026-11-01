@@ -89,6 +89,31 @@ function normalizeMfa(value: unknown, action: JsonObject): MfaState | null {
   }
 }
 
+function normalizeSecurity(value: unknown): BankAction['security'] {
+  const source = asObject(value)
+  if (!source) return null
+  const input = asObject(source.source)
+  const identity = asObject(source.identity)
+  const outcome = asObject(source.outcome)
+  if (!input || !identity || !outcome) return null
+  return {
+    source: {
+      type: asText(input.type),
+      trust: asText(input.trust),
+      sanitized: asBool(input.sanitized),
+      injection_checked: asBool(input.injection_checked),
+    },
+    identity: {
+      method: asText(identity.method),
+      state: asText(identity.state),
+      attempts_remaining: asNumber(identity.attempts_remaining),
+    },
+    outcome: {
+      receipt: asText(outcome.receipt),
+    },
+  }
+}
+
 const ACTION_META_KEYS = new Set([
   'action_id',
   'id',
@@ -108,6 +133,7 @@ const ACTION_META_KEYS = new Set([
   'hash',
   'mfa',
   'mfa_state',
+  'security',
   'receipt',
   'business_receipt',
   'tool_receipt',
@@ -139,6 +165,7 @@ export function normalizeAction(value: unknown, fallbackTraceId: string | null =
     snapshot_hash: asText(pick(source, 'snapshot_hash', 'integrity_hash', 'hash')),
     snapshot,
     mfa: normalizeMfa(source.mfa, source),
+    security: normalizeSecurity(source.security),
     receipt: asObject(pick(source, 'receipt', 'business_receipt', 'result')),
     error: normalizeErrorBody(source.error),
   }

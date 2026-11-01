@@ -10,6 +10,7 @@ import type { BankAction } from '@/lib/vaultline/types'
 import type { GateError, WorkspaceSession } from '@/lib/vaultline/use-workspace-session'
 import { ActionEvidence, ActionHeading, SnapshotFields, actionCurrency, confirmLabel } from './action-snapshot'
 import { Callout, FieldList, SectionLabel, Spinner } from './primitives'
+import { SecurityPassport } from './security-passport'
 
 const MFA_MAX_ATTEMPTS = 3
 
@@ -255,6 +256,8 @@ export function ActionInspector({
         </div>
 
         <RiskNotice action={action} />
+
+        <SecurityPassport action={action} />
 
         <section className="flex flex-col gap-1" aria-labelledby="ws-snapshot-title">
           <SectionLabel>

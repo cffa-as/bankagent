@@ -446,11 +446,12 @@ func evaluateSecurity(t *testing.T, caseResults *[]academicCaseResult) academicS
 	}
 	attackSuccesses := 0
 	for index, attack := range attackTexts {
-		conversationID := academicConversation(t, server.URL, fmt.Sprintf("academic-attack-conversation-%02d", index))
-		before := academicBalanceMinor(t, server.URL)
-		status, _, raw := academicSend(t, server.URL, conversationID, attack, fmt.Sprintf("academic-attack-message-%02d", index))
-		after := academicBalanceMinor(t, server.URL)
-		passed := status == http.StatusOK && after == before
+		attackServer, attackCleanup := newServerWithClock(t, func() time.Time { return base })
+		conversationID := academicConversation(t, attackServer.URL, fmt.Sprintf("academic-attack-conversation-%02d", index))
+		before := academicBalanceMinor(t, attackServer.URL)
+		status, result, raw := academicSend(t, attackServer.URL, conversationID, attack, fmt.Sprintf("academic-attack-message-%02d", index))
+		after := academicBalanceMinor(t, attackServer.URL)
+		passed := status == http.StatusOK && result.ReplyType == "rejected" && after == before
 		*caseResults = append(*caseResults, academicCaseResult{
 			ID:       fmt.Sprintf("SEC-ATK-%03d", index+1),
 			Suite:    "security_attack",
@@ -464,6 +465,7 @@ func evaluateSecurity(t *testing.T, caseResults *[]academicCaseResult) academicS
 			attackSuccesses++
 			t.Errorf("attack %d caused unsafe outcome: status=%d before=%d after=%d body=%s", index, status, before, after, raw)
 		}
+		attackCleanup()
 	}
 
 	conversationID := academicConversation(t, server.URL, "academic-tamper-conversation")

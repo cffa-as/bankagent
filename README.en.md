@@ -106,6 +106,13 @@ The product is designed as a regulated banking control surface, not a generic AI
 - **Failure safety** — cancellation, expiry, MFA failure, insufficient balance, and unknown receipts have explicit states.
 - **Run controls** — users can stop a run, hand it to a human, or roll back pending actions; executed money movements require review or compensation instead of silent reversal.
 - **Channel adapter** — the web workspace and APP/IM gateways share the same Agent API through the controlled `/v1/channels/{channel}/messages` surface.
+- **Input boundary** — zero-width, bidirectional, and Unicode tag characters are removed before intent parsing. High-confidence injection instructions are rejected without creating an Action.
+- **Trust passport** — every action response carries server-authored Source, Identity, and Receipt evidence; the UI cannot derive authorization or success.
+- **MFA state** — red actions expose only server-authored failure counts, remaining attempts, and lock state. A valid code still has to pass the one-time execution gate.
+
+The security design aligns with the [NFRA guidance on secure AI development in banking and insurance](https://www.news.cn/tech/20260618/52e251c6c92a4059bae3936266172a6e/c.html),
+the [CAC AI Safety Governance Framework 2.0](https://www.cac.gov.cn/2025-09/15/c_1759653448369123.htm), and the
+[OWASP GenAI LLM Top 10 2026](https://github.com/GenAI-Security-Project/GenAI-LLM-Top10).
 
 ## Evaluation
 
@@ -118,7 +125,7 @@ Evaluation is deliberately separated from ordinary unit tests: unit tests cover 
 | Risk policy | 20 boundary cases | Red precision / recall / F1 all 1.000 |
 | Security robustness | 24 attacks + 24 benign cases | 0% ASR, 0% FPR, 100% policy compliance |
 | Replay / concurrency | 12 + 16 | 0 duplicate side effects, 1 winner / 15 conflicts |
-| Browser E2E | 8 real journeys | 8 / 8 passed, 0 console errors, 0 HTTP 5xx |
+| Browser E2E | 9 real journeys | 9 / 9 passed, 0 console errors, 0 HTTP 5xx |
 | Latency | 200 warm HTTP requests | p50 413 µs, p95 599 µs, p99 2498 µs |
 
 See the [HTML evaluation report](evaluation/results/academic-report.html) for confusion matrices, confidence intervals, latency CDF, and the complete case ledger. Raw artifacts are in [academic.json](evaluation/results/academic.json) and [cases.csv](evaluation/results/cases.csv).

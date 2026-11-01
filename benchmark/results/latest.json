@@ -1,6 +1,6 @@
 {
   "version": "bankagent-eval-v2",
-  "evaluated_at": "2026-11-01T16:27:57.584326+08:00",
+  "evaluated_at": "2026-11-01T20:00:11.264+08:00",
   "checks": [
     {
       "name": "unknown_field_rejected",
@@ -10,7 +10,7 @@
     {
       "name": "prompt_injection_not_executed",
       "passed": true,
-      "details": "status=200 reply=action_required"
+      "details": "status=200 reply=rejected"
     },
     {
       "name": "yellow_confirmation_executes",
@@ -51,12 +51,12 @@
   "liquidity_golden_error_minor": 0,
   "liquidity_deterministic": true,
   "liquidity_samples": 200,
-  "liquidity_p50_us": 420,
-  "liquidity_p95_us": 623,
-  "liquidity_p99_us": 2659,
-  "liquidity_mean_us": 495.38,
-  "liquidity_stddev_us": 319.37420935322876,
-  "liquidity_mean_ci95_low_us": 456.3,
-  "liquidity_mean_ci95_high_us": 543.27,
-  "liquidity_throughput_rps": 2018.6523476926805
+  "liquidity_p50_us": 397,
+  "liquidity_p95_us": 610,
+  "liquidity_p99_us": 2696,
+  "liquidity_mean_us": 471.48,
+  "liquidity_stddev_us": 350.424185238405,
+  "liquidity_mean_ci95_low_us": 428.12,
+  "liquidity_mean_ci95_high_us": 523.89,
+  "liquidity_throughput_rps": 2120.9807414948673
 }

@@ -330,26 +330,60 @@ type TransferSplit struct {
 }
 
 type Action struct {
-	ID             string    `json:"action_id"`
-	TraceID        string    `json:"trace_id"`
-	RunID          string    `json:"run_id,omitempty"`
-	ConversationID string    `json:"conversation_id"`
-	UserID         string    `json:"-"`
-	Kind           string    `json:"kind"`
-	RiskLevel      string    `json:"risk_level"`
-	Status         string    `json:"status"`
-	SnapshotJSON   string    `json:"-"`
-	Snapshot       any       `json:"snapshot,omitempty"`
-	SnapshotHash   string    `json:"snapshot_hash"`
-	ResultJSON     string    `json:"-"`
-	Result         any       `json:"result,omitempty"`
-	ExpiresAt      time.Time `json:"expires_at"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	MFAAttempts    int       `json:"mfa_attempts,omitempty"`
+	ID             string          `json:"action_id"`
+	TraceID        string          `json:"trace_id"`
+	RunID          string          `json:"run_id,omitempty"`
+	ConversationID string          `json:"conversation_id"`
+	UserID         string          `json:"-"`
+	Kind           string          `json:"kind"`
+	RiskLevel      string          `json:"risk_level"`
+	Status         string          `json:"status"`
+	SnapshotJSON   string          `json:"-"`
+	Snapshot       any             `json:"snapshot,omitempty"`
+	SnapshotHash   string          `json:"snapshot_hash"`
+	ResultJSON     string          `json:"-"`
+	Result         any             `json:"result,omitempty"`
+	ExpiresAt      time.Time       `json:"expires_at"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+	MFAAttempts    int             `json:"mfa_attempts,omitempty"`
+	MFA            *ActionMFAState `json:"mfa,omitempty"`
+	Security       *ActionSecurity `json:"security,omitempty"`
+}
+
+type ActionMFAState struct {
+	FailedAttempts    int       `json:"failed_attempts"`
+	AttemptsRemaining int       `json:"attempts_remaining"`
+	Locked            bool      `json:"locked"`
+	ExpiresAt         time.Time `json:"expires_at"`
+}
+
+type ActionSecuritySource struct {
+	Type             string `json:"type"`
+	Trust            string `json:"trust"`
+	Sanitized        bool   `json:"sanitized"`
+	InjectionChecked bool   `json:"injection_checked"`
+}
+
+type ActionSecurityIdentity struct {
+	Method            string `json:"method"`
+	State             string `json:"state"`
+	AttemptsRemaining int    `json:"attempts_remaining,omitempty"`
+}
+
+type ActionSecurityOutcome struct {
+	Receipt string `json:"receipt"`
+}
+
+type ActionSecurity struct {
+	Source   ActionSecuritySource   `json:"source"`
+	Identity ActionSecurityIdentity `json:"identity"`
+	Outcome  ActionSecurityOutcome  `json:"outcome"`
 }
 
 func (a Action) Public() Action {
+	security := actionSecurity(a)
+	mfa := actionMFAState(a)
 	a.UserID = ""
 	if a.Snapshot == nil && a.SnapshotJSON != "" {
 		_ = json.Unmarshal([]byte(a.SnapshotJSON), &a.Snapshot)
@@ -360,7 +394,113 @@ func (a Action) Public() Action {
 	a.SnapshotJSON = ""
 	a.ResultJSON = ""
 	a.MFAAttempts = 0
+	a.MFA = mfa
+	a.Security = &security
 	return a
+}
+
+func actionMFAState(a Action) *ActionMFAState {
+	if a.RiskLevel != "red" || (a.Status != "awaiting_mfa" && !(a.Status == "failed" && a.MFAAttempts >= 3)) {
+		return nil
+	}
+	remaining := 3 - a.MFAAttempts
+	if remaining < 0 {
+		remaining = 0
+	}
+	return &ActionMFAState{
+		FailedAttempts:    a.MFAAttempts,
+		AttemptsRemaining: remaining,
+		Locked:            a.Status == "failed" || remaining == 0,
+		ExpiresAt:         a.ExpiresAt,
+	}
+}
+
+type actionSecurityMeta struct {
+	Type             string `json:"type"`
+	Trust            string `json:"trust"`
+	Sanitized        bool   `json:"sanitized"`
+	InjectionChecked bool   `json:"injection_checked"`
+}
+
+func actionSecurity(a Action) ActionSecurity {
+	source := actionSecurityMeta{Type: "structured_api", Trust: "validated", Sanitized: true, InjectionChecked: true}
+	var snapshot map[string]any
+	if a.Snapshot != nil {
+		if value, ok := a.Snapshot.(map[string]any); ok {
+			snapshot = value
+		}
+	}
+	if snapshot == nil && a.SnapshotJSON != "" {
+		_ = json.Unmarshal([]byte(a.SnapshotJSON), &snapshot)
+	}
+	if raw, ok := snapshot["_security"].(map[string]any); ok {
+		if value, ok := raw["type"].(string); ok && value != "" {
+			source.Type = value
+		}
+		if value, ok := raw["trust"].(string); ok && value != "" {
+			source.Trust = value
+		}
+		if value, ok := raw["sanitized"].(bool); ok {
+			source.Sanitized = value
+		}
+		if value, ok := raw["injection_checked"].(bool); ok {
+			source.InjectionChecked = value
+		}
+	}
+
+	identity := ActionSecurityIdentity{Method: "none", State: "not_required"}
+	if a.RiskLevel == "yellow" {
+		identity.Method = "explicit_confirmation"
+		switch a.Status {
+		case "awaiting_confirmation":
+			identity.State = "required"
+		case "scheduled", "executing", "processing", "reconciliation_required", "succeeded":
+			identity.State = "verified"
+		case "cancelled", "expired":
+			identity.State = "not_verified"
+		case "failed":
+			identity.State = "failed"
+		default:
+			identity.State = "pending"
+		}
+	}
+	if a.RiskLevel == "red" {
+		identity.Method = "action_bound_mfa"
+		remaining := 3 - a.MFAAttempts
+		if remaining < 0 {
+			remaining = 0
+		}
+		identity.AttemptsRemaining = remaining
+		switch a.Status {
+		case "awaiting_mfa":
+			identity.State = "required"
+		case "scheduled", "executing", "processing", "reconciliation_required", "succeeded":
+			identity.State = "verified"
+		case "cancelled", "expired":
+			identity.State = "not_verified"
+		case "failed":
+			if a.MFAAttempts >= 3 {
+				identity.State = "locked"
+			} else {
+				identity.State = "failed"
+			}
+		default:
+			identity.State = "pending"
+		}
+	}
+
+	outcome := ActionSecurityOutcome{Receipt: "pending"}
+	switch a.Status {
+	case "succeeded":
+		if a.Result != nil || a.ResultJSON != "" {
+			outcome.Receipt = "verified"
+		} else {
+			outcome.Receipt = "missing"
+		}
+	case "failed", "cancelled", "expired":
+		outcome.Receipt = "not_issued"
+	}
+	return ActionSecurity{Source: ActionSecuritySource(source), Identity: identity, Outcome: outcome}
 }
 
 type AuditEvent struct {
@@ -390,6 +530,12 @@ type MessageResult struct {
 	Data      any                  `json:"data,omitempty"`
 	Workflow  *Workflow            `json:"workflow,omitempty"`
 	Liquidity *LiquiditySimulation `json:"liquidity,omitempty"`
+	Rejection *PublicError         `json:"rejection,omitempty"`
+}
+
+type PublicError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type Service struct {
