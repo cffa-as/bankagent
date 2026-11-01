@@ -1,7 +1,7 @@
 import {AbsoluteFill, Easing, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion'
 import {Canvas, Check, Mark, Shimmer, Spinner, clamp} from '../components/brand'
 import {Subtitles} from '../components/subtitles'
-import {NARRATION_DELAY} from '../scenes'
+import {NARRATION_DELAY} from '../film-plan'
 import {COLORS, FONTS} from '../theme'
 
 const STEPS = [
@@ -34,7 +34,7 @@ export const AgentScene = ({durationInFrames}: {durationInFrames: number}) => {
   return (
     <Canvas>
       <AbsoluteFill style={{opacity: exit}}>
-        <div style={{left: 0, position: 'absolute', right: 0, textAlign: 'center', top: 74}}>
+        <div style={{left: 0, position: 'absolute', right: 0, textAlign: 'center', top: 120}}>
           <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 22, fontWeight: 600, letterSpacing: '0.2em'}}>看得见的过程</div>
         </div>
 
@@ -50,10 +50,10 @@ export const AgentScene = ({durationInFrames}: {durationInFrames: number}) => {
             opacity: enter,
             padding: '48px 64px',
             position: 'absolute',
-            top: 150,
+            top: 200,
             transform: `translateY(${(1 - enter) * 30}px)`,
             width: 1260,
-            height: 760,
+            height: 660,
           }}
         >
           <div style={{display: 'flex', justifyContent: 'flex-end'}}>

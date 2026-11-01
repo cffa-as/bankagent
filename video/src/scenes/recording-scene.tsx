@@ -1,7 +1,8 @@
-import {AbsoluteFill, Easing, OffthreadVideo, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig} from 'remotion'
+import {Video} from '@remotion/media'
+import {AbsoluteFill, Easing, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig} from 'remotion'
 import {Canvas, Mark, clamp} from '../components/brand'
 import {Subtitles} from '../components/subtitles'
-import type {CameraKey} from '../scenes'
+import type {CameraKey} from '../film-plan'
 import {COLORS, FONTS} from '../theme'
 import timeline from '../timeline.json'
 
@@ -102,7 +103,7 @@ export const RecordingScene = ({
             </div>
             <span style={{width: 49}} />
           </div>
-          <OffthreadVideo
+          <Video
             src={staticFile(clip.src)}
             trimBefore={Math.round(clip.trimBeforeSeconds * fps)}
             muted

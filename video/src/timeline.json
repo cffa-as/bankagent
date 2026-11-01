@@ -23,7 +23,7 @@
     },
     "transfer-confirm": {
       "src": "recordings/transfer-confirm.webm",
-      "trimBeforeSeconds": 2.064
+      "trimBeforeSeconds": 2.813
     },
     "audit": {
       "src": "recordings/audit.webm",
@@ -31,7 +31,7 @@
     },
     "transfer-mfa": {
       "src": "recordings/transfer-mfa.webm",
-      "trimBeforeSeconds": 1.991
+      "trimBeforeSeconds": 2.191
     },
     "security": {
       "src": "recordings/security.webm",

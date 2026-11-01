@@ -38,7 +38,7 @@ if (typeof document !== 'undefined') {
   Promise.all(
     FACES.map(([family, file, weight]) =>
       new FontFace(family, `url(${staticFile(`fonts/${file}`)})`, {weight}).load().then((face) => {
-        document.fonts.add(face)
+        ;(document.fonts as unknown as Set<FontFace>).add(face)
       }),
     ),
   )

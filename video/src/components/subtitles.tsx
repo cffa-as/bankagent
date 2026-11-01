@@ -1,5 +1,5 @@
 import {interpolate, useCurrentFrame, useVideoConfig} from 'remotion'
-import {NARRATION, NARRATION_DELAY} from '../scenes'
+import {NARRATION, NARRATION_DELAY} from '../film-plan'
 import {COLORS, FONTS} from '../theme'
 import {clamp} from './brand'
 

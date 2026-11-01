@@ -236,7 +236,7 @@ try {
   await recordClip('transfer-confirm', async (page) => {
     await typeAndSend(page, '给张三转 300 元，备注项目款')
     await page.getByRole('button', {name: /确认转账/}).waitFor({timeout: 20_000})
-    await page.waitForTimeout(3_800)
+    await page.waitForTimeout(6_800)
     await moveAndClick(page, page.getByRole('button', {name: /确认转账/}).first())
     await waitForText(page, '办理成功')
   })
@@ -259,7 +259,7 @@ try {
   await recordClip('transfer-mfa', async (page) => {
     await typeAndSend(page, '给张三转 1500 元，备注房租')
     await page.getByRole('button', {name: '验证并继续'}).waitFor({timeout: 20_000})
-    await page.waitForTimeout(3_600)
+    await page.waitForTimeout(5_100)
     await verifyMfa(page)
     await waitForText(page, '办理成功')
   })
