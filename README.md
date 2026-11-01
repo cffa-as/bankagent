@@ -39,7 +39,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:30</strong></a>
+  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:47</strong></a>
   <br />
   <sub>点击封面或标题播放 · 真实前端 · 真实 Go API · Synthetic data only</sub>
 </p>

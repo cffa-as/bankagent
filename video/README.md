@@ -4,7 +4,7 @@ This workspace produces the full product demo captured from the real Next.js fro
 
 ## Current Output
 
-- `frontend/public/demo/vaultline-product.mp4` — 4:30, 1920×1080, H.264/AAC
+- `frontend/public/demo/vaultline-product.mp4` — 4:47, 1920×1080, H.264/AAC
 - `frontend/public/demo/vaultline-product-poster.png` — full-demo still
 
 ## Product Demo
