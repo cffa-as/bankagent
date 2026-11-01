@@ -2,10 +2,9 @@ import Link from 'next/link'
 import { VaultlineLockup } from './seal'
 
 const LINKS = [
-  { href: '#path', label: '受控路径' },
-  { href: '#liquidity', label: '流动性预检' },
-  { href: '#principles', label: '安全原则' },
-  { href: '#demo', label: '演示视频' },
+  { href: '#features', label: '能办什么' },
+  { href: '#security', label: '安全保障' },
+  { href: '#faq', label: '常见问题' },
 ]
 
 export function SiteHeader() {
@@ -17,9 +16,9 @@ export function SiteHeader() {
       >
         跳到主要内容
       </a>
-      <div className="mx-auto flex h-16 max-w-[1320px] items-center justify-between px-5 md:px-8">
+      <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-5 md:px-8">
         <Link href="/" aria-label="Vaultline 首页" className="rounded-md">
-          <VaultlineLockup tone="reverse" descriptor="银行智能" />
+          <VaultlineLockup tone="reverse" descriptor="个人银行" />
         </Link>
         <nav aria-label="主导航" className="flex items-center gap-1">
           {LINKS.map((l) => (
@@ -33,9 +32,9 @@ export function SiteHeader() {
           ))}
           <Link
             href="/workspace"
-            className="ml-2 inline-flex h-10 items-center rounded-md bg-white px-4 text-sm font-medium text-navy transition-colors hover:bg-ice"
+            className="ml-2 inline-flex h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-navy transition-colors hover:bg-ice"
           >
-            进入工作台
+            打开智能助理
           </Link>
         </nav>
       </div>

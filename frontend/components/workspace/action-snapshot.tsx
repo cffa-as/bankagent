@@ -77,19 +77,17 @@ export function ActionHeading({ action }: { action: BankAction }) {
   const amount = actionAmount(action)
   const target = actionTarget(action)
   return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <RiskBadge level={action.risk_level} />
+    <div className="flex min-w-0 flex-col gap-2">
+      <p className="text-[13px] text-muted-foreground">
+        {describeKind(action.kind)}
+        {target && <span className="text-foreground"> · {target}</span>}
+      </p>
+      {amount !== null && (
+        <p className="font-mono text-[32px] font-medium leading-none tracking-tight">{formatMoney(amount, actionCurrency(action))}</p>
+      )}
+      <div className="mt-1 flex flex-wrap items-center gap-2">
         <StatusPill tone={status.tone} label={status.label} />
-      </div>
-      <div className="flex flex-col gap-1">
-        <p className="text-[14px] text-muted-foreground">
-          {describeKind(action.kind)}
-          {target && <span className="text-foreground"> · {target}</span>}
-        </p>
-        {amount !== null && (
-          <p className="font-mono text-[30px] font-medium leading-tight tracking-tight">{formatMoney(amount, actionCurrency(action))}</p>
-        )}
+        <RiskBadge level={action.risk_level} />
       </div>
     </div>
   )
@@ -104,11 +102,11 @@ export function SnapshotFields({ action }: { action: BankAction }) {
       return { label: labelField(key), value: f.text, mono: f.mono }
     })
   return (
-    <div className="rounded-lg border border-border bg-card px-4">
+    <div>
       {rows.length > 0 ? (
         <FieldList rows={rows} />
       ) : (
-        <p className="py-3 text-[13px] text-muted-foreground">服务端未返回额外快照字段。</p>
+        <p className="py-2 text-[13px] text-muted-foreground">暂无更多信息。</p>
       )}
     </div>
   )
@@ -116,23 +114,21 @@ export function SnapshotFields({ action }: { action: BankAction }) {
 
 export function ActionEvidence({ action }: { action: BankAction }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <CopyId label="Action ID" value={action.action_id} />
-      <CopyId label="Trace ID" value={action.trace_id} />
-      <p className="flex items-center gap-2 text-[13px]">
-        <span className="text-muted-foreground">有效期至</span>
-        <span className="font-mono text-[12.5px]">{formatDateTime(action.expires_at)}</span>
-      </p>
-      <Disclosure summary="快照哈希">
-        {action.snapshot_hash ? (
-          <div className="flex flex-col gap-1 rounded-lg bg-muted p-3">
-            <p className="text-[12px] text-muted-foreground">快照哈希（服务端计算）</p>
-            <code className="font-mono text-[12px] leading-relaxed [overflow-wrap:anywhere]">{action.snapshot_hash}</code>
-          </div>
-        ) : (
-          <p className="text-[13px] text-muted-foreground">服务端未返回快照哈希。</p>
+    <Disclosure summary="业务凭证">
+      <div className="flex flex-col gap-1.5 rounded-lg bg-background p-3">
+        <CopyId label="业务编号" value={action.action_id} className="text-[12.5px]" />
+        <CopyId label="流水号" value={action.trace_id} className="text-[12.5px]" />
+        <p className="flex items-center gap-2 text-[12.5px]">
+          <span className="text-muted-foreground">有效期至</span>
+          <span className="font-mono">{formatDateTime(action.expires_at)}</span>
+        </p>
+        {action.snapshot_hash && (
+          <p className="flex flex-col gap-0.5 text-[12.5px]">
+            <span className="text-muted-foreground">信息校验码</span>
+            <code className="font-mono text-[11.5px] leading-relaxed [overflow-wrap:anywhere]">{action.snapshot_hash}</code>
+          </p>
         )}
-      </Disclosure>
-    </div>
+      </div>
+    </Disclosure>
   )
 }

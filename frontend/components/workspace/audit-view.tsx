@@ -23,13 +23,13 @@ export function AuditView({ session }: { session: WorkspaceSession }) {
   return (
     <div className="flex flex-col gap-6 px-5 py-6 sm:px-8">
       <div>
-        <h2 className="text-[20px] font-semibold tracking-tight">审计</h2>
-        <p className="text-[13px] text-muted-foreground">按 Trace 查看服务端记录的过程事件：意图、风险、确认、MFA、执行闸门与回执。</p>
+        <h2 className="text-[20px] font-semibold tracking-tight">操作记录</h2>
+        <p className="text-[13px] text-muted-foreground">查看每笔业务从发起、风险评估、确认、安全验证到银行回执的完整记录。</p>
       </div>
 
       <form onSubmit={lookup} className="flex gap-2">
         <label htmlFor={inputId} className="sr-only">
-          Trace ID
+          业务流水号
         </label>
         <input
           id={inputId}
@@ -37,7 +37,7 @@ export function AuditView({ session }: { session: WorkspaceSession }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           autoComplete="off"
-          placeholder="输入 Trace ID"
+          placeholder="输入流水号，如 tr_…"
           spellCheck={false}
           className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 font-mono text-[13.5px] outline-none focus:border-cobalt"
         />
@@ -52,7 +52,7 @@ export function AuditView({ session }: { session: WorkspaceSession }) {
 
       {session.traces.length > 0 && (
         <div className="flex flex-col gap-2">
-          <SectionLabel>本次会话的 Trace</SectionLabel>
+          <SectionLabel>本次会话的业务</SectionLabel>
           <ul className="flex flex-wrap gap-2">
             {session.traces.map((id) => (
               <li key={id}>
@@ -77,7 +77,7 @@ export function AuditView({ session }: { session: WorkspaceSession }) {
         {traceId ? (
           <AuditTimeline key={traceId} adapter={session.adapter} traceId={traceId} />
         ) : (
-          <p className="text-[13.5px] text-muted-foreground">在助理中发起一次请求，或输入已有的 Trace ID。</p>
+          <p className="text-[13.5px] text-muted-foreground">在智能助理中办理业务后，记录会显示在这里。</p>
         )}
       </div>
     </div>

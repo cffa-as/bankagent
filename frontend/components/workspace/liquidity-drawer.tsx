@@ -9,7 +9,7 @@ import { TONE, VERDICT } from '@/lib/vaultline/status'
 import type { LiquidityAlternative, LiquiditySimulation } from '@/lib/vaultline/types'
 import type { WorkspaceSession } from '@/lib/vaultline/use-workspace-session'
 import { LiquidityChart } from './liquidity-chart'
-import { CopyId, FieldList, RawData, SectionLabel, Spinner, StatusPill } from './primitives'
+import { CopyId, FieldList, SectionLabel, Spinner, StatusPill } from './primitives'
 
 interface LiquidityDrawerProps {
   open: boolean
@@ -44,7 +44,7 @@ function Alternatives({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-[14px] font-medium">{alt.label}</p>
-                {highlight && <StatusPill tone="live" label="服务端推荐" />}
+                {highlight && <StatusPill tone="live" label="推荐方案" />}
                 <StatusPill tone={alt.conditional ? 'confirm' : 'read'} label={alt.conditional ? '有条件' : '无条件'} />
                 {alt.status && <span className="text-[12px] text-muted-foreground">{VERDICT[alt.status]?.label ?? alt.status}</span>}
               </div>
@@ -74,13 +74,13 @@ function Alternatives({
                 )}
               >
                 {creating && chosen === alt.alternative_id ? <Spinner className="size-3.5" /> : <Check className="size-3.5" aria-hidden />}
-                {executable ? '选择此方案并创建工作流' : '当前方案无需创建预算计划'}
+                {executable ? '按此方案创建资金计划' : '当前方案无需创建预算计划'}
               </button>
             </li>
           )
         })}
       </ul>
-      <p className="text-[12.5px] leading-relaxed text-muted-foreground">选择方案会创建一个新的工作流，但不会执行任何节点；每个需授权的节点仍需逐一确认。</p>
+      <p className="text-[12.5px] leading-relaxed text-muted-foreground">选择方案只会创建资金计划，不会立即动用资金；每一步执行前仍需你确认。</p>
     </section>
   )
 }
@@ -99,7 +99,7 @@ export function LiquidityReport({
   return (
     <div className="flex flex-col gap-6">
       <div className={cn('flex flex-col gap-2 rounded-lg border p-4', verdict ? TONE[verdict.tone].line : 'border-border', verdict ? TONE[verdict.tone].soft : 'bg-muted')}>
-        <p className="text-[12px]">服务端结论</p>
+        <p className="text-[12px]">测算结论</p>
         <p className="text-[22px] font-semibold leading-tight">{verdict?.label ?? simulation.verdict ?? '未返回'}</p>
         {simulation.risk_reason && <p className="text-[13px] leading-relaxed text-foreground/85">{simulation.risk_reason}</p>}
       </div>
@@ -143,9 +143,8 @@ export function LiquidityReport({
       <Alternatives simulation={simulation} creating={creating} onSelect={onSelect} />
 
       <div className="flex flex-col gap-2">
-        <CopyId label="Trace ID" value={simulation.trace_id} />
+        <CopyId label="流水号" value={simulation.trace_id} />
         <p className="text-[12px] leading-relaxed text-muted-foreground">情景基于账户已知现金流，不代表对未来的准确预测。</p>
-        <RawData value={simulation} />
       </div>
     </div>
   )
@@ -179,7 +178,7 @@ export function LiquidityDrawer({ open, onClose, session, creatingWorkflow, onSe
             <h2 id="ws-liquidity-title" className="text-[16px] font-semibold tracking-tight">
               流动性预检报告
             </h2>
-            <p className="truncate text-[13px] text-muted-foreground">由 Agent 发起，银行服务端生成；前端不二次计算</p>
+            <p className="truncate text-[13px] text-muted-foreground">基于你的账户收支测算未来 30 天余额</p>
           </div>
           <button
             type="button"
@@ -202,7 +201,7 @@ export function LiquidityDrawer({ open, onClose, session, creatingWorkflow, onSe
               />
             ) : (
               <p className="text-[14px] leading-relaxed text-muted-foreground">
-                请先在对话中描述预算和现金流问题。Agent 会调用银行服务端的流动性预检工具。
+                请先在对话中描述你的预算或现金流问题，例如“预留 2000 元会影响必要支出吗？”
               </p>
             )}
             {simulation && (

@@ -1,74 +1,74 @@
 'use client'
 
-import { ArrowLeftRight, ChartLine, ChevronRight, CreditCard, LineChart, Receipt, Repeat, Wallet } from 'lucide-react'
+import { ArrowLeftRight, ArrowUpRight, CreditCard, LineChart, Receipt, Repeat, Wallet } from 'lucide-react'
 
-const SHORTCUTS = [
-  { prompt: '查一下我的余额', icon: Wallet, tag: '查询', color: 'bg-teal' },
-  { prompt: '给张三转 300 元，备注项目款', icon: ArrowLeftRight, tag: '转账', color: 'bg-amber' },
-  { prompt: '分析本月消费和异常交易', icon: Receipt, tag: '账单', color: 'bg-cobalt' },
-  { prompt: '比较稳健型理财产品', icon: LineChart, tag: '理财', color: 'bg-red' },
-  { prompt: '查询卡片状态与额度', icon: CreditCard, tag: '卡片', color: 'bg-steel' },
-  { prompt: '检查订阅与续费提醒', icon: Repeat, tag: '订阅', color: 'bg-teal' },
+const SERVICES = [
+  { title: '余额与收支', example: '查一下我的余额', icon: Wallet },
+  { title: '转账汇款', example: '给张三转 300 元，备注项目款', icon: ArrowLeftRight },
+  { title: '账单分析', example: '分析本月消费和异常交易', icon: Receipt },
+  { title: '理财产品', example: '比较稳健型理财产品', icon: LineChart },
+  { title: '卡片管理', example: '查询卡片状态与额度', icon: CreditCard },
+  { title: '订阅代扣', example: '检查订阅与续费提醒', icon: Repeat },
 ] as const
+
+const QUESTIONS = ['如果预留 2000 元，会影响未来 30 天的必要支出吗？', '最近一周有没有异常扣款？', '下个月有哪些自动续费？'] as const
 
 export function EmptyState({ onPick, disabled }: { onPick: (prompt: string) => void; disabled: boolean }) {
   return (
-    <div className="vl-enter grid gap-10 pt-3 sm:pt-8 lg:grid-cols-[0.78fr_1.22fr] lg:gap-14">
-      <div className="flex max-w-sm flex-col gap-5">
-        <p className="flex items-center gap-2 text-[13px] font-medium text-cobalt-ink">
-          <span className="size-1.5 rounded-full bg-cobalt" aria-hidden />
-          银行事务工作台
+    <div className="vl-enter flex flex-col gap-10 pt-2 sm:pt-10">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-balance text-[26px] font-semibold tracking-tight sm:text-[30px]">你好，今天想办理什么业务？</h2>
+        <p className="text-pretty text-[15px] leading-relaxed text-muted-foreground">
+          直接用一句话描述即可。涉及资金的操作，都会先请你核对并确认。
         </p>
-        <h2 className="font-display text-[32px] font-semibold leading-tight tracking-[-0.04em] sm:text-[38px]">
-          从一个意图
-          <br />
-          开始办理。
-        </h2>
-        <p className="text-pretty text-[14px] leading-7 text-muted-foreground">
-          描述你要办的事。Vaultline 会整理候选动作，涉及资金的操作必须经过服务端确认或 MFA。
-        </p>
-        <div className="mt-2 border-l-2 border-cobalt pl-4 text-[13px] leading-6 text-muted-foreground">
-          助理负责理解。
-          <br />
-          银行服务端负责授权与执行。
-        </div>
       </div>
-      <div className="flex min-w-0 flex-col">
-        <p className="mb-3 text-[12px] font-medium text-muted-foreground">常用业务</p>
-        <ul className="border-t border-border" aria-label="常用业务">
-        {SHORTCUTS.map(({ prompt, icon: Icon, tag, color }) => (
-          <li key={prompt} className="border-b border-border">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onPick(prompt)}
-              className="group flex min-h-14 w-full items-center gap-3 px-1 py-3 text-left transition-colors duration-150 hover:bg-card disabled:opacity-50"
-            >
-              <span className={`size-1.5 shrink-0 rounded-full ${color}`} aria-hidden />
-              <Icon className="size-4 shrink-0 text-steel" aria-hidden />
-              <span className="min-w-0 flex-1 text-[14px]">{prompt}</span>
-              <span className="shrink-0 text-[12px] text-muted-foreground">{tag}</span>
-              <ChevronRight className="size-4 shrink-0 text-steel opacity-30 transition-opacity group-hover:opacity-100" aria-hidden />
-            </button>
-          </li>
-        ))}
+
+      <section aria-labelledby="ws-services" className="flex flex-col gap-3">
+        <h3 id="ws-services" className="text-[13px] font-medium text-muted-foreground">
+          常用业务
+        </h3>
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {SERVICES.map(({ title, example, icon: Icon }) => (
+            <li key={title}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onPick(example)}
+                className="group flex h-full w-full flex-col gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors duration-150 hover:border-cobalt/40 disabled:opacity-50"
+              >
+                <span className="flex size-9 items-center justify-center rounded-lg bg-ice text-cobalt-ink">
+                  <Icon className="size-[18px]" aria-hidden />
+                </span>
+                <span className="flex flex-col gap-1">
+                  <span className="text-[14px] font-medium">{title}</span>
+                  <span className="line-clamp-2 text-[12.5px] leading-5 text-muted-foreground">{example}</span>
+                </span>
+              </button>
+            </li>
+          ))}
         </ul>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => onPick('如果预留 2000 元，会影响未来 30 天的必要支出吗？')}
-          className="group mt-5 flex items-center gap-3 border-l-2 border-teal py-2 pl-4 text-left transition-colors hover:bg-card disabled:opacity-50"
-        >
-          <ChartLine className="size-4 shrink-0 text-teal" aria-hidden />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[14px] font-medium">直接问现金流影响</span>
-            <span className="mt-0.5 block text-[12px] leading-5 text-muted-foreground">
-              例如：预留 2000 元，会影响未来 30 天的必要支出吗？
-            </span>
-          </span>
-          <ChevronRight className="size-4 shrink-0 text-steel opacity-30 transition-opacity group-hover:opacity-100" aria-hidden />
-        </button>
-      </div>
+      </section>
+
+      <section aria-labelledby="ws-questions" className="flex flex-col gap-3">
+        <h3 id="ws-questions" className="text-[13px] font-medium text-muted-foreground">
+          你也可以这样问
+        </h3>
+        <ul className="flex flex-col divide-y divide-border rounded-xl border border-border bg-card">
+          {QUESTIONS.map((q) => (
+            <li key={q}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onPick(q)}
+                className="group flex min-h-12 w-full items-center gap-3 px-4 py-3 text-left text-[14px] transition-colors hover:bg-background disabled:opacity-50"
+              >
+                <span className="min-w-0 flex-1">{q}</span>
+                <ArrowUpRight className="size-4 shrink-0 text-steel transition-colors group-hover:text-cobalt-ink" aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   )
 }

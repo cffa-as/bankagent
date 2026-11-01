@@ -82,7 +82,7 @@ async function call(method: 'GET' | 'POST', path: string, body?: unknown, idempo
         cache: 'no-store',
       })
     } catch {
-      throw new VaultlineApiError('unavailable', '无法连接银行服务端，请求未送达。')
+      throw new VaultlineApiError('unavailable', '无法连接银行服务，请检查网络后重试。')
     }
 
     const isJson = response.headers.get('content-type')?.includes('application/json') ?? false
@@ -91,12 +91,12 @@ async function call(method: 'GET' | 'POST', path: string, body?: unknown, idempo
 
     if (!response.ok) {
       if (!payload || response.status === 502 || response.status === 503 || response.status === 504) {
-        throw new VaultlineApiError('unavailable', `银行服务端不可用（HTTP ${response.status}）。`, response.status, null, null, traceId)
+        throw new VaultlineApiError('unavailable', `银行服务暂时不可用（${response.status}）。`, response.status, null, null, traceId)
       }
       const error = normalizeErrorBody(payload)
       throw new VaultlineApiError(
         'rejected',
-        error?.message ?? `服务端拒绝了请求（HTTP ${response.status}）。`,
+        error?.message ?? `请求未被受理（${response.status}）。`,
         response.status,
         error?.code ?? null,
         error?.details ?? null,
@@ -104,7 +104,7 @@ async function call(method: 'GET' | 'POST', path: string, body?: unknown, idempo
       )
     }
 
-    if (!payload) throw new VaultlineApiError('invalid', '服务端响应不是有效的 JSON。', response.status)
+    if (!payload) throw new VaultlineApiError('invalid', '暂时无法识别银行返回的结果。', response.status)
     return { data: payload.data !== undefined ? payload.data : payload, traceId }
   } finally {
     clearTimeout(timeout)
@@ -114,7 +114,7 @@ async function call(method: 'GET' | 'POST', path: string, body?: unknown, idempo
 const seg = encodeURIComponent
 
 function requireValue<T>(value: T | null, what: string): T {
-  if (value === null) throw new VaultlineApiError('invalid', `服务端响应缺少${what}。`)
+  if (value === null) throw new VaultlineApiError('invalid', `银行返回的结果缺少${what}。`)
   return value
 }
 

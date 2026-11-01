@@ -1,9 +1,8 @@
 import { SiteHeader } from '@/components/vaultline/site-header'
 import { Hero } from '@/components/vaultline/hero'
-import { ControlledPath } from '@/components/vaultline/controlled-path'
-import { LiquiditySection } from '@/components/vaultline/liquidity-section'
-import { Principles } from '@/components/vaultline/principles'
-import { DemoSection } from '@/components/vaultline/demo-section'
+import { Features } from '@/components/vaultline/features'
+import { Security } from '@/components/vaultline/security'
+import { Faq } from '@/components/vaultline/faq'
 import { SiteFooter } from '@/components/vaultline/site-footer'
 
 export default function Page() {
@@ -12,10 +11,9 @@ export default function Page() {
       <SiteHeader />
       <main id="main">
         <Hero />
-        <ControlledPath />
-        <LiquiditySection />
-        <Principles />
-        <DemoSection />
+        <Features />
+        <Security />
+        <Faq />
       </main>
       <SiteFooter />
     </>
