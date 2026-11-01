@@ -1,0 +1,1235 @@
+{
+ "status": 200,
+ "data": {
+  "run_id": "run_9eaf295bb92da9fc",
+  "run_status": "completed",
+  "reply_type": "query_result",
+  "text": "未来 30 天流动性不足：预期最低可用 1422.24 CNY，收入未到账时最低 -6799.99 CNY，建议预留不超过 0.00 CNY；当前结果依赖预计收入到账。",
+  "liquidity": {
+   "simulation_id": "liq_17870d0edadfc870",
+   "account_id": "acct_demo",
+   "trace_id": "tr_f1bd502e95a7a3b2",
+   "currency": "CNY",
+   "start_at": "2026-11-01T00:00:00+08:00",
+   "horizon_days": 30,
+   "starting_available_minor": 1500000,
+   "proposed_budget_minor": 500000,
+   "essential_buffer_minor": 100000,
+   "historical_average_daily_minor": 864,
+   "historical_conservative_daily_minor": 25900,
+   "maximum_safe_budget_minor": 0,
+   "income_stress_minimum_available_minor": -679999,
+   "income_stress_minimum_date": "2026-12-01",
+   "income_stress_status": "unsafe",
+   "depends_on_unconfirmed_income": true,
+   "verdict": "unsafe",
+   "risk_reason": "预期情景最低可用余额为 1422.24，但保守消费情景将在 2026-12-01 出现资金不足。",
+   "recommendation": "建议将预留金额控制在 0.00 CNY 以内，或把预算支出推迟到收入到账后。",
+   "assumptions": [
+    "工资、房租、还款和保险按预置现金流计划展开。",
+    "活跃订阅和已确认的预约转账计入预测。",
+    "收入压力情景假设预测期内的收入均未按时到账。",
+    "预期情景按过去30天可支配消费日均 8.64 CNY 计算。",
+    "保守情景按过去30天最高单日可支配消费 259.00 CNY 计算。",
+    "计划预算在预测起点即从可用余额中占用。"
+   ],
+   "events": [
+    {
+     "date": "2026-11-01",
+     "kind": "proposed_budget",
+     "direction": "out",
+     "description": "计划预留预算",
+     "amount_minor": 500000,
+     "essential": false,
+     "source_id": "proposed_budget"
+    },
+    {
+     "date": "2026-11-04",
+     "kind": "housing",
+     "direction": "out",
+     "description": "房租",
+     "amount_minor": 650000,
+     "essential": true,
+     "source_id": "cashflow_rent"
+    },
+    {
+     "date": "2026-11-06",
+     "kind": "loan",
+     "direction": "out",
+     "description": "贷款还款",
+     "amount_minor": 200000,
+     "essential": true,
+     "source_id": "cashflow_loan"
+    },
+    {
+     "date": "2026-11-11",
+     "kind": "subscription",
+     "direction": "out",
+     "description": "demo-streaming",
+     "amount_minor": 2999,
+     "essential": false,
+     "source_id": "sub_streaming"
+    },
+    {
+     "date": "2026-11-11",
+     "kind": "income",
+     "direction": "in",
+     "description": "工资收入",
+     "amount_minor": 500000,
+     "essential": false,
+     "source_id": "cashflow_salary"
+    },
+    {
+     "date": "2026-11-21",
+     "kind": "insurance",
+     "direction": "out",
+     "description": "保险缴费",
+     "amount_minor": 50000,
+     "essential": true,
+     "source_id": "cashflow_insurance"
+    }
+   ],
+   "scenarios": [
+    {
+     "name": "essential_only",
+     "daily_discretionary_minor": 0,
+     "ending_available_minor": 597001,
+     "minimum_available_minor": 150000,
+     "minimum_date": "2026-11-06",
+     "status": "safe",
+     "points": [
+      {
+       "date": "2026-11-01",
+       "available_minor": 1000000
+      },
+      {
+       "date": "2026-11-02",
+       "available_minor": 1000000
+      },
+      {
+       "date": "2026-11-03",
+       "available_minor": 1000000
+      },
+      {
+       "date": "2026-11-04",
+       "available_minor": 350000
+      },
+      {
+       "date": "2026-11-05",
+       "available_minor": 350000
+      },
+      {
+       "date": "2026-11-06",
+       "available_minor": 150000
+      },
+      {
+       "date": "2026-11-07",
+       "available_minor": 150000
+      },
+      {
+       "date": "2026-11-08",
+       "available_minor": 150000
+      },
+      {
+       "date": "2026-11-09",
+       "available_minor": 150000
+      },
+      {
+       "date": "2026-11-10",
+       "available_minor": 150000
+      },
+      {
+       "date": "2026-11-11",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-12",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-13",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-14",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-15",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-16",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-17",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-18",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-19",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-20",
+       "available_minor": 647001
+      },
+      {
+       "date": "2026-11-21",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-11-22",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-11-23",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-11-24",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-11-25",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-11-26",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-11-27",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-11-28",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-11-29",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-11-30",
+       "available_minor": 597001
+      },
+      {
+       "date": "2026-12-01",
+       "available_minor": 597001
+      }
+     ]
+    },
+    {
+     "name": "expected",
+     "daily_discretionary_minor": 864,
+     "ending_available_minor": 571081,
+     "minimum_available_minor": 142224,
+     "minimum_date": "2026-11-10",
+     "status": "safe",
+     "points": [
+      {
+       "date": "2026-11-01",
+       "available_minor": 1000000
+      },
+      {
+       "date": "2026-11-02",
+       "available_minor": 999136
+      },
+      {
+       "date": "2026-11-03",
+       "available_minor": 998272
+      },
+      {
+       "date": "2026-11-04",
+       "available_minor": 347408
+      },
+      {
+       "date": "2026-11-05",
+       "available_minor": 346544
+      },
+      {
+       "date": "2026-11-06",
+       "available_minor": 145680
+      },
+      {
+       "date": "2026-11-07",
+       "available_minor": 144816
+      },
+      {
+       "date": "2026-11-08",
+       "available_minor": 143952
+      },
+      {
+       "date": "2026-11-09",
+       "available_minor": 143088
+      },
+      {
+       "date": "2026-11-10",
+       "available_minor": 142224
+      },
+      {
+       "date": "2026-11-11",
+       "available_minor": 638361
+      },
+      {
+       "date": "2026-11-12",
+       "available_minor": 637497
+      },
+      {
+       "date": "2026-11-13",
+       "available_minor": 636633
+      },
+      {
+       "date": "2026-11-14",
+       "available_minor": 635769
+      },
+      {
+       "date": "2026-11-15",
+       "available_minor": 634905
+      },
+      {
+       "date": "2026-11-16",
+       "available_minor": 634041
+      },
+      {
+       "date": "2026-11-17",
+       "available_minor": 633177
+      },
+      {
+       "date": "2026-11-18",
+       "available_minor": 632313
+      },
+      {
+       "date": "2026-11-19",
+       "available_minor": 631449
+      },
+      {
+       "date": "2026-11-20",
+       "available_minor": 630585
+      },
+      {
+       "date": "2026-11-21",
+       "available_minor": 579721
+      },
+      {
+       "date": "2026-11-22",
+       "available_minor": 578857
+      },
+      {
+       "date": "2026-11-23",
+       "available_minor": 577993
+      },
+      {
+       "date": "2026-11-24",
+       "available_minor": 577129
+      },
+      {
+       "date": "2026-11-25",
+       "available_minor": 576265
+      },
+      {
+       "date": "2026-11-26",
+       "available_minor": 575401
+      },
+      {
+       "date": "2026-11-27",
+       "available_minor": 574537
+      },
+      {
+       "date": "2026-11-28",
+       "available_minor": 573673
+      },
+      {
+       "date": "2026-11-29",
+       "available_minor": 572809
+      },
+      {
+       "date": "2026-11-30",
+       "available_minor": 571945
+      },
+      {
+       "date": "2026-12-01",
+       "available_minor": 571081
+      }
+     ]
+    },
+    {
+     "name": "conservative",
+     "daily_discretionary_minor": 25900,
+     "ending_available_minor": -179999,
+     "minimum_available_minor": -179999,
+     "minimum_date": "2026-12-01",
+     "status": "unsafe",
+     "points": [
+      {
+       "date": "2026-11-01",
+       "available_minor": 1000000
+      },
+      {
+       "date": "2026-11-02",
+       "available_minor": 974100
+      },
+      {
+       "date": "2026-11-03",
+       "available_minor": 948200
+      },
+      {
+       "date": "2026-11-04",
+       "available_minor": 272300
+      },
+      {
+       "date": "2026-11-05",
+       "available_minor": 246400
+      },
+      {
+       "date": "2026-11-06",
+       "available_minor": 20500
+      },
+      {
+       "date": "2026-11-07",
+       "available_minor": -5400
+      },
+      {
+       "date": "2026-11-08",
+       "available_minor": -31300
+      },
+      {
+       "date": "2026-11-09",
+       "available_minor": -57200
+      },
+      {
+       "date": "2026-11-10",
+       "available_minor": -83100
+      },
+      {
+       "date": "2026-11-11",
+       "available_minor": 388001
+      },
+      {
+       "date": "2026-11-12",
+       "available_minor": 362101
+      },
+      {
+       "date": "2026-11-13",
+       "available_minor": 336201
+      },
+      {
+       "date": "2026-11-14",
+       "available_minor": 310301
+      },
+      {
+       "date": "2026-11-15",
+       "available_minor": 284401
+      },
+      {
+       "date": "2026-11-16",
+       "available_minor": 258501
+      },
+      {
+       "date": "2026-11-17",
+       "available_minor": 232601
+      },
+      {
+       "date": "2026-11-18",
+       "available_minor": 206701
+      },
+      {
+       "date": "2026-11-19",
+       "available_minor": 180801
+      },
+      {
+       "date": "2026-11-20",
+       "available_minor": 154901
+      },
+      {
+       "date": "2026-11-21",
+       "available_minor": 79001
+      },
+      {
+       "date": "2026-11-22",
+       "available_minor": 53101
+      },
+      {
+       "date": "2026-11-23",
+       "available_minor": 27201
+      },
+      {
+       "date": "2026-11-24",
+       "available_minor": 1301
+      },
+      {
+       "date": "2026-11-25",
+       "available_minor": -24599
+      },
+      {
+       "date": "2026-11-26",
+       "available_minor": -50499
+      },
+      {
+       "date": "2026-11-27",
+       "available_minor": -76399
+      },
+      {
+       "date": "2026-11-28",
+       "available_minor": -102299
+      },
+      {
+       "date": "2026-11-29",
+       "available_minor": -128199
+      },
+      {
+       "date": "2026-11-30",
+       "available_minor": -154099
+      },
+      {
+       "date": "2026-12-01",
+       "available_minor": -179999
+      }
+     ]
+    },
+    {
+     "name": "income_stress",
+     "daily_discretionary_minor": 25900,
+     "ending_available_minor": -679999,
+     "minimum_available_minor": -679999,
+     "minimum_date": "2026-12-01",
+     "status": "unsafe",
+     "points": [
+      {
+       "date": "2026-11-01",
+       "available_minor": 1000000
+      },
+      {
+       "date": "2026-11-02",
+       "available_minor": 974100
+      },
+      {
+       "date": "2026-11-03",
+       "available_minor": 948200
+      },
+      {
+       "date": "2026-11-04",
+       "available_minor": 272300
+      },
+      {
+       "date": "2026-11-05",
+       "available_minor": 246400
+      },
+      {
+       "date": "2026-11-06",
+       "available_minor": 20500
+      },
+      {
+       "date": "2026-11-07",
+       "available_minor": -5400
+      },
+      {
+       "date": "2026-11-08",
+       "available_minor": -31300
+      },
+      {
+       "date": "2026-11-09",
+       "available_minor": -57200
+      },
+      {
+       "date": "2026-11-10",
+       "available_minor": -83100
+      },
+      {
+       "date": "2026-11-11",
+       "available_minor": -111999
+      },
+      {
+       "date": "2026-11-12",
+       "available_minor": -137899
+      },
+      {
+       "date": "2026-11-13",
+       "available_minor": -163799
+      },
+      {
+       "date": "2026-11-14",
+       "available_minor": -189699
+      },
+      {
+       "date": "2026-11-15",
+       "available_minor": -215599
+      },
+      {
+       "date": "2026-11-16",
+       "available_minor": -241499
+      },
+      {
+       "date": "2026-11-17",
+       "available_minor": -267399
+      },
+      {
+       "date": "2026-11-18",
+       "available_minor": -293299
+      },
+      {
+       "date": "2026-11-19",
+       "available_minor": -319199
+      },
+      {
+       "date": "2026-11-20",
+       "available_minor": -345099
+      },
+      {
+       "date": "2026-11-21",
+       "available_minor": -420999
+      },
+      {
+       "date": "2026-11-22",
+       "available_minor": -446899
+      },
+      {
+       "date": "2026-11-23",
+       "available_minor": -472799
+      },
+      {
+       "date": "2026-11-24",
+       "available_minor": -498699
+      },
+      {
+       "date": "2026-11-25",
+       "available_minor": -524599
+      },
+      {
+       "date": "2026-11-26",
+       "available_minor": -550499
+      },
+      {
+       "date": "2026-11-27",
+       "available_minor": -576399
+      },
+      {
+       "date": "2026-11-28",
+       "available_minor": -602299
+      },
+      {
+       "date": "2026-11-29",
+       "available_minor": -628199
+      },
+      {
+       "date": "2026-11-30",
+       "available_minor": -654099
+      },
+      {
+       "date": "2026-12-01",
+       "available_minor": -679999
+      }
+     ]
+    }
+   ],
+   "alternatives": [
+    {
+     "alternative_id": "current",
+     "label": "保持原计划",
+     "description": "立即按原金额预留预算。",
+     "conditional": false,
+     "total_budget_minor": 500000,
+     "reservations": [
+      {
+       "date": "2026-11-01",
+       "amount_minor": 500000
+      }
+     ],
+     "status": "unsafe",
+     "expected_minimum_available_minor": 142224,
+     "expected_minimum_date": "2026-11-10",
+     "conservative_minimum_available_minor": -179999,
+     "conservative_minimum_date": "2026-12-01",
+     "income_stress_minimum_available_minor": -679999,
+     "income_stress_minimum_date": "2026-12-01",
+     "expected_points": [
+      {
+       "date": "2026-11-01",
+       "available_minor": 1000000
+      },
+      {
+       "date": "2026-11-02",
+       "available_minor": 999136
+      },
+      {
+       "date": "2026-11-03",
+       "available_minor": 998272
+      },
+      {
+       "date": "2026-11-04",
+       "available_minor": 347408
+      },
+      {
+       "date": "2026-11-05",
+       "available_minor": 346544
+      },
+      {
+       "date": "2026-11-06",
+       "available_minor": 145680
+      },
+      {
+       "date": "2026-11-07",
+       "available_minor": 144816
+      },
+      {
+       "date": "2026-11-08",
+       "available_minor": 143952
+      },
+      {
+       "date": "2026-11-09",
+       "available_minor": 143088
+      },
+      {
+       "date": "2026-11-10",
+       "available_minor": 142224
+      },
+      {
+       "date": "2026-11-11",
+       "available_minor": 638361
+      },
+      {
+       "date": "2026-11-12",
+       "available_minor": 637497
+      },
+      {
+       "date": "2026-11-13",
+       "available_minor": 636633
+      },
+      {
+       "date": "2026-11-14",
+       "available_minor": 635769
+      },
+      {
+       "date": "2026-11-15",
+       "available_minor": 634905
+      },
+      {
+       "date": "2026-11-16",
+       "available_minor": 634041
+      },
+      {
+       "date": "2026-11-17",
+       "available_minor": 633177
+      },
+      {
+       "date": "2026-11-18",
+       "available_minor": 632313
+      },
+      {
+       "date": "2026-11-19",
+       "available_minor": 631449
+      },
+      {
+       "date": "2026-11-20",
+       "available_minor": 630585
+      },
+      {
+       "date": "2026-11-21",
+       "available_minor": 579721
+      },
+      {
+       "date": "2026-11-22",
+       "available_minor": 578857
+      },
+      {
+       "date": "2026-11-23",
+       "available_minor": 577993
+      },
+      {
+       "date": "2026-11-24",
+       "available_minor": 577129
+      },
+      {
+       "date": "2026-11-25",
+       "available_minor": 576265
+      },
+      {
+       "date": "2026-11-26",
+       "available_minor": 575401
+      },
+      {
+       "date": "2026-11-27",
+       "available_minor": 574537
+      },
+      {
+       "date": "2026-11-28",
+       "available_minor": 573673
+      },
+      {
+       "date": "2026-11-29",
+       "available_minor": 572809
+      },
+      {
+       "date": "2026-11-30",
+       "available_minor": 571945
+      },
+      {
+       "date": "2026-12-01",
+       "available_minor": 571081
+      }
+     ],
+     "recommended": false,
+     "tradeoff": "执行最简单，但会立即降低可用余额。"
+    },
+    {
+     "alternative_id": "buffer_preserving",
+     "label": "暂不预留",
+     "description": "当前不占用预算，等待资金状况改善。",
+     "conditional": false,
+     "total_budget_minor": 0,
+     "reservations": [
+      {
+       "date": "2026-11-01",
+       "amount_minor": 0
+      }
+     ],
+     "status": "unsafe",
+     "expected_minimum_available_minor": 642224,
+     "expected_minimum_date": "2026-11-10",
+     "conservative_minimum_available_minor": 320001,
+     "conservative_minimum_date": "2026-12-01",
+     "income_stress_minimum_available_minor": -179999,
+     "income_stress_minimum_date": "2026-12-01",
+     "expected_points": [
+      {
+       "date": "2026-11-01",
+       "available_minor": 1500000
+      },
+      {
+       "date": "2026-11-02",
+       "available_minor": 1499136
+      },
+      {
+       "date": "2026-11-03",
+       "available_minor": 1498272
+      },
+      {
+       "date": "2026-11-04",
+       "available_minor": 847408
+      },
+      {
+       "date": "2026-11-05",
+       "available_minor": 846544
+      },
+      {
+       "date": "2026-11-06",
+       "available_minor": 645680
+      },
+      {
+       "date": "2026-11-07",
+       "available_minor": 644816
+      },
+      {
+       "date": "2026-11-08",
+       "available_minor": 643952
+      },
+      {
+       "date": "2026-11-09",
+       "available_minor": 643088
+      },
+      {
+       "date": "2026-11-10",
+       "available_minor": 642224
+      },
+      {
+       "date": "2026-11-11",
+       "available_minor": 1138361
+      },
+      {
+       "date": "2026-11-12",
+       "available_minor": 1137497
+      },
+      {
+       "date": "2026-11-13",
+       "available_minor": 1136633
+      },
+      {
+       "date": "2026-11-14",
+       "available_minor": 1135769
+      },
+      {
+       "date": "2026-11-15",
+       "available_minor": 1134905
+      },
+      {
+       "date": "2026-11-16",
+       "available_minor": 1134041
+      },
+      {
+       "date": "2026-11-17",
+       "available_minor": 1133177
+      },
+      {
+       "date": "2026-11-18",
+       "available_minor": 1132313
+      },
+      {
+       "date": "2026-11-19",
+       "available_minor": 1131449
+      },
+      {
+       "date": "2026-11-20",
+       "available_minor": 1130585
+      },
+      {
+       "date": "2026-11-21",
+       "available_minor": 1079721
+      },
+      {
+       "date": "2026-11-22",
+       "available_minor": 1078857
+      },
+      {
+       "date": "2026-11-23",
+       "available_minor": 1077993
+      },
+      {
+       "date": "2026-11-24",
+       "available_minor": 1077129
+      },
+      {
+       "date": "2026-11-25",
+       "available_minor": 1076265
+      },
+      {
+       "date": "2026-11-26",
+       "available_minor": 1075401
+      },
+      {
+       "date": "2026-11-27",
+       "available_minor": 1074537
+      },
+      {
+       "date": "2026-11-28",
+       "available_minor": 1073673
+      },
+      {
+       "date": "2026-11-29",
+       "available_minor": 1072809
+      },
+      {
+       "date": "2026-11-30",
+       "available_minor": 1071945
+      },
+      {
+       "date": "2026-12-01",
+       "available_minor": 1071081
+      }
+     ],
+     "recommended": false,
+     "tradeoff": "会减少可执行预算，但优先保护必要支出。"
+    },
+    {
+     "alternative_id": "after_income",
+     "label": "等待下一笔收入",
+     "description": "在 2026-11-11 收入到账后预留完整预算。",
+     "conditional": true,
+     "condition": "仅在 2026-11-11 收入确认入账后执行。",
+     "total_budget_minor": 500000,
+     "reservations": [
+      {
+       "date": "2026-11-11",
+       "amount_minor": 500000
+      }
+     ],
+     "status": "unsafe",
+     "expected_minimum_available_minor": 571081,
+     "expected_minimum_date": "2026-12-01",
+     "conservative_minimum_available_minor": -179999,
+     "conservative_minimum_date": "2026-12-01",
+     "income_stress_minimum_available_minor": -679999,
+     "income_stress_minimum_date": "2026-12-01",
+     "expected_points": [
+      {
+       "date": "2026-11-01",
+       "available_minor": 1500000
+      },
+      {
+       "date": "2026-11-02",
+       "available_minor": 1499136
+      },
+      {
+       "date": "2026-11-03",
+       "available_minor": 1498272
+      },
+      {
+       "date": "2026-11-04",
+       "available_minor": 847408
+      },
+      {
+       "date": "2026-11-05",
+       "available_minor": 846544
+      },
+      {
+       "date": "2026-11-06",
+       "available_minor": 645680
+      },
+      {
+       "date": "2026-11-07",
+       "available_minor": 644816
+      },
+      {
+       "date": "2026-11-08",
+       "available_minor": 643952
+      },
+      {
+       "date": "2026-11-09",
+       "available_minor": 643088
+      },
+      {
+       "date": "2026-11-10",
+       "available_minor": 642224
+      },
+      {
+       "date": "2026-11-11",
+       "available_minor": 638361
+      },
+      {
+       "date": "2026-11-12",
+       "available_minor": 637497
+      },
+      {
+       "date": "2026-11-13",
+       "available_minor": 636633
+      },
+      {
+       "date": "2026-11-14",
+       "available_minor": 635769
+      },
+      {
+       "date": "2026-11-15",
+       "available_minor": 634905
+      },
+      {
+       "date": "2026-11-16",
+       "available_minor": 634041
+      },
+      {
+       "date": "2026-11-17",
+       "available_minor": 633177
+      },
+      {
+       "date": "2026-11-18",
+       "available_minor": 632313
+      },
+      {
+       "date": "2026-11-19",
+       "available_minor": 631449
+      },
+      {
+       "date": "2026-11-20",
+       "available_minor": 630585
+      },
+      {
+       "date": "2026-11-21",
+       "available_minor": 579721
+      },
+      {
+       "date": "2026-11-22",
+       "available_minor": 578857
+      },
+      {
+       "date": "2026-11-23",
+       "available_minor": 577993
+      },
+      {
+       "date": "2026-11-24",
+       "available_minor": 577129
+      },
+      {
+       "date": "2026-11-25",
+       "available_minor": 576265
+      },
+      {
+       "date": "2026-11-26",
+       "available_minor": 575401
+      },
+      {
+       "date": "2026-11-27",
+       "available_minor": 574537
+      },
+      {
+       "date": "2026-11-28",
+       "available_minor": 573673
+      },
+      {
+       "date": "2026-11-29",
+       "available_minor": 572809
+      },
+      {
+       "date": "2026-11-30",
+       "available_minor": 571945
+      },
+      {
+       "date": "2026-12-01",
+       "available_minor": 571081
+      }
+     ],
+     "recommended": false,
+     "tradeoff": "资金缓冲更稳，但依赖尚未确认的收入。"
+    },
+    {
+     "alternative_id": "split",
+     "label": "分两笔预留",
+     "description": "现在预留一半，下一笔收入到账后补齐。",
+     "conditional": true,
+     "condition": "仅在 2026-11-11 收入确认入账后执行。",
+     "total_budget_minor": 500000,
+     "reservations": [
+      {
+       "date": "2026-11-01",
+       "amount_minor": 250000
+      },
+      {
+       "date": "2026-11-11",
+       "amount_minor": 250000
+      }
+     ],
+     "status": "unsafe",
+     "expected_minimum_available_minor": 392224,
+     "expected_minimum_date": "2026-11-10",
+     "conservative_minimum_available_minor": -179999,
+     "conservative_minimum_date": "2026-12-01",
+     "income_stress_minimum_available_minor": -679999,
+     "income_stress_minimum_date": "2026-12-01",
+     "expected_points": [
+      {
+       "date": "2026-11-01",
+       "available_minor": 1250000
+      },
+      {
+       "date": "2026-11-02",
+       "available_minor": 1249136
+      },
+      {
+       "date": "2026-11-03",
+       "available_minor": 1248272
+      },
+      {
+       "date": "2026-11-04",
+       "available_minor": 597408
+      },
+      {
+       "date": "2026-11-05",
+       "available_minor": 596544
+      },
+      {
+       "date": "2026-11-06",
+       "available_minor": 395680
+      },
+      {
+       "date": "2026-11-07",
+       "available_minor": 394816
+      },
+      {
+       "date": "2026-11-08",
+       "available_minor": 393952
+      },
+      {
+       "date": "2026-11-09",
+       "available_minor": 393088
+      },
+      {
+       "date": "2026-11-10",
+       "available_minor": 392224
+      },
+      {
+       "date": "2026-11-11",
+       "available_minor": 638361
+      },
+      {
+       "date": "2026-11-12",
+       "available_minor": 637497
+      },
+      {
+       "date": "2026-11-13",
+       "available_minor": 636633
+      },
+      {
+       "date": "2026-11-14",
+       "available_minor": 635769
+      },
+      {
+       "date": "2026-11-15",
+       "available_minor": 634905
+      },
+      {
+       "date": "2026-11-16",
+       "available_minor": 634041
+      },
+      {
+       "date": "2026-11-17",
+       "available_minor": 633177
+      },
+      {
+       "date": "2026-11-18",
+       "available_minor": 632313
+      },
+      {
+       "date": "2026-11-19",
+       "available_minor": 631449
+      },
+      {
+       "date": "2026-11-20",
+       "available_minor": 630585
+      },
+      {
+       "date": "2026-11-21",
+       "available_minor": 579721
+      },
+      {
+       "date": "2026-11-22",
+       "available_minor": 578857
+      },
+      {
+       "date": "2026-11-23",
+       "available_minor": 577993
+      },
+      {
+       "date": "2026-11-24",
+       "available_minor": 577129
+      },
+      {
+       "date": "2026-11-25",
+       "available_minor": 576265
+      },
+      {
+       "date": "2026-11-26",
+       "available_minor": 575401
+      },
+      {
+       "date": "2026-11-27",
+       "available_minor": 574537
+      },
+      {
+       "date": "2026-11-28",
+       "available_minor": 573673
+      },
+      {
+       "date": "2026-11-29",
+       "available_minor": 572809
+      },
+      {
+       "date": "2026-11-30",
+       "available_minor": 571945
+      },
+      {
+       "date": "2026-12-01",
+       "available_minor": 571081
+      }
+     ],
+     "recommended": false,
+     "tradeoff": "兼顾当前预算与资金安全，但需要两次授权。"
+    }
+   ],
+   "recommended_alternative_id": "",
+   "created_at": "2026-11-01T12:19:01.064453891Z"
+  }
+ },
+ "trace_id": "tr_f1bd502e95a7a3b2"
+}
