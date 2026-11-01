@@ -27,8 +27,6 @@
   ·
   <a href="#security-model">安全模型</a>
   ·
-  <a href="#product-film">产品演示</a>
-  ·
   <a href="#quick-start">快速开始</a>
   ·
   <a href="#documentation">文档</a>
@@ -41,7 +39,7 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-product.mp4"><strong>▶ 观看 3:46 完整产品演示</strong></a>
+  <strong>▶ 最新产品演示 · 4:45</strong>
   <br />
   <sub>真实前端 · 真实 Go API · Server-governed actions · Synthetic data only</sub>
 </p>
@@ -113,8 +111,6 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 - **Run controls / 运行控制**：支持停止当前运行、转人工接管，以及撤销待执行动作；已执行资金动作只能进入人工复核或补偿，不能被静默冲正。
 - **Channel adapter / 渠道适配**：Web 工作台复用同一 Agent API；APP 与 IM 网关可通过受控的 `/v1/channels/{channel}/messages` 入口接入。
 
-<a id="product-film"></a>
-
 ## 测评 / Evaluation
 
 测评不是把单测换个名字。项目分成三层：普通单元测试、带 `integration` 标签的 API/SQLite 集成评测，以及 Playwright 驱动的真实浏览器 E2E。
@@ -130,16 +126,6 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 | Latency | 200 次 warm HTTP | p50 413 µs，p95 599 µs，p99 2498 µs |
 
 完整指标、混淆矩阵、置信区间、延迟 CDF 和全部用例明细见 [HTML 测评报告](evaluation/results/academic-report.html)。原始数据见 [academic.json](evaluation/results/academic.json) 与 [cases.csv](evaluation/results/cases.csv)。
-
-## 产品演示 / Product demo
-
-完整演示沿一条控制线展开：
-
-`自然语言输入 → 动作快照 → 风险判定 → Action-bound MFA → 业务回执 → 审计追踪`
-
-演示使用真实工作台和真实服务端状态，不伪造界面、进度或成功结果。当前版本覆盖查询、账单、理财、卡片、订阅、流动性预演、工作流、确认、MFA 和审计等流程。
-
-[观看完整业务演示](frontend/public/demo/vaultline-product.mp4)。
 
 <details>
 <summary><strong>Architecture / 架构</strong></summary>

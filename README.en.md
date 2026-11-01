@@ -27,8 +27,6 @@
   ·
   <a href="#security-model">Security</a>
   ·
-  <a href="#product-film">Product demo</a>
-  ·
   <a href="#quick-start">Quick start</a>
   ·
   <a href="#documentation">Docs</a>
@@ -41,7 +39,7 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-product.mp4"><strong>▶ Watch the 3:46 product demo</strong></a>
+  <strong>▶ Latest product demo · 4:45</strong>
   <br />
   <sub>Real UI · Real Go API · Server-governed actions · Synthetic data only</sub>
 </p>
@@ -124,16 +122,6 @@ Evaluation is deliberately separated from ordinary unit tests: unit tests cover 
 | Latency | 200 warm HTTP requests | p50 413 µs, p95 599 µs, p99 2498 µs |
 
 See the [HTML evaluation report](evaluation/results/academic-report.html) for confusion matrices, confidence intervals, latency CDF, and the complete case ledger. Raw artifacts are in [academic.json](evaluation/results/academic.json) and [cases.csv](evaluation/results/cases.csv).
-
-## Product demo
-
-The full demo follows one control line from intent to proof:
-
-`natural language → immutable action → risk decision → Action-bound MFA → server receipt → audit trail`
-
-The demo uses real workspace captures and real server states. It never fabricates UI, progress, or success outcomes. The current cut covers queries, bills, investments, cards, subscriptions, liquidity, workflows, confirmation, MFA, and audit.
-
-[Watch the full business demo](frontend/public/demo/vaultline-product.mp4).
 
 <details>
 <summary><strong>Architecture</strong></summary>
