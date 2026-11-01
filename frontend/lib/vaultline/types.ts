@@ -36,6 +36,16 @@ export interface Conversation {
   conversation_id: string
 }
 
+/** A server-authored audit milestone. Details stay server-side; this is not model chain-of-thought. */
+export interface LiveActivityEvent {
+  eventId: string
+  traceId: string
+  actionId: string | null
+  eventType: string
+  outcome: string
+  occurredAt: string
+}
+
 export interface MfaState {
   failed_attempts: number | null
   attempts_remaining: number | null

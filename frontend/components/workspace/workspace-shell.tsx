@@ -40,7 +40,7 @@ export function WorkspaceShell() {
     if (!el || view !== 'assistant') return
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     el.scrollTo({ top: session.thread.length ? el.scrollHeight : 0, behavior: reduce ? 'auto' : 'smooth' })
-  }, [session.thread.length, session.sending, view])
+  }, [session.activity.length, session.thread.length, session.sending, view])
 
   // A message that returns a fresh liquidity simulation opens the report automatically.
   useEffect(() => {

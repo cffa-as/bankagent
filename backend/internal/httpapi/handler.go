@@ -169,6 +169,10 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, userID, path str
 		h.message(w, r, userID, path)
 		return
 	}
+	if r.Method == http.MethodGet && strings.HasPrefix(path, "/v1/conversations/") && strings.HasSuffix(path, "/events") {
+		h.conversationEvents(w, r, userID, path)
+		return
+	}
 	if r.Method == http.MethodGet && path == "/v1/investments/products" {
 		h.products(w, r, userID)
 		return
@@ -332,6 +336,90 @@ func (h *Handler) message(w http.ResponseWriter, r *http.Request, userID, path s
 	}
 	response := envelope(result, trace)
 	writeJSON(w, http.StatusOK, response)
+}
+
+type liveAuditEvent struct {
+	ID         string    `json:"event_id"`
+	TraceID    string    `json:"trace_id"`
+	ActionID   string    `json:"action_id,omitempty"`
+	EventType  string    `json:"event_type"`
+	Outcome    string    `json:"outcome"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+func writeSSE(w http.ResponseWriter, event string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte("event: " + event + "\ndata: " + string(body) + "\n\n"))
+	return err
+}
+
+func (h *Handler) conversationEvents(w http.ResponseWriter, r *http.Request, userID, path string) {
+	conversationID := segment(path, 2)
+	events, err := h.service.ConversationAuditEvents(r.Context(), userID, conversationID)
+	if err != nil {
+		writeServiceError(w, err, "tr_events")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "STREAM_UNAVAILABLE", "当前服务端不支持流式响应", "tr_events")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	_ = writeSSE(w, "ready", map[string]string{"conversation_id": conversationID})
+	flusher.Flush()
+
+	seen := make(map[string]struct{}, len(events))
+	for _, event := range events {
+		seen[event.ID] = struct{}{}
+	}
+	// shortcut: 100ms SQLite polling is sufficient for the single-instance demo; use a broadcaster before multi-user scale.
+	poll := time.NewTicker(100 * time.Millisecond)
+	defer poll.Stop()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-heartbeat.C:
+			_, _ = w.Write([]byte(": keepalive\n\n"))
+			flusher.Flush()
+		case <-poll.C:
+			latest, err := h.service.ConversationAuditEvents(r.Context(), userID, conversationID)
+			if err != nil {
+				_ = writeSSE(w, "error", map[string]string{"message": "事件流暂时不可用"})
+				flusher.Flush()
+				return
+			}
+			for _, event := range latest {
+				if _, exists := seen[event.ID]; exists {
+					continue
+				}
+				seen[event.ID] = struct{}{}
+				if err := writeSSE(w, "step", liveAuditEvent{
+					ID:         event.ID,
+					TraceID:    event.TraceID,
+					ActionID:   event.ActionID,
+					EventType:  event.EventType,
+					Outcome:    event.Outcome,
+					OccurredAt: event.OccurredAt,
+				}); err != nil {
+					return
+				}
+				flusher.Flush()
+			}
+		}
+	}
 }
 
 func (h *Handler) createTransfer(w http.ResponseWriter, r *http.Request, userID string) {

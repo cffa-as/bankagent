@@ -4,10 +4,11 @@ import { ChartLine, ChevronRight, GitBranch, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { describeKind, formatMoney, shortId } from '@/lib/vaultline/format'
 import { describeStatus, describeWorkflowStatus, TONE, VERDICT } from '@/lib/vaultline/status'
-import type { BankAction, MessageResult } from '@/lib/vaultline/types'
+import type { BankAction, LiveActivityEvent, MessageResult } from '@/lib/vaultline/types'
 import type { ThreadItem, WorkspaceSession } from '@/lib/vaultline/use-workspace-session'
 import { actionAmount, actionCurrency, actionTarget } from './action-snapshot'
-import { Callout, CopyId, RawData, RiskBadge, Spinner, StatusPill } from './primitives'
+import { AgentActivity } from './agent-activity'
+import { Callout, CopyId, RawData, RiskBadge, StatusPill } from './primitives'
 import { QueryResultView } from './query-results'
 
 interface ThreadProps {
@@ -84,7 +85,14 @@ function SummaryRow({
   )
 }
 
-function AssistantMessage({ result, session, onInspectAction, onOpenLiquidity, onOpenWorkflow }: { result: MessageResult } & ThreadProps) {
+function AssistantMessage({
+  result,
+  activity,
+  session,
+  onInspectAction,
+  onOpenLiquidity,
+  onOpenWorkflow,
+}: { result: MessageResult; activity: LiveActivityEvent[] } & ThreadProps) {
   const live = result.action ? (session.actions[result.action.action_id] ?? result.action) : null
   const rejected = result.reply_type === 'rejected'
   const spine = rejected ? 'bg-red' : live ? TONE[describeStatus(live.status).tone].dot : result.query ? 'bg-teal' : 'bg-line-strong'
@@ -96,6 +104,7 @@ function AssistantMessage({ result, session, onInspectAction, onOpenLiquidity, o
       <span className={cn('w-0.5 shrink-0 self-stretch rounded-full', spine)} aria-hidden />
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <p className="sr-only">Vaultline 助理</p>
+        {activity.length > 0 && <AgentActivity events={activity} running={false} />}
         {result.reply_text && <p className="whitespace-pre-wrap text-pretty text-[15px] leading-relaxed">{result.reply_text}</p>}
 
         {rejected && (
@@ -179,7 +188,7 @@ function Item({ item, ...props }: { item: ThreadItem } & ThreadProps) {
       </li>
     )
   }
-  return <AssistantMessage result={item.result} {...props} />
+  return <AssistantMessage result={item.result} activity={item.activity} {...props} />
 }
 
 export function Thread(props: ThreadProps) {
@@ -190,9 +199,8 @@ export function Thread(props: ThreadProps) {
         <Item key={item.id} item={item} {...props} />
       ))}
       {session.sending && (
-        <li role="status" className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          <Spinner className="text-cobalt" />
-          正在请求银行服务端…
+        <li>
+          <AgentActivity events={session.activity} running />
         </li>
       )}
     </ol>

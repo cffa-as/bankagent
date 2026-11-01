@@ -350,6 +350,9 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 	}); err != nil {
 		return MessageResult{}, trace, err
 	}
+	if err := s.audit(ctx, trace, conversationID, "", "agent_run_started", "succeeded", "system", nil, now); err != nil {
+		return MessageResult{}, trace, err
+	}
 	continuation := strings.TrimSpace(text)
 	if len(history) > 0 && len([]rune(text)) <= 50 && isStandaloneFollowUp(text) {
 		continuation = history[len(history)-1] + " " + continuation
@@ -609,6 +612,9 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		return MessageResult{RunID: runID, ReplyType: "action_required", Text: text, Action: ptr(action.Public())}, actionTrace, nil
 	}
 	if s.model != nil {
+		if err := s.audit(ctx, trace, conversationID, "", "model_plan_requested", "pending", "model", nil, s.now()); err != nil {
+			return MessageResult{}, trace, err
+		}
 		plan, modelErr := s.model.Plan(ctx, text, history)
 		if modelErr == nil && plan.Intent != "unknown" {
 			result, handled, err := s.handleIntentPlan(ctx, userID, conversationID, runID, plan, trace)
@@ -1352,6 +1358,19 @@ func (s *Service) Audit(ctx context.Context, userID, traceID string) ([]AuditEve
 		}
 	}
 	return events, nil
+}
+
+// ConversationAuditEvents returns only conversation-scoped audit metadata for live activity streams.
+// Event details are intentionally omitted so the stream cannot become a second sensitive-data surface.
+func (s *Service) ConversationAuditEvents(ctx context.Context, userID, conversationID string) ([]AuditEvent, error) {
+	owner, err := s.repo.ConversationOwner(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if owner != userID {
+		return nil, ErrForbidden
+	}
+	return s.repo.AuditEventsByConversation(ctx, conversationID)
 }
 
 func (s *Service) SecurityLocked(ctx context.Context, userID string) (bool, error) {

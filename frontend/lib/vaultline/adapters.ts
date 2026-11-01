@@ -4,6 +4,7 @@ import type {
   BankAction,
   Conversation,
   JsonObject,
+  LiveActivityEvent,
   MessageResult,
   Workflow,
   WorkflowAdvanceResult,
@@ -16,6 +17,12 @@ import type {
 export interface VaultlineAdapter {
   createConversation(key?: string): Promise<Conversation>
   sendMessage(conversationId: string, content: string, key: string): Promise<MessageResult>
+  streamConversationEvents(
+    conversationId: string,
+    signal: AbortSignal,
+    onEvent: (event: LiveActivityEvent) => void,
+    onReady?: () => void,
+  ): Promise<void>
   getAction(actionId: string): Promise<BankAction>
   confirmAction(actionId: string, key: string): Promise<BankAction>
   verifyActionMfa(actionId: string, code: string, key: string): Promise<BankAction>
@@ -32,6 +39,7 @@ export interface VaultlineAdapter {
 export const liveAdapter: VaultlineAdapter = {
   createConversation: api.createConversation,
   sendMessage: api.sendMessage,
+  streamConversationEvents: api.streamConversationEvents,
   getAction: api.getAction,
   confirmAction: api.confirmAction,
   verifyActionMfa: api.verifyActionMfa,

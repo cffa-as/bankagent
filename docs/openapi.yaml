@@ -88,6 +88,44 @@ paths:
           $ref: '#/components/responses/Locked'
         '500':
           $ref: '#/components/responses/InternalError'
+  /v1/conversations/{conversation_id}/events:
+    get:
+      tags: [Conversations]
+      summary: 订阅会话执行事件
+      description: |
+        只读 Server-Sent Events 流，用于展示当前会话新增的服务端审计里程碑。
+        客户端应先建立事件流，再提交消息。`step` 事件只包含事件元数据，不包含审计详情、
+        模型私有思维链、授权凭证或业务回执；最终业务结果仍以消息、动作或工作流 API 的响应为准。
+      operationId: streamConversationEvents
+      parameters:
+        - $ref: '#/components/parameters/ConversationID'
+      responses:
+        '200':
+          description: |
+            事件流。首个事件为 `ready`；后续 `step` 事件包含 `event_id`、`trace_id`、
+            `event_type`、`outcome`、`occurred_at`，有动作关联时包含 `action_id`。
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              example: no-cache, no-transform
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                event: ready
+                data: {"conversation_id":"conv_demo"}
+
+                event: step
+                data: {"event_id":"evt_demo","trace_id":"tr_demo","event_type":"agent_run_started","outcome":"succeeded","occurred_at":"2026-10-31T12:00:00Z"}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /v1/actions/{action_id}:
     get:
       tags: [Actions]

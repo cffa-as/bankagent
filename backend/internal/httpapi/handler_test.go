@@ -1,7 +1,9 @@
 package httpapi_test
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -116,6 +119,107 @@ func sendMessage(t *testing.T, serverURL, conversationID, text, idem string) (in
 		_ = json.Unmarshal(result.Data, &value)
 	}
 	return resp.StatusCode, value, body
+}
+
+func TestConversationEventStreamRequiresAuthentication(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/conversations/conv_demo/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized || !bytes.Contains(body, []byte(`"code":"UNAUTHENTICATED"`)) {
+		t.Fatalf("unauthenticated stream: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
+func TestConversationEventStreamReportsServiceAuditMilestones(t *testing.T) {
+	server, cleanup := newServer(t)
+	defer cleanup()
+	conversationID := createConversation(t, server.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/v1/conversations/"+conversationID+"/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer demo-user-1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("open stream: status=%d content-type=%q body=%s", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	if event, _, ok := nextSSEEvent(scanner); !ok || event != "ready" {
+		t.Fatalf("ready event: event=%q ok=%v err=%v", event, ok, scanner.Err())
+	}
+	status, result, body := sendMessage(t, server.URL, conversationID, "查一下余额", "stream-balance-message")
+	if status != http.StatusOK || result.ReplyType != "query_result" {
+		t.Fatalf("send message: status=%d result=%+v body=%s", status, result, body)
+	}
+
+	seen := map[string]bool{}
+	for len(seen) < 2 {
+		event, data, ok := nextSSEEvent(scanner)
+		if !ok {
+			t.Fatalf("stream ended before milestones: seen=%v err=%v", seen, scanner.Err())
+		}
+		if event != "step" {
+			continue
+		}
+		if strings.Contains(data, `"detail"`) {
+			t.Fatalf("stream exposed audit detail: %s", data)
+		}
+		var step struct {
+			EventID   string `json:"event_id"`
+			TraceID   string `json:"trace_id"`
+			EventType string `json:"event_type"`
+			Outcome   string `json:"outcome"`
+		}
+		if err := json.Unmarshal([]byte(data), &step); err != nil {
+			t.Fatalf("decode step: %v data=%s", err, data)
+		}
+		if step.EventID == "" || step.TraceID == "" || step.Outcome == "" {
+			t.Fatalf("incomplete step metadata: %s", data)
+		}
+		if step.EventType == "agent_run_started" || step.EventType == "balance_queried" {
+			seen[step.EventType] = true
+		}
+	}
+}
+
+func nextSSEEvent(scanner *bufio.Scanner) (string, string, bool) {
+	var event, data string
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case line == "":
+			if event != "" {
+				return event, data, true
+			}
+		case strings.HasPrefix(line, "event:"):
+			event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		case strings.HasPrefix(line, "data:"):
+			data = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		}
+	}
+	return "", "", false
 }
 
 func TestYellowTransferAndIdempotency(t *testing.T) {

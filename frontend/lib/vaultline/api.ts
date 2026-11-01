@@ -15,6 +15,7 @@ import type {
   BankAction,
   Conversation,
   JsonObject,
+  LiveActivityEvent,
   MessageResult,
   Workflow,
   WorkflowAdvanceResult,
@@ -128,6 +129,95 @@ export async function createConversation(key?: string): Promise<Conversation> {
 export async function sendMessage(conversationId: string, content: string, key: string): Promise<MessageResult> {
   const { data, traceId } = await call('POST', `/v1/conversations/${seg(conversationId)}/messages`, { text: content }, key)
   return normalizeMessage(data, traceId)
+}
+
+/**
+ * Consume the conversation audit stream with a bearer-authenticated fetch.
+ * Native EventSource cannot set Authorization, so frames are parsed from ReadableStream.
+ */
+export async function streamConversationEvents(
+  conversationId: string,
+  signal: AbortSignal,
+  onEvent: (event: LiveActivityEvent) => void,
+  onReady?: () => void,
+): Promise<void> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/v1/conversations/${seg(conversationId)}/events`, {
+      headers: { Authorization: `Bearer ${SYNTHETIC_BEARER}`, Accept: 'text/event-stream' },
+      signal,
+      cache: 'no-store',
+    })
+  } catch {
+    if (signal.aborted) return
+    throw new VaultlineApiError('unavailable', '无法建立实时执行通道。')
+  }
+
+  if (!response.ok || !response.body) {
+    if (signal.aborted) return
+    const payload = asObject(!response.body ? null : await response.json().catch(() => null))
+    const error = normalizeErrorBody(payload)
+    const unavailable = !response.body || response.status === 502 || response.status === 503 || response.status === 504
+    throw new VaultlineApiError(
+      unavailable ? 'unavailable' : 'rejected',
+      error?.message ?? '实时执行通道暂时不可用。',
+      response.status,
+      error?.code ?? null,
+      null,
+      asText(payload?.trace_id) ?? response.headers.get('x-trace-id'),
+    )
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true }).replace(/\r/g, '')
+      let boundary = buffer.indexOf('\n\n')
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        boundary = buffer.indexOf('\n\n')
+        let eventName = 'message'
+        const data: string[] = []
+        for (const line of frame.split('\n')) {
+          if (!line || line.startsWith(':')) continue
+          const colon = line.indexOf(':')
+          const field = colon < 0 ? line : line.slice(0, colon)
+          const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '')
+          if (field === 'event') eventName = value
+          if (field === 'data') data.push(value)
+        }
+        if (eventName === 'ready') {
+          onReady?.()
+          continue
+        }
+        if (eventName !== 'step' || data.length === 0) continue
+        const source = asObject(JSON.parse(data.join('\n')))
+        const eventId = asText(source?.event_id)
+        const traceId = asText(source?.trace_id)
+        const eventType = asText(source?.event_type)
+        const occurredAt = asText(source?.occurred_at)
+        if (!eventId || !traceId || !eventType || !occurredAt) continue
+        onEvent({
+          eventId,
+          traceId,
+          actionId: asText(source?.action_id),
+          eventType,
+          outcome: asText(source?.outcome) ?? 'unknown',
+          occurredAt,
+        })
+      }
+    }
+  } catch (error) {
+    if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return
+    throw new VaultlineApiError('unavailable', '实时执行轨迹连接中断。')
+  } finally {
+    reader.releaseLock()
+  }
 }
 
 /* ---------- Actions ---------- */

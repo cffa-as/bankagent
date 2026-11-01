@@ -996,6 +996,28 @@ func (r *Repository) Audit(ctx context.Context, traceID string) ([]domain.AuditE
 	return result, rows.Err()
 }
 
+func (r *Repository) AuditEventsByConversation(ctx context.Context, conversationID string) ([]domain.AuditEvent, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id,trace_id,conversation_id,action_id,event_type,outcome,actor,occurred_at FROM audit_events WHERE conversation_id=? ORDER BY occurred_at,rowid`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []domain.AuditEvent
+	for rows.Next() {
+		var event domain.AuditEvent
+		var occurred string
+		if err := rows.Scan(&event.ID, &event.TraceID, &event.ConversationID, &event.ActionID, &event.EventType, &event.Outcome, &event.Actor, &occurred); err != nil {
+			return nil, err
+		}
+		event.OccurredAt, err = time.Parse(time.RFC3339Nano, occurred)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, event)
+	}
+	return result, rows.Err()
+}
+
 func (r *Repository) Idempotency(ctx context.Context, userID, method, path, key, fingerprint string) ([]byte, int, error) {
 	var storedFingerprint, response string
 	var status int

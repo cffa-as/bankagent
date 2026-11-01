@@ -407,6 +407,7 @@ type Repository interface {
 	SecurityLocked(context.Context, string, time.Time, time.Duration, time.Duration, int) (bool, error)
 	AddAudit(context.Context, AuditEvent) error
 	Audit(context.Context, string) ([]AuditEvent, error)
+	AuditEventsByConversation(context.Context, string) ([]AuditEvent, error)
 	Idempotency(context.Context, string, string, string, string, string) ([]byte, int, error)
 	ReserveIdempotency(context.Context, string, string, string, string, string, time.Time) (bool, error)
 	SaveIdempotency(context.Context, string, string, string, string, string, int, []byte, time.Time) error

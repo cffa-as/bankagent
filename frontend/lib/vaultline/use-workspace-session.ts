@@ -1,16 +1,16 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { liveAdapter, type VaultlineAdapter } from './adapters'
 import { newIdempotencyKey, toApiError } from './api'
 import { mapApiError, type SafeErrorState } from './errors'
 import { describeStatus } from './status'
-import type { BankAction, LiquiditySimulation, MessageResult } from './types'
+import type { BankAction, LiquiditySimulation, LiveActivityEvent, MessageResult } from './types'
 
 export type ThreadItem =
   | { id: string; role: 'user'; text: string; at: number }
-  | { id: string; role: 'assistant'; result: MessageResult; at: number }
+  | { id: string; role: 'assistant'; result: MessageResult; activity: LiveActivityEvent[]; at: number }
   | {
       id: string
       role: 'notice'
@@ -47,10 +47,14 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
   const [mfaFailures, setMfaFailures] = useState<Record<string, number>>({})
   const [traces, setTraces] = useState<string[]>([])
   const [liquidity, setLiquidity] = useState<LiquiditySimulation | null>(null)
+  const [activity, setActivity] = useState<LiveActivityEvent[]>([])
 
   /** Bumped on reset so late responses from an abandoned session are dropped. */
   const epochRef = useRef(0)
   const conversationKeyRef = useRef<string | null>(null)
+  const activityRef = useRef<LiveActivityEvent[]>([])
+  const streamAbortRef = useRef<AbortController | null>(null)
+  const deliverRef = useRef(0)
   /** Stable keys for confirm / cancel / trigger intents, so a retry after a network failure is idempotent. */
   const gateKeysRef = useRef(new Map<string, string>())
 
@@ -99,8 +103,16 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
   const deliver = useCallback(
     async (text: string, key: string) => {
       const epoch = epochRef.current
-      const isCurrent = () => epoch === epochRef.current
+      const deliverId = ++deliverRef.current
+      const isCurrent = () => epoch === epochRef.current && deliverId === deliverRef.current
+      const assistantId = localId()
+      streamAbortRef.current?.abort()
+      streamAbortRef.current = null
       setSending(true)
+      setActivity([])
+      activityRef.current = []
+      let streamController: AbortController | null = null
+      let keepStreamOpen = false
       try {
         let cid = conversationId
         if (!cid) {
@@ -110,10 +122,98 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
           cid = conversation.conversation_id
           setConversationId(cid)
         }
+
+        streamController = new AbortController()
+        streamAbortRef.current = streamController
+        const streamReady = new Promise<boolean>((resolve) => {
+          let settled = false
+          const finish = (ready: boolean) => {
+            if (settled) return
+            settled = true
+            resolve(ready)
+          }
+          void adapter
+            .streamConversationEvents(
+              cid,
+              streamController!.signal,
+              (event) => {
+                if (!isCurrent() || streamController!.signal.aborted) return
+                if (
+                  activityRef.current.some(
+                    (current) =>
+                      current.eventId === event.eventId ||
+                      (current.traceId === event.traceId &&
+                        current.eventType === event.eventType &&
+                        current.outcome === event.outcome),
+                  )
+                ) {
+                  return
+                }
+                const next = [...activityRef.current, event]
+                activityRef.current = next
+                setActivity(next)
+                setThread((prev) => {
+                  let changed = false
+                  const updated = prev.map((item) => {
+                    if (item.role !== 'assistant' || item.id !== assistantId) return item
+                    changed = true
+                    return { ...item, activity: next }
+                  })
+                  return changed ? updated : prev
+                })
+              },
+              () => finish(true),
+            )
+            .catch(() => finish(false))
+            .finally(() => finish(false))
+        })
+        await Promise.race([
+          streamReady,
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 750)),
+        ])
+        if (!isCurrent()) return
+
         const result = await adapter.sendMessage(cid, text, key)
         if (!isCurrent()) return
         setConnection('connected')
-        setThread((prev) => [...prev, { id: localId(), role: 'assistant', result, at: Date.now() }])
+        setThread((prev) => [
+          ...prev,
+          { id: assistantId, role: 'assistant', result, activity: activityRef.current, at: Date.now() },
+        ])
+        if (result.trace_id) {
+          const resultTraceId = result.trace_id
+          void adapter
+            .getAuditTrace(resultTraceId)
+            .then((trace) => {
+              if (!isCurrent()) return
+              const recovered: LiveActivityEvent[] = trace.events.flatMap((event, index) => {
+                if (!event.occurred_at) return []
+                return [
+                  {
+                    eventId: `${resultTraceId}:${event.sequence ?? index}`,
+                    traceId: resultTraceId,
+                    actionId: event.action_id,
+                    eventType: event.event_type,
+                    outcome: event.outcome ?? 'unknown',
+                    occurredAt: event.occurred_at,
+                  },
+                ]
+              })
+              const merged = recovered.length
+                ? [...activityRef.current.filter((event) => event.traceId !== resultTraceId), ...recovered]
+                : activityRef.current
+              activityRef.current = merged
+              setActivity(merged)
+              setThread((prev) =>
+                prev.map((item) =>
+                  item.role === 'assistant' && item.id === assistantId ? { ...item, activity: merged } : item,
+                ),
+              )
+            })
+            .catch(() => {})
+        }
+        // Keep the read-only stream open so later confirmation and receipt milestones extend the same execution trace.
+        keepStreamOpen = true
         rememberTrace(result.trace_id)
         if (result.action) adoptAction(result.action)
         if (result.liquidity) setLiquidity(result.liquidity)
@@ -137,10 +237,25 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
           },
         ])
       } finally {
-        if (isCurrent()) setSending(false)
+        if (!keepStreamOpen) {
+          streamController?.abort()
+          if (streamAbortRef.current === streamController) streamAbortRef.current = null
+        }
+        if (isCurrent()) {
+          setSending(false)
+          setActivity([])
+          activityRef.current = []
+        }
       }
     },
     [adapter, adoptAction, conversationId, rememberTrace],
+  )
+
+  useEffect(
+    () => () => {
+      streamAbortRef.current?.abort()
+    },
+    [],
   )
 
   const send = useCallback(
@@ -243,6 +358,10 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
   }, [activeActionId, adapter, storeAction])
 
   const reset = useCallback(() => {
+    streamAbortRef.current?.abort()
+    streamAbortRef.current = null
+    activityRef.current = []
+    deliverRef.current += 1
     epochRef.current += 1
     conversationKeyRef.current = null
     gateKeysRef.current = new Map()
@@ -257,6 +376,7 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
     setMfaFailures({})
     setTraces([])
     setLiquidity(null)
+    setActivity([])
   }, [])
 
   /** The user request that produced a given action, so “修改请求” can return it to the composer. */
@@ -287,6 +407,7 @@ export function useWorkspaceSession(adapter: VaultlineAdapter = liveAdapter) {
     conversationId,
     thread,
     sending,
+    activity,
     actions,
     activeAction,
     activeActionId,
