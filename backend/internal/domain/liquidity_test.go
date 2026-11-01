@@ -39,6 +39,35 @@ func TestProjectLiquidityScenario(t *testing.T) {
 	}
 }
 
+func TestIncomeStressExcludesIncomeGatedReservations(t *testing.T) {
+	loc := time.FixedZone("CST", 8*60*60)
+	start := time.Date(2026, 11, 1, 0, 0, 0, 0, loc)
+	base := []LiquidityEvent{
+		{Date: "2026-11-05", Kind: "housing", Direction: "out", AmountMinor: 600000, Description: "房租", Essential: true},
+		{Date: "2026-11-11", Kind: "income", Direction: "in", AmountMinor: 500000, Description: "工资"},
+	}
+	profile := HistoricalSpending{AverageDailyMinor: 0, ConservativeDailyMinor: 0}
+	alternatives := buildLiquidityAlternatives(start, 30, profile, 1200000, 500000, 500000, 100000, base)
+	byID := map[string]LiquidityAlternative{}
+	for _, alternative := range alternatives {
+		byID[alternative.ID] = alternative
+	}
+	if got := byID["current"].IncomeStressMinimumAvailable; got != 100000 {
+		t.Fatalf("immediate reservation must stay in income stress, min=%d", got)
+	}
+	split := byID["split"]
+	if !split.Conditional || split.IncomeStressMinimumAvailable != 350000 || split.Status != "safe" {
+		t.Fatalf("split must only stress the ungated first half: %+v", split)
+	}
+	if split.ExpectedMinimumAvailableMinor != 350000 {
+		t.Fatalf("expected scenario must still include both reservations, min=%d", split.ExpectedMinimumAvailableMinor)
+	}
+	afterIncome := byID["after_income"]
+	if !afterIncome.Conditional || afterIncome.IncomeStressMinimumAvailable != 600000 {
+		t.Fatalf("after_income reservation is gated and must not appear in income stress: %+v", afterIncome)
+	}
+}
+
 func TestRecurringDatesMonthlyWithinHorizon(t *testing.T) {
 	loc := time.FixedZone("CST", 8*60*60)
 	start := time.Date(2026, 11, 1, 0, 0, 0, 0, loc)

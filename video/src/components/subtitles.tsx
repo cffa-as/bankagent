@@ -1,11 +1,11 @@
 import {interpolate, useCurrentFrame, useVideoConfig} from 'remotion'
-import {NARRATION, NARRATION_DELAY} from '../film-plan'
+import {NARRATION, type PlacedBeat} from '../film-plan'
 import {COLORS, FONTS} from '../theme'
 import {clamp} from './brand'
 
 type Cue = {text: string; start: number; end: number}
 
-const MAX_CHARS = 22
+const MAX_CHARS = 24
 
 function splitLong(sentence: Cue): Cue[] {
   const clean = sentence.text.replace(/[。；]$/, '')
@@ -32,24 +32,25 @@ function splitLong(sentence: Cue): Cue[] {
   })
 }
 
-export function cuesFor(id: string): Cue[] {
-  return (NARRATION[id]?.sentences ?? []).flatMap(splitLong)
+export function cuesFor(beats: PlacedBeat[]): Cue[] {
+  return beats.flatMap((beat) =>
+    (NARRATION[beat.id]?.sentences ?? []).map((sentence) => ({...sentence, start: sentence.start + beat.start, end: sentence.end + beat.start})).flatMap(splitLong),
+  )
 }
 
-export const Subtitles = ({id}: {id: string}) => {
+export const Subtitles = ({beats}: {beats: PlacedBeat[]}) => {
   const frame = useCurrentFrame()
   const {fps} = useVideoConfig()
-  const seconds = frame / fps - NARRATION_DELAY
-  const cue = cuesFor(id).find((item) => seconds >= item.start - 0.05 && seconds < item.end + 0.15)
+  const seconds = frame / fps
+  const cue = cuesFor(beats).find((item) => seconds >= item.start - 0.05 && seconds < item.end + 0.15)
   if (!cue) return null
-  const local = seconds - cue.start
-  const opacity = interpolate(local, [-0.05, 0.12], [0, 1], clamp) * interpolate(seconds, [cue.end, cue.end + 0.15], [1, 0], clamp)
+  const opacity = interpolate(seconds - cue.start, [-0.05, 0.12], [0, 1], clamp) * interpolate(seconds, [cue.end, cue.end + 0.15], [1, 0], clamp)
 
   return (
     <div style={{bottom: 30, display: 'flex', justifyContent: 'center', left: 0, position: 'absolute', right: 0}}>
       <div
         style={{
-          background: 'rgba(4, 10, 20, 0.78)',
+          background: 'rgba(4, 10, 20, 0.8)',
           borderRadius: 12,
           color: COLORS.white,
           fontFamily: FONTS.sans,

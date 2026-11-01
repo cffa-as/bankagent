@@ -48,7 +48,9 @@ function layers(nodes: WorkflowNode[]) {
 
 function NodeCard({ node, nodes, currency, onOpenAction }: { node: WorkflowNode; nodes: WorkflowNode[]; currency: string; onOpenAction: (id: string) => void }) {
   const meta = NODE_META[node.kind] ?? { label: node.kind, icon: ArrowRight, mode: '' }
-  const status = describeWorkflowStatus(node.status)
+  // The server only advances a ready node once its due time has passed.
+  const notYetDue = node.status === 'ready' && node.due_at !== null && new Date(node.due_at).getTime() > Date.now()
+  const status = notYetDue ? { label: '到期后办理', tone: 'neutral' as const } : describeWorkflowStatus(node.status)
   const Icon = meta.icon
   const deps = node.depends_on.map((id) => nodes.find((n) => n.node_id === id)?.label ?? NODE_META[nodes.find((n) => n.node_id === id)?.kind ?? '']?.label ?? shortId(id, 8))
   return (

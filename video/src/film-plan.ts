@@ -1,333 +1,197 @@
 import narration from './narration-timing.json'
+import timeline from './timeline.json'
 
 export type CameraKey = {at: number; zoom: number; x: number; y: number}
 export type Tone = 'green' | 'amber' | 'red' | 'cobalt'
+
+/** A narration clip that starts at a recorder cue (seconds after the clip mark), never overlapping the previous one. */
+export type Beat = {id: string; cue?: string; offset?: number}
+/** An on-screen caption timed against a recorder cue. */
+export type NoteSpec = {cue?: string; offset?: number; seconds: number; text: string; tone: Tone}
 export type Note = {at: number; until: number; text: string; tone: Tone}
 
-type RecordingScene = {
-  id: string
-  kind: 'recording'
-  chapter: string
+export type Chapter = {
+  number: string
   title: string
   tier: {label: string; tone: Tone}
-  /** Signature capability, badged as a highlight in the chapter card. */
-  highlight?: true
-  minSeconds: number
-  subtitles: true
-  /** Playback rate for long real-time captures, so every step fits the narration. */
-  speed?: number
-  camera: CameraKey[]
-  notes: Note[]
+  /** Which of the four signature capabilities this chapter proves. */
+  highlight?: string
 }
 
-export type FilmScene =
-  | {id: string; kind: 'intro' | 'problem' | 'agent' | 'coverage' | 'principles' | 'outro'; minSeconds: number; subtitles: boolean}
-  | RecordingScene
+type Base = {id: string; minSeconds: number; beats: Beat[]; chapter?: Chapter}
 
-export const NARRATION_DELAY = 0.5
-const TAIL = 2
+export type RecordingSpec = Base & {
+  kind: 'recording'
+  clip: string
+  speed?: number
+  camera?: CameraKey[]
+  notes?: NoteSpec[]
+  evidence?: 'replay'
+}
 
-const TIER = {
-  green: {label: '自动 · 只读', tone: 'green'},
-  forecast: {label: '只读 · 推演', tone: 'cobalt'},
-  confirm: {label: '需确认', tone: 'amber'},
-  mfa: {label: '需 MFA', tone: 'red'},
-  plan: {label: '资金计划', tone: 'cobalt'},
-  control: {label: '运行控制', tone: 'cobalt'},
-  security: {label: '安全异常', tone: 'red'},
-} as const satisfies Record<string, {label: string; tone: Tone}>
+export type FilmScene = (Base & {kind: 'intro' | 'problem' | 'passport' | 'coverage' | 'outro'}) | RecordingSpec
 
-const PANEL = 0.83
-const CHAT = 0.57
-
-export const SCENES: FilmScene[] = [
-  {id: 'intro', kind: 'intro', minSeconds: 8, subtitles: false},
-  {id: 'problem', kind: 'problem', minSeconds: 14, subtitles: true},
-  {
-    id: 'overview',
-    kind: 'recording',
-    chapter: '01',
-    title: '主动发现异常',
-    tier: TIER.green,
-    highlight: true,
-    minSeconds: 24,
-    subtitles: true,
-    camera: [
-      {at: 0, zoom: 1, x: 0.5, y: 0.5},
-      {at: 2.2, zoom: 1.12, x: CHAT, y: 0.62},
-      {at: 6, zoom: 1.18, x: CHAT, y: 0.5},
-    ],
-    notes: [],
-  },
-  {
-    id: 'cashflow',
-    kind: 'recording',
-    chapter: '02',
-    title: '现金流推演',
-    tier: TIER.forecast,
-    highlight: true,
-    minSeconds: 20,
-    subtitles: true,
-    speed: 1.15,
-    camera: [
-      {at: 0, zoom: 1.08, x: 0.55, y: 0.72},
-      {at: 3.5, zoom: 1.08, x: 0.55, y: 0.62},
-      {at: 5.6, zoom: 1.3, x: 0.79, y: 0.45},
-      {at: 21, zoom: 1.3, x: 0.79, y: 0.55},
-    ],
-    notes: [
-      {at: 7.6, until: 12.4, text: '四种情景推演 30 天余额，标出最低点', tone: 'cobalt'},
-      {at: 16.8, until: 21, text: '只生成方案，不会立即动用资金', tone: 'green'},
-    ],
-  },
-  {id: 'agent', kind: 'agent', minSeconds: 15, subtitles: true},
-  {
-    id: 'transfer-confirm',
-    kind: 'recording',
-    chapter: '03',
-    title: '确认后才执行',
-    tier: TIER.confirm,
-    minSeconds: 14,
-    subtitles: true,
-    speed: 1.15,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.78},
-      {at: 3.7, zoom: 1.08, x: 0.55, y: 0.7},
-      {at: 5.4, zoom: 1.38, x: PANEL, y: 0.42},
-      {at: 10.4, zoom: 1.38, x: PANEL, y: 0.62},
-      {at: 15.7, zoom: 1.34, x: PANEL, y: 0.5},
-    ],
-    notes: [
-      {at: 5.7, until: 10.0, text: '收款人 · 金额 · 备注锁定为业务快照', tone: 'amber'},
-      {at: 10.4, until: 14.8, text: '服务端裁决确认，重复点击只执行一次', tone: 'amber'},
-    ],
-  },
-  {
-    id: 'transfer-mfa',
-    kind: 'recording',
-    chapter: '04',
-    title: '高风险，再验证',
-    tier: TIER.mfa,
-    minSeconds: 13,
-    subtitles: true,
-    speed: 1.2,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.78},
-      {at: 3.3, zoom: 1.08, x: 0.55, y: 0.7},
-      {at: 4.8, zoom: 1.38, x: PANEL, y: 0.45},
-      {at: 7.9, zoom: 1.4, x: PANEL, y: 0.68},
-      {at: 12.5, zoom: 1.36, x: PANEL, y: 0.5},
-    ],
-    notes: [{at: 5.0, until: 10.4, text: '验证码与本笔业务绑定，一次有效', tone: 'red'}],
-  },
-  {
-    id: 'scheduled',
-    kind: 'recording',
-    chapter: '05',
-    title: '预约转账',
-    tier: TIER.confirm,
-    minSeconds: 13.5,
-    subtitles: true,
-    speed: 1.2,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.78},
-      {at: 3.3, zoom: 1.08, x: 0.55, y: 0.7},
-      {at: 4.8, zoom: 1.36, x: PANEL, y: 0.42},
-      {at: 8.3, zoom: 1.38, x: PANEL, y: 0.6},
-      {at: 13.3, zoom: 1.36, x: PANEL, y: 0.62},
-    ],
-    notes: [{at: 5.0, until: 10.8, text: '执行日期写入快照，到期前可随时取消', tone: 'amber'}],
-  },
-  {
-    id: 'aa',
-    kind: 'recording',
-    chapter: '06',
-    title: 'AA 收款',
-    tier: TIER.confirm,
-    minSeconds: 12,
-    subtitles: true,
-    speed: 1.2,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.78},
-      {at: 3.8, zoom: 1.08, x: 0.55, y: 0.66},
-      {at: 5.2, zoom: 1.34, x: PANEL, y: 0.45},
-      {at: 10.8, zoom: 1.36, x: PANEL, y: 0.55},
-    ],
-    notes: [{at: 5.4, until: 9.6, text: '¥1,200 ÷ 4 人 = 每人 ¥300', tone: 'amber'}],
-  },
-  {
-    id: 'invest',
-    kind: 'recording',
-    chapter: '07',
-    title: '理财申购与赎回',
-    tier: TIER.mfa,
-    minSeconds: 15,
-    subtitles: true,
-    speed: 1.4,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.75},
-      {at: 2.1, zoom: 1.2, x: CHAT, y: 0.45},
-      {at: 5.4, zoom: 1.12, x: 0.62, y: 0.6},
-      {at: 7.1, zoom: 1.32, x: PANEL, y: 0.55},
-      {at: 12.1, zoom: 1.34, x: PANEL, y: 0.5},
-    ],
-    notes: [
-      {at: 2.5, until: 5.7, text: '业绩比较基准不代表收益承诺', tone: 'green'},
-      {at: 7.5, until: 11.4, text: '申购 · 赎回均需 MFA，以服务端回执为准', tone: 'red'},
-    ],
-  },
-  {
-    id: 'card',
-    kind: 'recording',
-    chapter: '08',
-    title: '卡片挂失',
-    tier: TIER.mfa,
-    minSeconds: 13,
-    subtitles: true,
-    speed: 1.4,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.75},
-      {at: 2.9, zoom: 1.2, x: CHAT, y: 0.4},
-      {at: 6.8, zoom: 1.1, x: 0.6, y: 0.6},
-      {at: 8.7, zoom: 1.36, x: PANEL, y: 0.55},
-      {at: 14.5, zoom: 1.36, x: PANEL, y: 0.5},
-    ],
-    notes: [{at: 9.2, until: 13.5, text: '高风险操作，强制安全验证', tone: 'red'}],
-  },
-  {
-    id: 'subscription',
-    kind: 'recording',
-    chapter: '09',
-    title: '订阅取消',
-    tier: TIER.confirm,
-    minSeconds: 10,
-    subtitles: true,
-    speed: 1.5,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.75},
-      {at: 2.7, zoom: 1.22, x: CHAT, y: 0.35},
-      {at: 6.3, zoom: 1.16, x: 0.62, y: 0.6},
-      {at: 8.1, zoom: 1.32, x: PANEL, y: 0.45},
-      {at: 11.7, zoom: 1.34, x: PANEL, y: 0.45},
-    ],
-    notes: [{at: 3.1, until: 7.2, text: '续费前提醒，扣款日期提前可见', tone: 'green'}],
-  },
-  {
-    id: 'birthday-create',
-    kind: 'recording',
-    chapter: '10',
-    title: '生日资金计划',
-    tier: TIER.plan,
-    highlight: true,
-    minSeconds: 16,
-    subtitles: true,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.78},
-      {at: 4.5, zoom: 1.18, x: CHAT, y: 0.4},
-      {at: 8.0, zoom: 1.06, x: 0.55, y: 0.45},
-      {at: 10.0, zoom: 1.24, x: 0.5, y: 0.5},
-      {at: 18.0, zoom: 1.26, x: 0.52, y: 0.52},
-    ],
-    notes: [
-      {at: 9.5, until: 14.0, text: '提醒 → 锁定预算 → 鲜花 / 蛋糕', tone: 'cobalt'},
-      {at: 14.0, until: 18.0, text: '创建计划不会动用任何资金', tone: 'cobalt'},
-    ],
-  },
-  {
-    id: 'birthday-run',
-    kind: 'recording',
-    chapter: '11',
-    title: '计划逐步执行',
-    tier: TIER.plan,
-    highlight: true,
-    minSeconds: 24,
-    subtitles: true,
-    speed: 1.6,
-    camera: [
-      {at: 0, zoom: 1.1, x: 0.5, y: 0.45},
-      {at: 4, zoom: 1.04, x: 0.52, y: 0.5},
-      {at: 12, zoom: 1.08, x: 0.6, y: 0.5},
-      {at: 23, zoom: 1.08, x: 0.58, y: 0.5},
-      {at: 28, zoom: 1.2, x: 0.46, y: 0.56},
-    ],
-    notes: [
-      {at: 3, until: 9, text: '跨场景联动：锁定前先推演现金流', tone: 'cobalt'},
-      {at: 13, until: 21, text: '每个节点独立授权，各有服务端回执', tone: 'cobalt'},
-      {at: 23.5, until: 27.5, text: '四个节点全部完成，计划结束', tone: 'green'},
-    ],
-  },
-  {
-    id: 'control',
-    kind: 'recording',
-    chapter: '12',
-    title: '停止 · 转人工 · 撤销',
-    tier: TIER.control,
-    minSeconds: 13,
-    subtitles: true,
-    speed: 1.5,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.78},
-      {at: 2.3, zoom: 1.36, x: 0.6, y: 0.22},
-      {at: 6.3, zoom: 1.2, x: 0.56, y: 0.45},
-      {at: 9.9, zoom: 1.24, x: CHAT, y: 0.6},
-      {at: 14.4, zoom: 1.26, x: CHAT, y: 0.62},
-    ],
-    notes: [
-      {at: 2.7, until: 7.2, text: '转人工后，原有动作不再推进', tone: 'cobalt'},
-      {at: 9.9, until: 14.0, text: '撤销成功：账户未发生变化', tone: 'green'},
-    ],
-  },
-  {
-    id: 'security',
-    kind: 'recording',
-    chapter: '13',
-    title: '安全异常',
-    tier: TIER.security,
-    highlight: true,
-    minSeconds: 14,
-    subtitles: true,
-    speed: 1.5,
-    camera: [
-      {at: 0.0, zoom: 1.08, x: 0.55, y: 0.78},
-      {at: 4.0, zoom: 1.36, x: PANEL, y: 0.66},
-      {at: 8.1, zoom: 1.12, x: 0.56, y: 0.7},
-      {at: 11.7, zoom: 1.4, x: CHAT, y: 0.3},
-      {at: 15.3, zoom: 1.42, x: CHAT, y: 0.3},
-    ],
-    notes: [
-      {at: 4.5, until: 8.6, text: '验证失败：业务不执行，尝试次数受限', tone: 'red'},
-      {at: 11.7, until: 15.3, text: '提示注入：权限不随一句话改变', tone: 'red'},
-    ],
-  },
-  {
-    id: 'audit',
-    kind: 'recording',
-    chapter: '14',
-    title: '全程留痕',
-    tier: TIER.green,
-    minSeconds: 10,
-    subtitles: true,
-    camera: [
-      {at: 0.0, zoom: 1.12, x: 0.62, y: 0.5},
-      {at: 2.0, zoom: 1.12, x: 0.4, y: 0.45},
-      {at: 4.0, zoom: 1.4, x: 0.32, y: 0.42},
-      {at: 12.0, zoom: 1.42, x: 0.32, y: 0.44},
-    ],
-    notes: [{at: 4.0, until: 10.5, text: '发起 → 确认 → 验证 → 回执，全链路可追溯', tone: 'green'}],
-  },
-  {id: 'coverage', kind: 'coverage', minSeconds: 10, subtitles: false},
-  {id: 'principles', kind: 'principles', minSeconds: 9, subtitles: false},
-  {id: 'outro', kind: 'outro', minSeconds: 8, subtitles: false},
-]
-
-export const CHAPTERS = SCENES.filter((scene): scene is RecordingScene => scene.kind === 'recording')
+type Clip = {src: string; trimBeforeSeconds: number; seconds: number; spots: unknown[]; cues: Record<string, number>}
+export const CLIPS = timeline.clips as unknown as Record<string, Clip>
+export const EVIDENCE = (timeline as unknown as {evidence: Record<string, Record<string, unknown>>}).evidence
 
 export type NarrationEntry = {duration: number; sentences: {text: string; start: number; end: number}[]}
 export const NARRATION = narration as Record<string, NarrationEntry>
 
-export function sceneSeconds(scene: FilmScene) {
-  const spoken = NARRATION[scene.id]?.duration ?? 0
-  return Math.max(scene.minSeconds, NARRATION_DELAY + spoken + TAIL)
+const LEAD_IN = 0.5
+const BEAT_GAP = 0.3
+const TAIL = 1.6
+
+const TIER = {
+  forecast: {label: '只读 · 推演', tone: 'cobalt'},
+  mfa: {label: '红色 · 动作绑定 MFA', tone: 'red'},
+  security: {label: '安全异常', tone: 'red'},
+  server: {label: '服务端证据', tone: 'green'},
+  coverage: {label: '六类场景', tone: 'cobalt'},
+  audit: {label: '只读 · 审计', tone: 'green'},
+} as const satisfies Record<string, {label: string; tone: Tone}>
+
+export const SCENES: FilmScene[] = [
+  {id: 'intro', kind: 'intro', minSeconds: 12, beats: [{id: 'intro', offset: 5.2}]},
+  {id: 'problem', kind: 'problem', minSeconds: 27, beats: [{id: 'problem'}]},
+  {
+    id: 'request',
+    kind: 'recording',
+    clip: 'request',
+    chapter: {number: '01', title: '一个真实的资金问题', tier: TIER.forecast},
+    minSeconds: 20,
+    beats: [{id: 'request-1'}, {id: 'request-2', cue: 'trace'}],
+    camera: [
+      {at: 0, zoom: 1.1, x: 0.52, y: 0.82},
+      {at: 4.2, zoom: 1.1, x: 0.52, y: 0.8},
+      {at: 5.4, zoom: 1.02, x: 0.6, y: 0.5},
+    ],
+    notes: [{cue: 'trace', offset: 0.6, seconds: 6.5, text: '结论来自服务端现金流工具，不是模型自述', tone: 'cobalt'}],
+  },
+  {
+    id: 'sandbox',
+    kind: 'recording',
+    clip: 'sandbox',
+    chapter: {number: '02', title: '交易前资金推演', tier: TIER.forecast, highlight: '亮点 01'},
+    minSeconds: 40,
+    beats: [
+      {id: 'sandbox-1'},
+      {id: 'sandbox-2', cue: 'chart'},
+      {id: 'sandbox-3', cue: 'events'},
+      {id: 'sandbox-4', cue: 'alternatives'},
+      {id: 'sandbox-5', cue: 'note'},
+    ],
+    camera: [{at: 0, zoom: 1.04, x: 0.7, y: 0.5}],
+    notes: [
+      {cue: 'chart', offset: 2.2, seconds: 5.6, text: '收入延迟情景单独推演，不假设工资一定到账', tone: 'red'},
+      {cue: 'alternatives', offset: 0.6, seconds: 7.5, text: '降额 · 工资到账后再办 · 分两笔', tone: 'green'},
+    ],
+  },
+  {
+    id: 'execute',
+    kind: 'recording',
+    clip: 'execute',
+    chapter: {number: '03', title: '服务端控制的可执行动作', tier: TIER.mfa, highlight: '亮点 02'},
+    minSeconds: 44,
+    beats: [
+      {id: 'execute-1'},
+      {id: 'execute-2', cue: 'plan'},
+      {id: 'execute-3', cue: 'precheck'},
+      {id: 'execute-4', cue: 'snapshot'},
+      {id: 'execute-5', cue: 'receipt'},
+      {id: 'execute-6', cue: 'replay'},
+    ],
+    camera: [{at: 0, zoom: 1.04, x: 0.6, y: 0.5}],
+    notes: [
+      {cue: 'plan', offset: 1.2, seconds: 4.6, text: '第二笔未到期，服务端不会提前执行', tone: 'cobalt'},
+      {cue: 'snapshot', offset: 0.4, seconds: 4.2, text: '金额 · 用途 · 节点写入不可变快照', tone: 'amber'},
+    ],
+    evidence: 'replay',
+  },
+  {
+    id: 'security',
+    kind: 'recording',
+    clip: 'security',
+    chapter: {number: '04', title: '安全回放', tier: TIER.security},
+    minSeconds: 34,
+    beats: [
+      {id: 'security-1'},
+      {id: 'security-2', cue: 'typing'},
+      {id: 'security-3', cue: 'injection'},
+      {id: 'security-4', cue: 'balance'},
+      {id: 'security-5', cue: 'mfa'},
+      {id: 'security-6', cue: 'locked'},
+    ],
+    camera: [{at: 0, zoom: 1.04, x: 0.5, y: 0.6}],
+    notes: [
+      {cue: 'injection', offset: 0.4, seconds: 4.2, text: '高置信注入：拒绝，且不创建任何动作', tone: 'red'},
+      {cue: 'mfa', offset: 0.6, seconds: 6.5, text: '失败次数与锁定状态由服务端管理', tone: 'red'},
+    ],
+  },
+  {
+    id: 'passport',
+    kind: 'passport',
+    chapter: {number: '05', title: '可信执行凭证', tier: TIER.server, highlight: '亮点 03'},
+    minSeconds: 26,
+    beats: [{id: 'passport', offset: 0.6}],
+  },
+  {
+    id: 'coverage',
+    kind: 'coverage',
+    chapter: {number: '06', title: '同一条边界，六类场景', tier: TIER.coverage},
+    minSeconds: 21,
+    beats: [{id: 'coverage', offset: 0.4}],
+  },
+  {
+    id: 'audit',
+    kind: 'recording',
+    clip: 'audit',
+    chapter: {number: '07', title: '银行回执与审计链', tier: TIER.audit, highlight: '亮点 04'},
+    minSeconds: 16,
+    beats: [{id: 'audit-1'}, {id: 'audit-2', cue: 'timeline'}],
+    camera: [{at: 0, zoom: 1.04, x: 0.45, y: 0.4}],
+  },
+  {id: 'outro', kind: 'outro', minSeconds: 11, beats: [{id: 'outro', offset: 1.4}]},
+]
+
+export const CHAPTERS = SCENES.flatMap((scene) => (scene.chapter ? [{id: scene.id, ...scene.chapter}] : []))
+
+export type PlacedBeat = {id: string; start: number; end: number}
+
+/** Beat start times in scene seconds, honouring cues and never overlapping. */
+export function placeBeats(scene: FilmScene): PlacedBeat[] {
+  const speed = scene.kind === 'recording' ? scene.speed ?? 1 : 1
+  const cues = scene.kind === 'recording' ? CLIPS[scene.clip]?.cues ?? {} : {}
+  const placed: PlacedBeat[] = []
+  for (const beat of scene.beats) {
+    const cueAt = beat.cue ? (cues[beat.cue] ?? 0) / speed : 0
+    const earliest = placed.length ? placed[placed.length - 1].end + BEAT_GAP : 0
+    const start = Math.max(LEAD_IN + cueAt + (beat.offset ?? 0), earliest)
+    placed.push({id: beat.id, start, end: start + (NARRATION[beat.id]?.duration ?? 0)})
+  }
+  return placed
 }
 
-export const FILM_SECONDS = SCENES.reduce((total, scene) => total + sceneSeconds(scene), 0)
+export function placeNotes(scene: RecordingSpec): Note[] {
+  const speed = scene.speed ?? 1
+  const cues = CLIPS[scene.clip]?.cues ?? {}
+  return (scene.notes ?? []).map((note) => {
+    const at = LEAD_IN + (note.cue ? (cues[note.cue] ?? 0) / speed : 0) + (note.offset ?? 0)
+    return {at, until: at + note.seconds, text: note.text, tone: note.tone}
+  })
+}
+
+export function cueSeconds(scene: RecordingSpec, cue: string) {
+  return LEAD_IN + (CLIPS[scene.clip]?.cues?.[cue] ?? 0) / (scene.speed ?? 1)
+}
+
+export function sceneSeconds(scene: FilmScene) {
+  const beats = placeBeats(scene)
+  const spoken = beats.length ? beats[beats.length - 1].end + TAIL : 0
+  const wanted = Math.max(scene.minSeconds, spoken)
+  if (scene.kind !== 'recording') return wanted
+  const available = (CLIPS[scene.clip]?.seconds ?? wanted) / (scene.speed ?? 1)
+  return Math.min(wanted, available)
+}
+
+export const LEAD_IN_SECONDS = LEAD_IN

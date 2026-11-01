@@ -11,6 +11,10 @@ export async function api(method, path, body) {
   try { return { status: r.status, ...JSON.parse(t) } } catch { return { status: r.status, raw: t.slice(0, 400) } }
 }
 const step = process.argv[2]
+if (step === 'call') {
+  const r = await api(process.argv[3], process.argv[4], process.argv[5] ? JSON.parse(process.argv[5]) : undefined)
+  console.log(JSON.stringify(r).slice(0, Number(process.env.MAX ?? 2500)))
+}
 if (step === 'send') {
   const c = await api('POST', '/v1/conversations', {})
   console.log('conv', JSON.stringify(c).slice(0, 300))

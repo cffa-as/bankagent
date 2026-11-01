@@ -1,30 +1,29 @@
 import {Video} from '@remotion/media'
 import {AbsoluteFill, Easing, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig} from 'remotion'
 import {Canvas, Mark, clamp} from '../components/brand'
+import {ChapterChip, DemoDisclosure, TONE} from '../components/chapter'
 import {Subtitles} from '../components/subtitles'
-import {CHAPTERS, type CameraKey, type Note, type Tone} from '../film-plan'
+import {CLIPS, EVIDENCE, cueSeconds, placeBeats, placeNotes, type CameraKey, type Note, type RecordingSpec, type Tone} from '../film-plan'
 import {COLORS, FONTS} from '../theme'
-import timeline from '../timeline.json'
 
 const CONTENT_W = 1536
 const CONTENT_H = 864
 const CHROME_H = 34
+const DEFAULT_CAMERA: CameraKey[] = [{at: 0, zoom: 1.04, x: 0.5, y: 0.5}]
 
 function useCamera(keys: CameraKey[]) {
   const frame = useCurrentFrame()
   const {fps} = useVideoConfig()
   const seconds = frame / fps
   if (keys.length === 1) return keys[0]
-  const times = keys.map((key) => key.at)
   const ease = {...clamp, easing: Easing.inOut(Easing.cubic)}
+  const times = keys.map((key) => key.at)
   return {
     zoom: interpolate(seconds, times, keys.map((key) => key.zoom), ease),
     x: interpolate(seconds, times, keys.map((key) => key.x), ease),
     y: interpolate(seconds, times, keys.map((key) => key.y), ease),
   }
 }
-
-const TONE: Record<Tone, string> = {green: COLORS.teal, amber: COLORS.amber, red: COLORS.red, cobalt: COLORS.cobalt}
 
 type Spot = {at: number; until: number; tone: Tone; x: number; y: number; w: number; h: number}
 type Box = Pick<Spot, 'x' | 'y' | 'w' | 'h'>
@@ -42,7 +41,7 @@ const lerpBox = (a: Box, b: Box, p: number): Box => ({
 })
 
 /** Where the spotlight sits at a moment, and how strongly it is applied (0–1). */
-function spotFocus(spots: Spot[], seconds: number): {box: Box; tone: Tone; strength: number; key: number} | null {
+function spotFocus(spots: Spot[], seconds: number): {box: Box; tone: Tone; strength: number} | null {
   for (let i = 0; i < spots.length; i++) {
     const spot = spots[i]
     const previous = spots[i - 1]
@@ -52,11 +51,11 @@ function spotFocus(spots: Spot[], seconds: number): {box: Box; tone: Tone; stren
     if (seconds >= spot.at - (bridgedIn ? 0 : 0.01) && seconds <= spot.until) {
       const fadeIn = bridgedIn ? 1 : interpolate(seconds, [spot.at, spot.at + FADE_IN], [0, 1], clamp)
       const fadeOut = bridgedOut ? 1 : interpolate(seconds, [spot.until - FADE_OUT, spot.until], [1, 0], clamp)
-      return {box: spot, tone: spot.tone, strength: Math.min(fadeIn, fadeOut), key: i}
+      return {box: spot, tone: spot.tone, strength: Math.min(fadeIn, fadeOut)}
     }
     if (bridgedOut && next && seconds > spot.until && seconds < next.at) {
       const p = interpolate(seconds, [spot.until, next.at], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)})
-      return {box: lerpBox(spot, next, p), tone: p < 0.5 ? spot.tone : next.tone, strength: 1, key: i}
+      return {box: lerpBox(spot, next, p), tone: p < 0.5 ? spot.tone : next.tone, strength: 1}
     }
   }
   return null
@@ -74,51 +73,22 @@ function spotCamera(box: Box) {
 
 const Spotlight = ({box, tone, strength}: {box: Box; tone: Tone; strength: number}) => {
   const color = TONE[tone]
-  const ring = interpolate(strength, [0, 1], [1.035, 1], clamp)
   return (
     <div
       style={{
         border: `2px solid ${color}`,
         borderRadius: 12,
-        boxShadow: `0 0 0 4000px rgba(7, 17, 31, ${0.52 * strength}), 0 0 0 6px ${color}2e, 0 0 48px ${color}66`,
+        boxShadow: `0 0 0 4000px rgba(7, 17, 31, ${0.5 * strength}), 0 0 0 6px ${color}2e, 0 0 48px ${color}66`,
         height: box.h,
         left: box.x,
         opacity: strength,
         pointerEvents: 'none',
         position: 'absolute',
         top: CHROME_H + box.y,
-        transform: `scale(${ring})`,
+        transform: `scale(${interpolate(strength, [0, 1], [1.035, 1], clamp)})`,
         width: box.w,
       }}
     />
-  )
-}
-
-const ChapterRail = ({chapter}: {chapter: string}) => {
-  const frame = useCurrentFrame()
-  const fill = interpolate(frame, [10, 34], [0, 1], {...clamp, easing: Easing.out(Easing.cubic)})
-  const current = Number(chapter)
-  return (
-    <div style={{display: 'flex', gap: 5, paddingLeft: 46}}>
-      {CHAPTERS.map((item) => {
-        const index = Number(item.chapter)
-        const done = index < current
-        const active = index === current
-        return (
-          <div key={item.id} style={{background: 'rgba(183, 201, 226, 0.18)', borderRadius: 99, flex: 1, height: 4, minWidth: 14, overflow: 'hidden'}}>
-            <div
-              style={{
-                background: active ? TONE[item.tier.tone] : COLORS.steel,
-                borderRadius: 99,
-                height: '100%',
-                opacity: done ? 0.55 : 1,
-                width: done ? '100%' : active ? `${fill * 100}%` : '0%',
-              }}
-            />
-          </div>
-        )
-      })}
-    </div>
   )
 }
 
@@ -134,18 +104,17 @@ const Callout = ({note, side}: {note: Note; side: 'left' | 'right'}) => {
       style={{
         [side]: 64,
         alignItems: 'center',
-        backdropFilter: 'blur(14px)',
-        background: 'rgba(7, 17, 31, 0.9)',
+        background: 'rgba(7, 17, 31, 0.92)',
         border: `1px solid ${color}66`,
         borderRadius: 16,
         boxShadow: `0 18px 50px rgba(0, 0, 0, 0.4), 0 0 0 4px ${color}14`,
         display: 'flex',
         gap: 16,
-        maxWidth: 560,
+        maxWidth: 600,
         opacity: p,
         padding: '18px 26px 18px 20px',
         position: 'absolute',
-        top: 150,
+        top: 170,
         transform: `translateX(${(1 - p) * (side === 'left' ? -24 : 24)}px)`,
       }}
     >
@@ -155,45 +124,74 @@ const Callout = ({note, side}: {note: Note; side: 'left' | 'right'}) => {
   )
 }
 
-export const RecordingScene = ({
-  id,
-  chapter,
-  title,
-  tier,
-  highlight,
-  speed,
-  camera,
-  notes,
-  durationInFrames,
-}: {
-  id: string
-  chapter: string
-  title: string
-  tier: {label: string; tone: Tone}
-  highlight: boolean
-  speed: number
-  camera: CameraKey[]
-  notes: Note[]
-  durationInFrames: number
-}) => {
+type Replay = {actionId: string; replay: {status: number; code: string | null; message: string | null}}
+
+/** Shows the response the recorder got when it re-sent the same MFA verification during the take. */
+const ReplayEvidence = ({at}: {at: number}) => {
   const frame = useCurrentFrame()
   const {fps} = useVideoConfig()
-  const clip = timeline.clips[id as keyof typeof timeline.clips] as {src: string; trimBeforeSeconds: number; spots?: Spot[]}
+  const evidence = EVIDENCE.execute as unknown as Replay | undefined
+  if (!evidence) return null
+  const seconds = frame / fps
+  const p = interpolate(seconds, [at, at + 0.5], [0, 1], {...clamp, easing: Easing.out(Easing.cubic)})
+  const code = interpolate(seconds, [at + 1.1, at + 1.5], [0, 1], clamp)
+  if (p <= 0) return null
+  const mono = {fontFamily: FONTS.mono, fontVariantNumeric: 'tabular-nums' as const}
+  return (
+    <div
+      style={{
+        background: 'rgba(7, 17, 31, 0.95)',
+        border: `1px solid ${COLORS.red}66`,
+        borderRadius: 18,
+        boxShadow: '0 24px 60px rgba(0, 0, 0, 0.45)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        left: 64,
+        opacity: p,
+        padding: '24px 28px',
+        position: 'absolute',
+        top: 190,
+        transform: `translateY(${(1 - p) * 18}px)`,
+        width: 640,
+      }}
+    >
+      <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 18, fontWeight: 700, letterSpacing: '0.14em'}}>重放同一验证请求</div>
+      <div style={{...mono, color: COLORS.platinum, fontSize: 21, lineHeight: 1.5, wordBreak: 'break-all'}}>
+        POST /v1/actions/{evidence.actionId}/mfa/verify
+      </div>
+      <div style={{alignItems: 'baseline', display: 'flex', gap: 16, opacity: code}}>
+        <span style={{...mono, color: COLORS.red, fontSize: 44, fontWeight: 800}}>{evidence.replay.status}</span>
+        <span style={{...mono, color: COLORS.white, fontSize: 26, fontWeight: 700}}>{evidence.replay.code}</span>
+      </div>
+      <div style={{color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 22, fontWeight: 600, opacity: code}}>{evidence.replay.message} · 未产生第二次副作用</div>
+      <div style={{borderTop: `1px solid ${COLORS.line}`, color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 16, paddingTop: 12}}>
+        录制时由 Playwright 实际发出，以上为服务端原始响应
+      </div>
+    </div>
+  )
+}
+
+export const RecordingScene = ({spec, durationInFrames}: {spec: RecordingSpec; durationInFrames: number}) => {
+  const frame = useCurrentFrame()
+  const {fps} = useVideoConfig()
+  const clip = CLIPS[spec.clip]
+  const speed = spec.speed ?? 1
+  const camera = spec.camera ?? DEFAULT_CAMERA
   const base = useCamera(camera)
   const seconds = frame / fps
-  const spots = (clip.spots ?? []).map((spot) => ({...spot, at: spot.at / speed, until: spot.until / speed}))
+  const spots = ((clip.spots ?? []) as Spot[]).map((spot) => ({...spot, at: spot.at / speed, until: spot.until / speed}))
   const focus = spotFocus(spots, seconds)
   const focusCamera = focus ? spotCamera(focus.box) : null
   const pull = focus ? Easing.inOut(Easing.cubic)(focus.strength) : 0
   const zoom = focusCamera ? base.zoom + (focusCamera.zoom - base.zoom) * pull : base.zoom
   const x = focusCamera ? base.x + (focusCamera.x - base.x) * pull : base.x
   const y = focusCamera ? base.y + (focusCamera.y - base.y) * pull : base.y
+  const notes = placeNotes(spec)
   const activeNote = notes.find((note) => seconds >= note.at && seconds < note.until)
-  const noteSide = activeNote && interpolate(activeNote.at, camera.map((key) => key.at), camera.map((key) => key.x), clamp) > 0.62 ? 'left' : 'right'
+  const noteSide = x > 0.58 ? 'left' : 'right'
   const enter = spring({fps, frame, config: {damping: 200}, durationInFrames: 22})
   const exit = interpolate(frame, [durationInFrames - 12, durationInFrames], [1, 0], clamp)
-  const chapterIn = interpolate(frame, [8, 22, 105, 120], [0, 1, 1, 0], clamp)
-  const chapterX = interpolate(frame, [8, 26], [-16, 0], {...clamp, easing: Easing.out(Easing.cubic)})
 
   const windowH = CONTENT_H + CHROME_H
   const tx = (0.5 - x) * CONTENT_W * (zoom - 1)
@@ -208,28 +206,18 @@ export const RecordingScene = ({
             boxShadow: '0 40px 120px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(214, 226, 242, 0.14)',
             height: windowH,
             left: (1920 - CONTENT_W) / 2,
+            opacity: enter,
             overflow: 'hidden',
             position: 'absolute',
             top: 40,
             transform: `translate(${tx}px, ${ty + (1 - enter) * 26}px) scale(${zoom * (0.985 + enter * 0.015)})`,
             transformOrigin: '50% 50%',
             width: CONTENT_W,
-            opacity: enter,
           }}
         >
-          <div
-            style={{
-              alignItems: 'center',
-              background: '#e6ecf5',
-              borderBottom: '1px solid #d5ddea',
-              display: 'flex',
-              gap: 8,
-              height: CHROME_H,
-              padding: '0 14px',
-            }}
-          >
-            {['#d9dfe9', '#d9dfe9', '#d9dfe9'].map((color, index) => (
-              <span key={index} style={{background: color, borderRadius: 99, height: 11, width: 11}} />
+          <div style={{alignItems: 'center', background: '#e6ecf5', borderBottom: '1px solid #d5ddea', display: 'flex', gap: 8, height: CHROME_H, padding: '0 14px'}}>
+            {[0, 1, 2].map((index) => (
+              <span key={index} style={{background: '#d9dfe9', borderRadius: 99, height: 11, width: 11}} />
             ))}
             <div style={{display: 'flex', flex: 1, justifyContent: 'center'}}>
               <div
@@ -247,7 +235,7 @@ export const RecordingScene = ({
                 }}
               >
                 <Mark size={13} inverse />
-                Vaultline 个人银行 · 智能助理
+                localhost:3001/workspace · Next.js 工作台 → Go 银行 API
               </div>
             </div>
             <span style={{width: 49}} />
@@ -262,82 +250,11 @@ export const RecordingScene = ({
           {focus && <Spotlight box={focus.box} tone={focus.tone} strength={focus.strength} />}
         </div>
 
-        <div
-          style={{
-            alignItems: 'stretch',
-            background: 'rgba(7, 17, 31, 0.88)',
-            borderRadius: 22,
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-            left: 64,
-            opacity: chapterIn,
-            padding: '12px 24px 14px 14px',
-            position: 'absolute',
-            top: 64,
-            transform: `translateX(${chapterX}px)`,
-          }}
-        >
-          <div style={{alignItems: 'center', display: 'flex', gap: 14}}>
-          <span
-            style={{
-              alignItems: 'center',
-              background: COLORS.cobalt,
-              borderRadius: 999,
-              color: COLORS.white,
-              display: 'flex',
-              fontFamily: FONTS.sans,
-              fontSize: 16,
-              fontWeight: 700,
-              height: 32,
-              justifyContent: 'center',
-              width: 32,
-            }}
-          >
-            {Number(chapter)}
-          </span>
-          <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 26, fontWeight: 700, letterSpacing: '0.02em'}}>{title}</span>
-          <span
-            style={{
-              alignItems: 'center',
-              border: `1px solid ${TONE[tier.tone]}`,
-              borderRadius: 999,
-              color: TONE[tier.tone],
-              display: 'flex',
-              fontFamily: FONTS.sans,
-              fontSize: 17,
-              fontWeight: 700,
-              gap: 8,
-              letterSpacing: '0.04em',
-              padding: '4px 12px',
-            }}
-          >
-            <span style={{background: TONE[tier.tone], borderRadius: 99, height: 8, width: 8}} />
-            {tier.label}
-          </span>
-          {highlight && (
-            <span
-              style={{
-                background: COLORS.cobalt,
-                borderRadius: 999,
-                color: COLORS.white,
-                fontFamily: FONTS.sans,
-                fontSize: 16,
-                fontWeight: 800,
-                letterSpacing: '0.1em',
-                padding: '5px 12px',
-              }}
-            >
-              核心亮点
-            </span>
-          )}
-          </div>
-          <ChapterRail chapter={chapter} />
-        </div>
-
-        {activeNote && noteSide && <Callout key={activeNote.text} note={activeNote} side={noteSide} />}
-        <Subtitles id={id} />
+        {spec.chapter && <ChapterChip chapter={spec.chapter} />}
+        {activeNote && <Callout key={activeNote.text} note={activeNote} side={noteSide} />}
+        {spec.evidence === 'replay' && <ReplayEvidence at={cueSeconds(spec, 'replay')} />}
+        <DemoDisclosure />
+        <Subtitles beats={placeBeats(spec)} />
       </AbsoluteFill>
     </Canvas>
   )
