@@ -121,7 +121,7 @@ Evaluation is deliberately separated from ordinary unit tests: unit tests cover 
 | Security robustness | 24 attacks + 24 benign cases | 0% ASR, 0% FPR, 100% policy compliance |
 | Replay / concurrency | 12 + 16 | 0 duplicate side effects, 1 winner / 15 conflicts |
 | Browser E2E | 8 real journeys | 8 / 8 passed, 0 console errors, 0 HTTP 5xx |
-| Latency | 200 warm HTTP requests | p50 415 µs, p95 580 µs, p99 2551 µs |
+| Latency | 200 warm HTTP requests | p50 413 µs, p95 599 µs, p99 2498 µs |
 
 See the [HTML evaluation report](evaluation/results/academic-report.html) for confusion matrices, confidence intervals, latency CDF, and the complete case ledger. Raw artifacts are in [academic.json](evaluation/results/academic.json) and [cases.csv](evaluation/results/cases.csv).
 

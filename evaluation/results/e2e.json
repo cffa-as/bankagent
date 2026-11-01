@@ -1,13 +1,13 @@
 {
   "version": "vaultline-browser-e2e-v1",
-  "evaluated_at": "2026-11-01T07:52:46.790Z",
+  "evaluated_at": "2026-11-01T08:28:07.904Z",
   "base_url": "http://127.0.0.1:13100",
   "cases": 8,
   "passed": 8,
   "failed": 0,
   "pass_rate": 1,
-  "mean_duration_ms": 176,
-  "p95_duration_ms": 455,
+  "mean_duration_ms": 169.5,
+  "p95_duration_ms": 445,
   "console_errors": [],
   "server_errors": [],
   "results": [
@@ -15,56 +15,56 @@
       "id": "E2E-01",
       "title": "余额查询 UI 到服务端事实",
       "passed": true,
-      "duration_ms": 96,
+      "duration_ms": 101,
       "details": "browser flow completed"
     },
     {
       "id": "E2E-02",
       "title": "月度账单分析 UI",
       "passed": true,
-      "duration_ms": 60,
+      "duration_ms": 56,
       "details": "browser flow completed"
     },
     {
       "id": "E2E-03",
       "title": "黄色转账确认与真实回执",
       "passed": true,
-      "duration_ms": 145,
+      "duration_ms": 128,
       "details": "browser flow completed"
     },
     {
       "id": "E2E-04",
       "title": "红色转账 Action-bound MFA",
       "passed": true,
-      "duration_ms": 117,
+      "duration_ms": 100,
       "details": "browser flow completed"
     },
     {
       "id": "E2E-05",
       "title": "订阅取消确认与回执",
       "passed": true,
-      "duration_ms": 100,
+      "duration_ms": 101,
       "details": "browser flow completed"
     },
     {
       "id": "E2E-06",
       "title": "流动性预检报告",
       "passed": true,
-      "duration_ms": 402,
+      "duration_ms": 384,
       "details": "browser flow completed"
     },
     {
       "id": "E2E-07",
       "title": "跨场景生日计划 DAG",
       "passed": true,
-      "duration_ms": 455,
+      "duration_ms": 445,
       "details": "browser flow completed"
     },
     {
       "id": "E2E-08",
       "title": "操作记录审计时间线",
       "passed": true,
-      "duration_ms": 33,
+      "duration_ms": 41,
       "details": "browser flow completed"
     }
   ]
