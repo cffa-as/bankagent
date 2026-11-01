@@ -10,7 +10,7 @@
   },
   "scripts": {
     "record": "node scripts/check-runtime.mjs && node scripts/record-demo.mjs",
-    "score": "python3 scripts/generate-score.py 240",
+    "score": "python3 scripts/generate-score.py 290",
     "dev": "node scripts/check-runtime.mjs && remotion studio src/index.ts",
     "render": "node scripts/check-runtime.mjs && remotion render src/index.ts VaultlineProduct ../frontend/public/demo/vaultline-product.mp4 --codec=h264 --crf=20 --pixel-format=yuv420p",
     "poster": "node scripts/check-runtime.mjs && python3 scripts/make-cover.py",

@@ -139,20 +139,19 @@ function MfaStep({
 }
 
 function Receipt({ action }: { action: BankAction }) {
-  if (!action.receipt) {
-    return (
-      <Callout tone="held" title="暂未收到银行回执">
-        <p>办理结果仍在确认中，请稍后刷新查看，或在操作记录中核对。</p>
-      </Callout>
-    )
-  }
   const currency = actionCurrency(action)
-  const rows = Object.entries(action.receipt)
-    .filter(([, v]) => v !== null && typeof v !== 'object')
-    .map(([k, v]) => {
-      const f = formatField(k, v, currency)
-      return { label: labelField(k), value: f.text, mono: f.mono }
-    })
+  // State-change actions (card status, subscription cancel) return no payload; the server-side succeeded status is the receipt.
+  const rows = action.receipt
+    ? Object.entries(action.receipt)
+        .filter(([k, v]) => k !== 'currency' && v !== null && v !== '' && typeof v !== 'object')
+        .map(([k, v]) => {
+          const f = formatField(k, v, currency)
+          return { label: labelField(k), value: f.text, mono: f.mono }
+        })
+    : [
+        { label: '办理结果', value: '银行已完成状态变更', mono: false },
+        { label: '流水号', value: action.trace_id ?? '未返回', mono: true },
+      ]
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-teal/40 bg-teal-soft px-4 py-3">
       <p className="flex items-center gap-2 text-[14px] font-medium text-teal-ink">
