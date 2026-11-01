@@ -138,6 +138,7 @@ function AssistantMessage({
       {rejected && (
         <Callout tone="fail" title="这项业务暂时无法办理">
           <p>{result.rejection?.message ?? '请求不符合银行业务规则，未产生任何操作。'}</p>
+          {result.rejection?.code && <p className="mt-1 font-mono text-[12px] text-muted-foreground">错误码 {result.rejection.code}</p>}
         </Callout>
       )}
 

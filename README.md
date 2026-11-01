@@ -110,6 +110,13 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 - **Failure-safe / 失败安全**：取消、过期、MFA 失败、余额不足和未知回执都有明确状态，不盲目重试。
 - **Run controls / 运行控制**：支持停止当前运行、转人工接管，以及撤销待执行动作；已执行资金动作只能进入人工复核或补偿，不能被静默冲正。
 - **Channel adapter / 渠道适配**：Web 工作台复用同一 Agent API；APP 与 IM 网关可通过受控的 `/v1/channels/{channel}/messages` 入口接入。
+- **Input boundary / 输入边界**：进入意图解析前移除零宽、双向控制和 Unicode 标签字符；高置信注入指令直接拒绝，不创建 Action。
+- **Trust passport / 可信执行凭证**：动作响应由服务端附带 Source、Identity、Receipt 三类证据；前端不能自行推导授权或成功。
+- **MFA state / 安全验证状态**：红色动作只展示服务端返回的失败次数、剩余尝试次数和锁定状态；验证码通过后仍需通过一次性执行门。
+
+安全设计对齐 [《关于银行业保险业人工智能安全开发应用的指导意见》](https://www.news.cn/tech/20260618/52e251c6c92a4059bae3936266172a6e/c.html)、
+[《人工智能安全治理框架》2.0 版](https://www.cac.gov.cn/2025-09/15/c_1759653448369123.htm) 与
+[OWASP GenAI LLM Top 10 2026](https://github.com/GenAI-Security-Project/GenAI-LLM-Top10) 的风险分类和生命周期治理思路。
 
 ## 测评 / Evaluation
 
@@ -122,7 +129,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 | Risk policy | 20 条边界用例 | Red Precision / Recall / F1 均为 1.000 |
 | Security robustness | 24 攻击 + 24 良性 | ASR 0%，FPR 0%，Policy compliance 100% |
 | Replay / concurrency | 12 + 16 | 重复副作用 0，并发确认 1 成功 / 15 冲突 |
-| Browser E2E | 8 条真实业务链路 | 8 / 8 通过，console error 0，HTTP 5xx 0 |
+| Browser E2E | 9 条真实业务链路 | 9 / 9 通过，console error 0，HTTP 5xx 0 |
 | Latency | 200 次 warm HTTP | p50 413 µs，p95 599 µs，p99 2498 µs |
 
 完整指标、混淆矩阵、置信区间、延迟 CDF 和全部用例明细见 [HTML 测评报���](evaluation/results/academic-report.html)。原始数据见 [academic.json](evaluation/results/academic.json) 与 [cases.csv](evaluation/results/cases.csv)。

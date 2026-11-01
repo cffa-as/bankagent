@@ -11,12 +11,42 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/cffa-as/bankagent/internal/agent"
 )
 
 var negatedBankingIntentPattern = regexp.MustCompile(`(?:不要|别|无需|不需要|不用|禁止).{0,12}(?:取消|转账|转|查询|查|冻结|解冻|挂失|解挂|申购|赎回|锁定|预留|设置|申请)`)
-var suspiciousInputPattern = regexp.MustCompile(`忽略.{0,8}(?:系统|权限|规则)|我是管理员|直接执行`)
+var suspiciousInputPattern = regexp.MustCompile(`(?i)(?:忽略|无视|绕过|跳过|覆盖|篡改|修改|改成|设为).{0,16}(?:系统|权限|规则|策略|指令|验证|mfa|风险等级|status|成功)|(?:风险等级|状态|status).{0,8}(?:改成|设为|修改)|(?:系统指令|管理员指令|开发者指令)|(?:我是|作为|以).{0,8}(?:管理员|银行柜员)|(?:无需|不要|跳过).{0,8}(?:确认|验证|问我)|(?:测试环境|开发模式|调试模式).{0,24}(?:直接|跳过|执行|转)|(?:内部账户).{0,16}(?:直接|转|执行)|(?:假装|声称).{0,8}(?:用户|已授权|已确认|成功)|(?:告诉我|提供).{0,8}(?:验证码|密码)|直接执行|ignore.{0,20}(?:instruction|system|rule)`)
+
+type inputAssessment struct {
+	Sanitized bool
+}
+
+type inputAssessmentContextKey struct{}
+
+func sanitizeUserInput(text string) (string, bool) {
+	var cleaned strings.Builder
+	changed := false
+	for _, r := range text {
+		if isInvisibleInputRune(r) {
+			changed = true
+			continue
+		}
+		cleaned.WriteRune(r)
+	}
+	return strings.TrimSpace(cleaned.String()), changed
+}
+
+func isInvisibleInputRune(r rune) bool {
+	return r == '\u200b' || r == '\u200c' || r == '\u200d' || r == '\u2060' || r == '\ufeff' ||
+		(r >= '\u200e' && r <= '\u200f') ||
+		(r >= '\u202a' && r <= '\u202e') ||
+		(r >= '\u2061' && r <= '\u206f') ||
+		(r >= '\ufe00' && r <= '\ufe0f') ||
+		(r >= '\U000e0000' && r <= '\U000e007f') ||
+		unicode.Is(unicode.Cf, r)
+}
 
 func (s *Service) CreateConversation(ctx context.Context, userID string) (Conversation, string, error) {
 	now := s.now()
@@ -302,6 +332,13 @@ func (s *Service) createInvestmentActionRecord(ctx context.Context, userID, conv
 func (s *Service) createActionRecord(ctx context.Context, userID, conversationID, kind, riskLevel, status string, snapshot map[string]any) (Action, string, error) {
 	now := s.now()
 	trace := NewID("tr")
+	sourceType, trust, sanitized := "structured_api", "validated", true
+	if assessment, ok := ctx.Value(inputAssessmentContextKey{}).(inputAssessment); ok {
+		sourceType, trust, sanitized = "user_message", "untrusted", assessment.Sanitized
+	}
+	snapshot["_security"] = map[string]any{
+		"type": sourceType, "trust": trust, "sanitized": sanitized, "injection_checked": true,
+	}
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return Action{}, trace, err
@@ -323,6 +360,11 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 	if strings.TrimSpace(text) == "" || len([]rune(text)) > 500 {
 		return MessageResult{}, "", ErrInvalidArgument
 	}
+	cleanedText, sanitized := sanitizeUserInput(text)
+	if strings.TrimSpace(cleanedText) == "" {
+		return MessageResult{}, "", ErrInvalidArgument
+	}
+	text = cleanedText
 	owner, err := s.repo.ConversationOwner(ctx, conversationID)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -355,6 +397,7 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 	if err != nil {
 		return MessageResult{}, trace, err
 	}
+	ctx = context.WithValue(ctx, inputAssessmentContextKey{}, inputAssessment{Sanitized: sanitized})
 	defer func() {
 		finalCtx := context.WithoutCancel(ctx)
 		controlled, ok, stateErr := s.controlledRunResult(finalCtx, userID, runID)
@@ -375,6 +418,11 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		result.RunID, result.RunStatus = runID, status
 		_ = s.finishRun(finalCtx, userID, runID, status, resultErr)
 	}()
+	if sanitized {
+		if err := s.audit(ctx, trace, conversationID, "", "input_hidden_characters_removed", "succeeded", "system", nil, now); err != nil {
+			return MessageResult{}, trace, err
+		}
+	}
 	continuation := strings.TrimSpace(text)
 	if len(history) > 0 && len([]rune(text)) <= 50 && isStandaloneFollowUp(text) {
 		continuation = history[len(history)-1] + " " + continuation
@@ -388,9 +436,18 @@ func (s *Service) Message(ctx context.Context, userID, conversationID, text stri
 		if err := s.repo.RecordSecurityFailure(ctx, userID, "suspicious_input", now); err != nil {
 			return MessageResult{}, trace, err
 		}
-		if err := s.audit(ctx, trace, conversationID, "", "suspicious_input_detected", "failed", "system", nil, now); err != nil {
+		if err := s.audit(ctx, trace, conversationID, "", "prompt_injection_rejected", "failed", "system", nil, now); err != nil {
 			return MessageResult{}, trace, err
 		}
+		return MessageResult{
+			RunID:     runID,
+			ReplyType: "rejected",
+			Text:      "检测到疑似绕过安全规则或授权的指令，本次请求已拒绝。",
+			Rejection: &PublicError{
+				Code:    "PROMPT_INJECTION_BLOCKED",
+				Message: "请求包含试图改变权限、跳过验证或覆盖系统规则的指令，未创建任何业务动作。",
+			},
+		}, trace, nil
 	}
 	if negatedBankingIntentPattern.MatchString(text) {
 		return MessageResult{RunID: runID, ReplyType: "question", Text: "我检测到否定表达，尚未创建任何动作。请明确说明你要执行哪项银行业务。"}, trace, nil

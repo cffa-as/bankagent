@@ -1,4 +1,4 @@
-import { FileClock, KeyRound, ShieldCheck } from 'lucide-react'
+import { FileClock, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
 
 const GUARANTEES = [
   {
@@ -7,9 +7,14 @@ const GUARANTEES = [
     icon: ShieldCheck,
   },
   {
-    title: '高风险需要验证',
-    body: '大额或异常操作需要输入动态验证码，验证码只对当前这一笔业务有效，信息一旦变化就会失效。',
+    title: '高风险必须多因素确认',
+    body: '大额或异常操作需要动作绑定 MFA；单一验证信号不能代替银行授权，信息变化后必须重新验证。',
     icon: KeyRound,
+  },
+  {
+    title: '输入也先过安全边界',
+    body: '隐藏字符、疑似注入和越权指令会在服务端被清理或拒绝，用户文本不能改写权限、工具白名单或执行状态。',
+    icon: ShieldAlert,
   },
   {
     title: '每一步都有记录',

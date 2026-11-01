@@ -76,6 +76,29 @@ export interface MfaState {
   expires_at: string | null
 }
 
+export interface ActionSecuritySource {
+  type: string | null
+  trust: string | null
+  sanitized: boolean
+  injection_checked: boolean
+}
+
+export interface ActionSecurityIdentity {
+  method: string | null
+  state: string | null
+  attempts_remaining: number | null
+}
+
+export interface ActionSecurityOutcome {
+  receipt: string | null
+}
+
+export interface ActionSecurity {
+  source: ActionSecuritySource
+  identity: ActionSecurityIdentity
+  outcome: ActionSecurityOutcome
+}
+
 export interface BankAction {
   action_id: string
   kind: string | null
@@ -88,6 +111,7 @@ export interface BankAction {
   /** Immutable, server-frozen parameters of the action (amount, beneficiary, product, …). */
   snapshot: JsonObject
   mfa: MfaState | null
+  security: ActionSecurity | null
   /** Final business receipt. Success is only shown when this exists and status is `succeeded`. */
   receipt: JsonObject | null
   error: ApiErrorBody | null

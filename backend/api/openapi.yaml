@@ -1261,6 +1261,7 @@ components:
             - ACTION_EXPIRED
             - MFA_INVALID
             - MFA_LOCKED
+            - PROMPT_INJECTION_BLOCKED
             - SECURITY_LOCKED
             - INSUFFICIENT_BALANCE
             - BUDGET_NOT_RESERVED
@@ -1363,6 +1364,8 @@ components:
           $ref: '#/components/schemas/LiquiditySimulation'
         workflow:
           $ref: '#/components/schemas/Workflow'
+        rejection:
+          $ref: '#/components/schemas/Error'
     ConfirmActionRequest:
       type: object
       description: 用户确认动作快照；当前演示版本请求体为空对象即可。
@@ -1390,9 +1393,45 @@ components:
         snapshot: { type: object, additionalProperties: true, description: 服务端生成的不可变动作快照 }
         snapshot_hash: { type: string, description: 规范化快照的 SHA-256 哈希，授权和执行前必须复核 }
         result: { type: object, additionalProperties: true, description: 动作成功后的业务回执结果，例如理财赎回本金、收益和到账总额 }
+        mfa:
+          $ref: '#/components/schemas/ActionMFAState'
+        security:
+          $ref: '#/components/schemas/ActionSecurity'
         expires_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    ActionMFAState:
+      type: object
+      required: [failed_attempts, attempts_remaining, locked, expires_at]
+      properties:
+        failed_attempts: { type: integer, minimum: 0 }
+        attempts_remaining: { type: integer, minimum: 0 }
+        locked: { type: boolean }
+        expires_at: { type: string, format: date-time }
+    ActionSecurity:
+      type: object
+      required: [source, identity, outcome]
+      properties:
+        source:
+          type: object
+          required: [type, trust, sanitized, injection_checked]
+          properties:
+            type: { type: string }
+            trust: { type: string, enum: [untrusted, validated] }
+            sanitized: { type: boolean }
+            injection_checked: { type: boolean }
+        identity:
+          type: object
+          required: [method, state]
+          properties:
+            method: { type: string, enum: [none, explicit_confirmation, action_bound_mfa] }
+            state: { type: string, enum: [not_required, pending, required, verified, failed, locked, not_verified] }
+            attempts_remaining: { type: integer, minimum: 0 }
+        outcome:
+          type: object
+          required: [receipt]
+          properties:
+            receipt: { type: string, enum: [pending, verified, missing, not_issued] }
     Balance:
       type: object
       required: [account_id, currency, balance_minor, reserved_minor, available_minor]
