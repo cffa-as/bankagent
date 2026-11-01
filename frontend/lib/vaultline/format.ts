@@ -152,7 +152,14 @@ const CARD_STATUS_LABELS: Record<string, string> = {
   requested: '已发起收款',
   locked: '已锁定',
   placed: '已下单',
+  confirmed: '已确认',
   completed: '已完成',
+}
+const PLAN_NODE_LABELS: Record<string, string> = {
+  reminder: '生日提醒',
+  budget_lock: '预算锁定',
+  flowers: '鲜花订单',
+  cake: '蛋糕订单',
 }
 const STATUS_KEY = /(^|_)status$/
 
@@ -173,6 +180,7 @@ export function formatField(key: string, value: unknown, currency = 'CNY'): { te
     if (Number.isFinite(n)) return { text: formatBps(n), mono: true }
   }
   if (STATUS_KEY.test(key) && typeof value === 'string') return { text: CARD_STATUS_LABELS[value] ?? value, mono: false }
+  if (key === 'node_id' && typeof value === 'string') return { text: PLAN_NODE_LABELS[value] ?? value, mono: false }
   if (MINOR_KEY.test(key)) {
     const n = typeof value === 'number' ? value : Number(value)
     if (Number.isFinite(n)) return { text: formatMoney(n / 100, currency), mono: true }

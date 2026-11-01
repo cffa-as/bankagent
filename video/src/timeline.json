@@ -1,41 +1,13 @@
 {
   "fps": 30,
   "clips": {
+    "birthday-create": {
+      "src": "recordings/birthday-create.webm",
+      "trimBeforeSeconds": 1.893
+    },
     "overview": {
       "src": "recordings/overview.webm",
-      "trimBeforeSeconds": 2.369
-    },
-    "transactions": {
-      "src": "recordings/transactions.webm",
-      "trimBeforeSeconds": 2.12
-    },
-    "services": {
-      "src": "recordings/services.webm",
-      "trimBeforeSeconds": 2.097
-    },
-    "liquidity": {
-      "src": "recordings/liquidity.webm",
-      "trimBeforeSeconds": 2.164
-    },
-    "plan": {
-      "src": "recordings/plan.webm",
-      "trimBeforeSeconds": 3.72
-    },
-    "transfer-confirm": {
-      "src": "recordings/transfer-confirm.webm",
-      "trimBeforeSeconds": 2.813
-    },
-    "audit": {
-      "src": "recordings/audit.webm",
-      "trimBeforeSeconds": 3.425
-    },
-    "transfer-mfa": {
-      "src": "recordings/transfer-mfa.webm",
-      "trimBeforeSeconds": 2.191
-    },
-    "security": {
-      "src": "recordings/security.webm",
-      "trimBeforeSeconds": 2.109
+      "trimBeforeSeconds": 1.699
     }
   }
 }

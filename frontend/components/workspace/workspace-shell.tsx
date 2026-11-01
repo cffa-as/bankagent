@@ -70,6 +70,16 @@ export function WorkspaceShell() {
     lastActionIdRef.current = session.activeActionId
   }, [session.activeActionId, attention])
 
+  // Plan nodes settle through the action panel, so a status change there must
+  // re-read the plan; otherwise the DAG keeps showing the node as pending.
+  const refreshWorkflowDetail = workflows.detail.mutate
+  const refreshWorkflowList = workflows.list.mutate
+  useEffect(() => {
+    if (view !== 'workflows' || !action?.status) return
+    void refreshWorkflowDetail()
+    void refreshWorkflowList()
+  }, [action?.action_id, action?.status, view, refreshWorkflowDetail, refreshWorkflowList])
+
   const switchView = (next: WorkspaceView) => {
     setView(next)
     if (window.matchMedia('(max-width: 767px)').matches) setPanelOpen(false)

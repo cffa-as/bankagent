@@ -160,6 +160,82 @@ export const ProblemScene = ({durationInFrames}: {durationInFrames: number}) => 
   )
 }
 
+const COVERAGE = [
+  {group: '智能转账', items: '即时转账 · 预约转账 · AA 收款', chapters: '02–05', tone: COLORS.amber},
+  {group: '账单分析', items: '支出结构 · 异常交易识别', chapters: '01', tone: COLORS.teal},
+  {group: '理财操作', items: '产品比较 · 申购 · 赎回', chapters: '06', tone: COLORS.red},
+  {group: '卡片管理', items: '状态与额度 · 挂失', chapters: '07', tone: COLORS.red},
+  {group: '订阅代扣', items: '续费提醒 · 一句话取消', chapters: '08', tone: COLORS.amber},
+  {group: '跨场景联动', items: '生日资金计划 DAG · 现金流推演', chapters: '09–10', tone: COLORS.cobalt},
+  {group: '运行控制', items: '停止 · 转人工 · 撤销', chapters: '11', tone: COLORS.cobalt},
+  {group: '安全异常', items: 'MFA 失败 · 提示注入拦截', chapters: '12', tone: COLORS.red},
+  {group: '审计留痕', items: '发起 · 确认 · 验证 · 回执', chapters: '13', tone: COLORS.teal},
+]
+
+export const CoverageScene = ({durationInFrames}: {durationInFrames: number}) => {
+  const {t} = useSceneTime()
+  const heading = interpolate(t, [-0.3, 0.4], [0, 1], out)
+  return (
+    <Canvas>
+      <Fade durationInFrames={durationInFrames}>
+        <AbsoluteFill style={{alignItems: 'center', flexDirection: 'column', gap: 56, justifyContent: 'center'}}>
+          <div style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 16, opacity: heading, transform: `translateY(${(1 - heading) * 18}px)`}}>
+            <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 600, letterSpacing: '0.24em'}}>赛题场景覆盖</div>
+            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 62, fontWeight: 900, letterSpacing: '0.03em'}}>六大场景，全部真实运行</div>
+          </div>
+          <div style={{display: 'grid', gap: 22, gridTemplateColumns: 'repeat(3, 500px)'}}>
+            {COVERAGE.map((entry, index) => {
+              const p = interpolate(t, [0.5 + index * 0.22, 1.1 + index * 0.22], [0, 1], out)
+              const tick = interpolate(t, [0.9 + index * 0.22, 1.3 + index * 0.22], [0, 1], out)
+              return (
+                <div
+                  key={entry.group}
+                  style={{
+                    alignItems: 'center',
+                    background: COLORS.panel,
+                    border: `1px solid ${COLORS.line}`,
+                    borderRadius: 20,
+                    display: 'flex',
+                    gap: 22,
+                    opacity: p,
+                    padding: '26px 28px',
+                    transform: `translateY(${(1 - p) * 22}px)`,
+                  }}
+                >
+                  <span
+                    style={{
+                      alignItems: 'center',
+                      background: `${entry.tone}24`,
+                      borderRadius: 999,
+                      display: 'flex',
+                      flexShrink: 0,
+                      height: 52,
+                      justifyContent: 'center',
+                      transform: `scale(${0.6 + tick * 0.4})`,
+                      width: 52,
+                    }}
+                  >
+                    <span style={{opacity: tick}}>
+                      <Check size={28} color={entry.tone} />
+                    </span>
+                  </span>
+                  <div style={{display: 'flex', flex: 1, flexDirection: 'column', gap: 8}}>
+                    <div style={{alignItems: 'baseline', display: 'flex', justifyContent: 'space-between'}}>
+                      <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 32, fontWeight: 800}}>{entry.group}</span>
+                      <span style={{color: COLORS.steel, fontFamily: FONTS.mono, fontSize: 18, fontWeight: 600, letterSpacing: '0.08em'}}>{entry.chapters}</span>
+                    </div>
+                    <span style={{color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 22}}>{entry.items}</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </AbsoluteFill>
+      </Fade>
+    </Canvas>
+  )
+}
+
 const PILLARS = [
   {word: '听得懂', line: '一句话说出你的需求', at: 0.1, icon: 'ear'},
   {word: '看得见', line: '每一步过程清清楚楚', at: 2.3, icon: 'eye'},

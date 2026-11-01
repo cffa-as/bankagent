@@ -2,7 +2,7 @@ import {Video} from '@remotion/media'
 import {AbsoluteFill, Easing, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig} from 'remotion'
 import {Canvas, Mark, clamp} from '../components/brand'
 import {Subtitles} from '../components/subtitles'
-import type {CameraKey} from '../film-plan'
+import {CHAPTERS, type CameraKey, type Note, type Tone} from '../film-plan'
 import {COLORS, FONTS} from '../theme'
 import timeline from '../timeline.json'
 
@@ -24,23 +24,93 @@ function useCamera(keys: CameraKey[]) {
   }
 }
 
+const TONE: Record<Tone, string> = {green: COLORS.teal, amber: COLORS.amber, red: COLORS.red, cobalt: COLORS.cobalt}
+
+const ChapterRail = ({chapter}: {chapter: string}) => {
+  const frame = useCurrentFrame()
+  const fill = interpolate(frame, [10, 34], [0, 1], {...clamp, easing: Easing.out(Easing.cubic)})
+  const current = Number(chapter)
+  return (
+    <div style={{display: 'flex', gap: 6, left: (1920 - CONTENT_W) / 2, position: 'absolute', top: 16, width: CONTENT_W}}>
+      {CHAPTERS.map((item) => {
+        const index = Number(item.chapter)
+        const done = index < current
+        const active = index === current
+        return (
+          <div key={item.id} style={{background: 'rgba(183, 201, 226, 0.14)', borderRadius: 99, flex: 1, height: 4, overflow: 'hidden'}}>
+            <div
+              style={{
+                background: active ? TONE[item.tier.tone] : COLORS.steel,
+                borderRadius: 99,
+                height: '100%',
+                opacity: done ? 0.55 : 1,
+                width: done ? '100%' : active ? `${fill * 100}%` : '0%',
+              }}
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+const Callout = ({note, side}: {note: Note; side: 'left' | 'right'}) => {
+  const frame = useCurrentFrame()
+  const {fps} = useVideoConfig()
+  const seconds = frame / fps
+  const p = interpolate(seconds, [note.at, note.at + 0.45, note.until - 0.35, note.until], [0, 1, 1, 0], {...clamp, easing: Easing.out(Easing.cubic)})
+  if (p <= 0) return null
+  const color = TONE[note.tone]
+  return (
+    <div
+      style={{
+        [side]: 64,
+        alignItems: 'center',
+        backdropFilter: 'blur(14px)',
+        background: 'rgba(7, 17, 31, 0.9)',
+        border: `1px solid ${color}66`,
+        borderRadius: 16,
+        boxShadow: `0 18px 50px rgba(0, 0, 0, 0.4), 0 0 0 4px ${color}14`,
+        display: 'flex',
+        gap: 16,
+        maxWidth: 560,
+        opacity: p,
+        padding: '18px 26px 18px 20px',
+        position: 'absolute',
+        top: 150,
+        transform: `translateX(${(1 - p) * (side === 'left' ? -24 : 24)}px)`,
+      }}
+    >
+      <span style={{background: color, borderRadius: 99, boxShadow: `0 0 0 6px ${color}2e`, flexShrink: 0, height: 12, width: 12}} />
+      <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 28, fontWeight: 700, letterSpacing: '0.01em', lineHeight: 1.35}}>{note.text}</span>
+    </div>
+  )
+}
+
 export const RecordingScene = ({
   id,
   chapter,
   title,
+  tier,
   camera,
+  notes,
   durationInFrames,
 }: {
   id: string
   chapter: string
   title: string
+  tier: {label: string; tone: Tone}
   camera: CameraKey[]
+  notes: Note[]
   durationInFrames: number
 }) => {
   const frame = useCurrentFrame()
   const {fps} = useVideoConfig()
   const clip = timeline.clips[id as keyof typeof timeline.clips]
   const {zoom, x, y} = useCamera(camera)
+  const seconds = frame / fps
+  const activeNote = notes.find((note) => seconds >= note.at && seconds < note.until)
+  const noteSide = activeNote && interpolate(activeNote.at, camera.map((key) => key.at), camera.map((key) => key.x), clamp) > 0.62 ? 'left' : 'right'
   const enter = spring({fps, frame, config: {damping: 200}, durationInFrames: 22})
   const exit = interpolate(frame, [durationInFrames - 12, durationInFrames], [1, 0], clamp)
   const chapterIn = interpolate(frame, [8, 22, 105, 120], [0, 1, 1, 0], clamp)
@@ -145,8 +215,28 @@ export const RecordingScene = ({
             {Number(chapter)}
           </span>
           <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 26, fontWeight: 700, letterSpacing: '0.02em'}}>{title}</span>
+          <span
+            style={{
+              alignItems: 'center',
+              border: `1px solid ${TONE[tier.tone]}`,
+              borderRadius: 999,
+              color: TONE[tier.tone],
+              display: 'flex',
+              fontFamily: FONTS.sans,
+              fontSize: 17,
+              fontWeight: 700,
+              gap: 8,
+              letterSpacing: '0.04em',
+              padding: '4px 12px',
+            }}
+          >
+            <span style={{background: TONE[tier.tone], borderRadius: 99, height: 8, width: 8}} />
+            {tier.label}
+          </span>
         </div>
 
+        {activeNote && noteSide && <Callout key={activeNote.text} note={activeNote} side={noteSide} />}
+        <ChapterRail chapter={chapter} />
         <Subtitles id={id} />
       </AbsoluteFill>
     </Canvas>
