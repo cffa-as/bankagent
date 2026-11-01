@@ -110,7 +110,7 @@ const Callout = ({note, side}: {note: Note; side: 'left' | 'right'}) => {
         boxShadow: `0 18px 50px rgba(0, 0, 0, 0.4), 0 0 0 4px ${color}14`,
         display: 'flex',
         gap: 16,
-        maxWidth: 600,
+        maxWidth: 780,
         opacity: p,
         padding: '18px 26px 18px 20px',
         position: 'absolute',

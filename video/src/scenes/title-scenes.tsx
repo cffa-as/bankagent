@@ -1,344 +1,509 @@
-import {AbsoluteFill, Easing, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion'
-import {Canvas, Check, Lockup, Mark, ShieldIcon, Shimmer, clamp} from '../components/brand'
+import {Video} from '@remotion/media'
+import {AbsoluteFill, Easing, Img, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion'
+import {Canvas, Lockup, Mark, clamp} from '../components/brand'
+import {ChapterChip, DemoDisclosure, TONE} from '../components/chapter'
 import {Subtitles} from '../components/subtitles'
-import {NARRATION_DELAY} from '../film-plan'
+import {CLIPS, EVIDENCE, NARRATION, placeBeats, type FilmScene, type Tone} from '../film-plan'
 import {COLORS, FONTS} from '../theme'
 
-const out = {...clamp, easing: Easing.out(Easing.cubic)}
+const ease = {...clamp, easing: Easing.out(Easing.cubic)}
 
-function useSceneTime() {
+function useSeconds() {
   const frame = useCurrentFrame()
   const {fps} = useVideoConfig()
-  return {frame, fps, t: frame / fps - NARRATION_DELAY}
+  return frame / fps
 }
 
-const Reveal = ({at, children, distance = 24}: {at: number; children: React.ReactNode; distance?: number}) => {
-  const {t} = useSceneTime()
-  const p = interpolate(t, [at, at + 0.7], [0, 1], out)
-  return <div style={{opacity: p, transform: `translateY(${(1 - p) * distance}px)`}}>{children}</div>
+/** Absolute scene time of sentence `index` in the scene's first narration beat. */
+function sentenceAt(scene: FilmScene, index: number) {
+  const beat = placeBeats(scene)[0]
+  return beat.start + (NARRATION[beat.id]?.sentences[index]?.start ?? 0)
 }
 
-const Fade = ({durationInFrames, children}: {durationInFrames: number; children: React.ReactNode}) => {
+const appear = (seconds: number, at: number, length = 0.6) => interpolate(seconds, [at, at + length], [0, 1], ease)
+
+const SceneExit = ({durationInFrames, children}: {durationInFrames: number; children: React.ReactNode}) => {
   const frame = useCurrentFrame()
-  return <AbsoluteFill style={{opacity: interpolate(frame, [durationInFrames - 14, durationInFrames], [1, 0], clamp)}}>{children}</AbsoluteFill>
+  return <AbsoluteFill style={{opacity: interpolate(frame, [durationInFrames - 12, durationInFrames], [1, 0], clamp)}}>{children}</AbsoluteFill>
 }
 
-const Composer = ({text, progress, width = 1100}: {text: string; progress: number; width?: number}) => {
-  const {frame} = useSceneTime()
-  const shown = text.slice(0, Math.round(text.length * progress))
+const Eyebrow = ({children, color = COLORS.steel}: {children: React.ReactNode; color?: string}) => (
+  <div style={{color, fontFamily: FONTS.sans, fontSize: 20, fontWeight: 700, letterSpacing: '0.22em'}}>{children}</div>
+)
+
+/** The film's signature: a horizontal execution boundary with the three-part promise. */
+const BoundaryLine = ({at, width = 1240}: {at: number; width?: number}) => {
+  const seconds = useSeconds()
+  const draw = interpolate(seconds, [at, at + 1.4], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)})
+  const parts: {label: string; color: string; x: number}[] = [
+    {label: '模型提议', color: COLORS.platinum, x: 0.08},
+    {label: '服务端裁决', color: COLORS.cobalt, x: 0.5},
+    {label: '回执证明结果', color: COLORS.teal, x: 0.92},
+  ]
   return (
-    <div
-      style={{
-        alignItems: 'center',
-        background: COLORS.white,
-        borderRadius: 22,
-        boxShadow: '0 30px 90px rgba(0, 0, 0, 0.4)',
-        display: 'flex',
-        gap: 20,
-        height: 96,
-        padding: '0 22px 0 34px',
-        width,
-      }}
-    >
-      <span style={{color: shown ? COLORS.ink : COLORS.steel, flex: 1, fontFamily: FONTS.sans, fontSize: 34}}>
-        {shown || '今天想办理什么业务？'}
-        <span style={{background: COLORS.cobalt, display: 'inline-block', height: 36, marginLeft: 4, opacity: frame % 30 < 16 ? 1 : 0, verticalAlign: 'middle', width: 3}} />
-      </span>
-      <span style={{alignItems: 'center', background: COLORS.ink, borderRadius: 16, display: 'flex', height: 60, justifyContent: 'center', width: 60}}>
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={COLORS.white} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 19V5M5 12l7-7 7 7" />
-        </svg>
-      </span>
+    <div style={{height: 120, position: 'relative', width}}>
+      <div style={{background: COLORS.line, height: 2, left: 0, position: 'absolute', right: 0, top: 30}} />
+      <div style={{background: `linear-gradient(90deg, ${COLORS.platinum}, ${COLORS.cobalt}, ${COLORS.teal})`, height: 2, left: 0, position: 'absolute', top: 30, width: `${draw * 100}%`}} />
+      {parts.map((part, index) => {
+        const p = appear(seconds, at + 0.6 + index * 0.55, 0.5)
+        return (
+          <div
+            key={part.label}
+            style={{
+              alignItems: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 22,
+              left: `${part.x * 100}%`,
+              opacity: p,
+              position: 'absolute',
+              top: 22,
+              transform: `translate(-50%, ${(1 - p) * 10}px)`,
+            }}
+          >
+            <span style={{background: COLORS.navy, border: `3px solid ${part.color}`, borderRadius: 99, height: 18, width: 18}} />
+            <span style={{color: part.color, fontFamily: FONTS.sans, fontSize: 38, fontWeight: 800, letterSpacing: '0.04em', whiteSpace: 'nowrap'}}>{part.label}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-export const IntroScene = ({durationInFrames}: {durationInFrames: number}) => {
-  const {frame, fps, t} = useSceneTime()
-  const mark = spring({fps, frame, config: {damping: 14, mass: 0.8}, durationInFrames: 40})
-  const typing = interpolate(t, [5.8, 8.4], [0, 1], clamp)
+export const IntroScene = ({scene, durationInFrames}: {scene: FilmScene; durationInFrames: number}) => {
+  const seconds = useSeconds()
+  const mark = appear(seconds, 0.3, 0.9)
   return (
     <Canvas>
-      <Fade durationInFrames={durationInFrames}>
-        <AbsoluteFill style={{alignItems: 'center', flexDirection: 'column', gap: 44, justifyContent: 'center'}}>
-          <div style={{transform: `scale(${0.6 + mark * 0.4})`, opacity: mark}}>
-            <Mark size={110} />
+      <SceneExit durationInFrames={durationInFrames}>
+        <AbsoluteFill style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 72, justifyContent: 'center'}}>
+          <div style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 26, opacity: mark, transform: `translateY(${(1 - mark) * 16}px)`}}>
+            <Lockup size={74} />
+            <Eyebrow>受控执行的银行 AGENT 工作台</Eyebrow>
           </div>
-          <Reveal at={0.2}>
-            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 96, fontWeight: 900, letterSpacing: '0.02em'}}>一句话，办好每一笔银行业务。</div>
-          </Reveal>
-          <Reveal at={2.4}>
-            <div style={{color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 34, fontWeight: 500, letterSpacing: '0.12em'}}>
-              Vaultline 智能银行助理
-            </div>
-          </Reveal>
-          <Reveal at={5.4} distance={40}>
-            <div style={{marginTop: 40}}>
-              <Composer text="给张三转 300 元，备注项目款" progress={typing} width={980} />
-            </div>
-          </Reveal>
+          <BoundaryLine at={1.6} />
         </AbsoluteFill>
-      </Fade>
+        <Subtitles beats={placeBeats(scene)} />
+      </SceneExit>
     </Canvas>
   )
 }
 
-const MENU = ['首页', '我的账户', '交易明细', '筛选条件', '交易详情']
-const FIELDS = ['收款人姓名', '收款账号', '开户银行', '开户网点', '转账金额', '转账用途', '到账时间']
+const BlockedArrow = () => (
+  <span style={{alignItems: 'center', display: 'flex', height: 24, position: 'relative', width: 64}}>
+    <span style={{background: COLORS.steel, height: 2, width: '100%'}} />
+    {[45, -45].map((angle) => (
+      <span key={angle} style={{background: COLORS.red, borderRadius: 2, height: 4, left: 22, position: 'absolute', top: 10, transform: `rotate(${angle}deg)`, width: 22}} />
+    ))}
+  </span>
+)
 
-export const ProblemScene = ({durationInFrames}: {durationInFrames: number}) => {
-  const {t} = useSceneTime()
-  const collapse = interpolate(t, [10.4, 11.4], [0, 1], out)
-  const composer = interpolate(t, [11.2, 12.2], [0, 1], out)
-  const typing = interpolate(t, [12.3, 14.6], [0, 1], clamp)
+const MENU = ['首页', '转账汇款', '预约转账', '选择收款人', '填写金额与用途', '安全验证']
+
+const DilemmaCard = ({title, caption, tone, children, p}: {title: string; caption: string; tone: Tone; children: React.ReactNode; p: number}) => (
+  <div
+    style={{
+      background: COLORS.panel,
+      border: `1px solid ${COLORS.line}`,
+      borderRadius: 24,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 28,
+      height: 520,
+      opacity: p,
+      padding: '36px 40px',
+      transform: `translateY(${(1 - p) * 24}px)`,
+      width: 640,
+    }}
+  >
+    <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
+      <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 36, fontWeight: 800}}>{title}</span>
+      <span style={{color: TONE[tone], fontFamily: FONTS.sans, fontSize: 22, fontWeight: 700, letterSpacing: '0.06em'}}>{caption}</span>
+    </div>
+    {children}
+  </div>
+)
+
+export const ProblemScene = ({scene, durationInFrames}: {scene: FilmScene; durationInFrames: number}) => {
+  const seconds = useSeconds()
+  const s = [0, 1, 2, 3, 4].map((index) => sentenceAt(scene, index))
+  const headline = appear(seconds, s[0] + 0.1) * interpolate(seconds, [s[1] - 0.6, s[1] - 0.1], [1, 0], clamp)
+  const dilemma = interpolate(seconds, [s[1] - 0.2, s[1] + 0.4, s[3] - 0.6, s[3] - 0.1], [0, 1, 1, 0], ease)
+  const boundary = appear(seconds, s[3] - 0.1, 0.7)
+
   return (
     <Canvas>
-      <Fade durationInFrames={durationInFrames}>
-        <AbsoluteFill style={{alignItems: 'center', justifyContent: 'center', opacity: 1 - collapse, transform: `scale(${1 - collapse * 0.08})`}}>
-          <div style={{display: 'flex', gap: 120}}>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 18, width: 560}}>
-              <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 600, letterSpacing: '0.16em', marginBottom: 8}}>查一笔扣款</div>
-              {MENU.map((item, index) => {
-                const p = interpolate(t, [1.4 + index * 0.55, 1.9 + index * 0.55], [0, 1], out)
-                return (
-                  <div
-                    key={item}
-                    style={{
-                      alignItems: 'center',
-                      background: COLORS.panel,
-                      border: `1px solid ${COLORS.line}`,
-                      borderRadius: 14,
-                      color: COLORS.platinum,
-                      display: 'flex',
-                      fontFamily: FONTS.sans,
-                      fontSize: 30,
-                      gap: 18,
-                      marginLeft: index * 34,
-                      opacity: p,
-                      padding: '18px 24px',
-                      transform: `translateX(${(1 - p) * -20}px)`,
-                    }}
-                  >
-                    <span style={{color: COLORS.steel, fontSize: 22}}>{`第 ${index + 1} 层`}</span>
-                    {item}
-                    <span style={{color: COLORS.steel, marginLeft: 'auto'}}>›</span>
-                  </div>
-                )
-              })}
+      <SceneExit durationInFrames={durationInFrames}>
+        {headline > 0 && (
+          <AbsoluteFill style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 30, justifyContent: 'center', opacity: headline}}>
+            <Eyebrow>问题</Eyebrow>
+            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 76, fontWeight: 900, letterSpacing: '0.02em', textAlign: 'center'}}>
+              难点不是会不会聊天
             </div>
-            <div style={{display: 'flex', flexDirection: 'column', gap: 14, width: 520}}>
-              <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 600, letterSpacing: '0.16em', marginBottom: 8}}>转一笔账</div>
-              {FIELDS.map((field, index) => {
-                const p = interpolate(t, [4.6 + index * 0.32, 5.0 + index * 0.32], [0, 1], out)
-                return (
-                  <div
-                    key={field}
-                    style={{
-                      alignItems: 'center',
-                      borderBottom: `1px solid ${COLORS.line}`,
-                      display: 'flex',
-                      fontFamily: FONTS.sans,
-                      justifyContent: 'space-between',
-                      opacity: p,
-                      padding: '12px 4px',
-                    }}
-                  >
-                    <span style={{color: COLORS.platinum, fontSize: 28}}>{field}</span>
-                    <span style={{background: 'rgba(183, 201, 226, 0.12)', borderRadius: 8, height: 30, width: 220}} />
-                  </div>
-                )
-              })}
+            <div style={{color: COLORS.cobalt, fontFamily: FONTS.sans, fontSize: 76, fontWeight: 900, letterSpacing: '0.02em', textAlign: 'center'}}>
+              而是能不能被允许动钱
             </div>
-          </div>
-        </AbsoluteFill>
-        <AbsoluteFill style={{alignItems: 'center', justifyContent: 'center', opacity: composer, transform: `translateY(${(1 - composer) * 40}px)`}}>
-          <Composer text="给张三转 300 元，备注项目款" progress={typing} />
-        </AbsoluteFill>
-        <Subtitles id="problem" />
-      </Fade>
-    </Canvas>
-  )
-}
+          </AbsoluteFill>
+        )}
 
-const COVERAGE = [
-  {group: '异常交易洞察', items: '确定性规则 · 高风险即时标出', chapters: '01', tone: COLORS.teal, highlight: true},
-  {group: '现金流推演', items: '四种情景 · 30 天余额 · 备选方案', chapters: '02', tone: COLORS.cobalt, highlight: true},
-  {group: '智能转账', items: '即时 · 预约 · AA 收款', chapters: '03–06', tone: COLORS.amber},
-  {group: '理财操作', items: '产品比较 · 申购 · 赎回', chapters: '07', tone: COLORS.red},
-  {group: '卡片与订阅', items: '挂失 · 续费提醒 · 一句话取消', chapters: '08–09', tone: COLORS.amber},
-  {group: '资金计划', items: '多步依赖 · 逐节点授权', chapters: '10–11', tone: COLORS.cobalt, highlight: true},
-  {group: '运行控制', items: '停止 · 转人工 · 撤销', chapters: '12', tone: COLORS.cobalt},
-  {group: '安全防护', items: 'MFA 失败 · 提示注入拦截', chapters: '13', tone: COLORS.red, highlight: true},
-  {group: '审计留痕', items: '发起 · 确认 · 验证 · 回执', chapters: '14', tone: COLORS.teal},
-]
-
-export const CoverageScene = ({durationInFrames}: {durationInFrames: number}) => {
-  const {t} = useSceneTime()
-  const heading = interpolate(t, [-0.3, 0.4], [0, 1], out)
-  return (
-    <Canvas>
-      <Fade durationInFrames={durationInFrames}>
-        <AbsoluteFill style={{alignItems: 'center', flexDirection: 'column', gap: 56, justifyContent: 'center'}}>
-          <div style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 16, opacity: heading, transform: `translateY(${(1 - heading) * 18}px)`}}>
-            <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 600, letterSpacing: '0.24em'}}>能力全景 · 赛题场景全覆盖</div>
-            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 62, fontWeight: 900, letterSpacing: '0.03em'}}>九项能力，全部真实运行</div>
-          </div>
-          <div style={{display: 'grid', gap: 22, gridTemplateColumns: 'repeat(3, 500px)'}}>
-            {COVERAGE.map((entry, index) => {
-              const p = interpolate(t, [0.5 + index * 0.22, 1.1 + index * 0.22], [0, 1], out)
-              const tick = interpolate(t, [0.9 + index * 0.22, 1.3 + index * 0.22], [0, 1], out)
-              return (
+        {dilemma > 0 && (
+          <AbsoluteFill style={{alignItems: 'center', display: 'flex', flexDirection: 'row', gap: 56, justifyContent: 'center', opacity: dilemma}}>
+            <DilemmaCard title="传统银行入口" caption="入口深 · 层层查找" tone="amber" p={appear(seconds, s[1])}>
+              <div style={{display: 'flex', flexDirection: 'column', gap: 12}}>
+                {MENU.map((item, index) => {
+                  const p = appear(seconds, s[1] + 0.3 + index * 0.35, 0.35)
+                  return (
+                    <div key={item} style={{alignItems: 'center', display: 'flex', gap: 14, opacity: p, paddingLeft: index * 26}}>
+                      <span style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 22}}>{index === 0 ? '' : '›'}</span>
+                      <span
+                        style={{
+                          background: index === MENU.length - 1 ? `${COLORS.amber}22` : 'rgba(183, 201, 226, 0.08)',
+                          borderRadius: 10,
+                          color: index === MENU.length - 1 ? COLORS.amber : COLORS.platinum,
+                          fontFamily: FONTS.sans,
+                          fontSize: 24,
+                          fontWeight: 600,
+                          padding: '7px 16px',
+                        }}
+                      >
+                        {item}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </DilemmaCard>
+            <DilemmaCard title="通用 Agent" caption="能理解需求 · 不能直接拿到资金权限" tone="red" p={appear(seconds, s[2])}>
+              <div style={{display: 'flex', flexDirection: 'column', gap: 28}}>
                 <div
-                  key={entry.group}
                   style={{
-                    alignItems: 'center',
-                    background: COLORS.panel,
-                    border: `1px solid ${entry.highlight ? `${entry.tone}aa` : COLORS.line}`,
-                    borderRadius: 20,
-                    boxShadow: entry.highlight ? `0 0 0 4px ${entry.tone}1f` : 'none',
-                    display: 'flex',
-                    gap: 22,
-                    opacity: p,
-                    padding: '26px 28px',
-                    transform: `translateY(${(1 - p) * 22}px)`,
+                    alignSelf: 'flex-end',
+                    background: COLORS.cobalt,
+                    borderRadius: '20px 20px 6px 20px',
+                    color: COLORS.white,
+                    fontFamily: FONTS.sans,
+                    fontSize: 26,
+                    fontWeight: 600,
+                    opacity: appear(seconds, s[2] + 0.4),
+                    padding: '16px 22px',
                   }}
                 >
-                  <span
-                    style={{
-                      alignItems: 'center',
-                      background: `${entry.tone}24`,
-                      borderRadius: 999,
-                      display: 'flex',
-                      flexShrink: 0,
-                      height: 52,
-                      justifyContent: 'center',
-                      transform: `scale(${0.6 + tick * 0.4})`,
-                      width: 52,
-                    }}
-                  >
-                    <span style={{opacity: tick}}>
-                      <Check size={28} color={entry.tone} />
-                    </span>
+                  帮我把房租和装修的钱安排一下
+                </div>
+                <div style={{alignItems: 'center', display: 'flex', gap: 18, opacity: appear(seconds, s[2] + 1.4)}}>
+                  <span style={{background: 'rgba(183, 201, 226, 0.08)', borderRadius: 12, color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 600, padding: '12px 18px'}}>
+                    模型直接调用转账
                   </span>
-                  <div style={{display: 'flex', flex: 1, flexDirection: 'column', gap: 8}}>
-                    <div style={{alignItems: 'baseline', display: 'flex', justifyContent: 'space-between'}}>
-                      <span style={{alignItems: 'center', color: COLORS.white, display: 'flex', fontFamily: FONTS.sans, fontSize: 32, fontWeight: 800, gap: 12}}>
-                        {entry.group}
-                        {entry.highlight && (
-                          <span style={{background: `${entry.tone}2e`, borderRadius: 999, color: COLORS.white, fontSize: 16, fontWeight: 700, letterSpacing: '0.08em', padding: '3px 10px'}}>亮点</span>
-                        )}
-                      </span>
-                      <span style={{color: COLORS.steel, fontFamily: FONTS.mono, fontSize: 18, fontWeight: 600, letterSpacing: '0.08em'}}>{entry.chapters}</span>
-                    </div>
-                    <span style={{color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 22}}>{entry.items}</span>
+                  <BlockedArrow />
+                  <span style={{border: `1px dashed ${COLORS.red}`, borderRadius: 12, color: COLORS.red, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 700, padding: '12px 18px'}}>
+                    资金权限
+                  </span>
+                </div>
+                <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 22, lineHeight: 1.5, opacity: appear(seconds, s[2] + 2.2)}}>
+                  模型输出不可预测，单靠提示词无法守住资金边界
+                </div>
+              </div>
+            </DilemmaCard>
+          </AbsoluteFill>
+        )}
+
+        {boundary > 0 && <BoundaryDiagram seconds={seconds} at={s[3]} emphasis={s[4]} p={boundary} />}
+        <Subtitles beats={placeBeats(scene)} />
+      </SceneExit>
+    </Canvas>
+  )
+}
+
+const SERVER_STEPS = ['不可变动作快照', '风险分级与授权', '一次性执行门', '银行回执']
+
+const BoundaryDiagram = ({seconds, at, emphasis, p}: {seconds: number; at: number; emphasis: number; p: number}) => {
+  const travel = interpolate(seconds, [emphasis + 0.2, emphasis + 1.6], [0, 1], {...clamp, easing: Easing.inOut(Easing.cubic)})
+  return (
+    <AbsoluteFill style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 44, justifyContent: 'center', opacity: p}}>
+      <Eyebrow>VAULTLINE 的做法</Eyebrow>
+      <div style={{alignItems: 'stretch', display: 'flex', gap: 0}}>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 18, padding: '0 64px', width: 520}}>
+          <span style={{color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 700, letterSpacing: '0.12em'}}>模型</span>
+          {['理解需求', '规划步骤', '提出动作'].map((item, index) => (
+            <span
+              key={item}
+              style={{
+                background: 'rgba(183, 201, 226, 0.08)',
+                borderRadius: 14,
+                color: COLORS.white,
+                fontFamily: FONTS.sans,
+                fontSize: 30,
+                fontWeight: 700,
+                opacity: appear(seconds, at + 0.4 + index * 0.4),
+                padding: '16px 22px',
+              }}
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+        <div style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 16, position: 'relative', width: 120}}>
+          <div style={{background: COLORS.cobalt, borderRadius: 4, boxShadow: `0 0 28px ${COLORS.cobalt}`, flex: 1, width: 4}} />
+          <span
+            style={{
+              background: COLORS.navy,
+              color: COLORS.cobalt,
+              fontFamily: FONTS.sans,
+              fontSize: 22,
+              fontWeight: 800,
+              left: '50%',
+              letterSpacing: '0.1em',
+              padding: '8px 0',
+              position: 'absolute',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              whiteSpace: 'nowrap',
+              writingMode: 'vertical-rl',
+            }}
+          >
+            资金执行边界
+          </span>
+          <span
+            style={{
+              background: COLORS.amber,
+              borderRadius: 999,
+              color: COLORS.navy,
+              fontFamily: FONTS.sans,
+              fontSize: 20,
+              fontWeight: 800,
+              left: interpolate(travel, [0, 1], [-300, -96]),
+              opacity: appear(seconds, emphasis, 0.4),
+              padding: '8px 16px',
+              position: 'absolute',
+              top: '84%',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            动作提议
+          </span>
+        </div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: 18, padding: '0 64px', width: 520}}>
+          <span style={{color: COLORS.cobalt, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 700, letterSpacing: '0.12em'}}>银行服务端</span>
+          {SERVER_STEPS.map((item, index) => (
+            <span
+              key={item}
+              style={{
+                alignItems: 'center',
+                border: `1px solid ${COLORS.cobalt}55`,
+                borderRadius: 14,
+                color: COLORS.white,
+                display: 'flex',
+                fontFamily: FONTS.sans,
+                fontSize: 30,
+                fontWeight: 700,
+                gap: 14,
+                opacity: appear(seconds, at + 1.4 + index * 0.4),
+                padding: '14px 22px',
+              }}
+            >
+              <span style={{background: index === SERVER_STEPS.length - 1 ? COLORS.teal : COLORS.cobalt, borderRadius: 99, height: 10, width: 10}} />
+              {item}
+            </span>
+          ))}
+        </div>
+      </div>
+    </AbsoluteFill>
+  )
+}
+
+type PassportCard = {src: string; title: string; status: string; tone: Tone}
+const PASSPORT_ROWS: {label: string; from: number; to: number}[] = [
+  {label: 'SOURCE', from: 0.145, to: 0.405},
+  {label: 'IDENTITY', from: 0.405, to: 0.68},
+  {label: 'RECEIPT', from: 0.68, to: 0.985},
+]
+const STILL_W = 690
+const STILL_H = (STILL_W * 572) / 742
+
+export const PassportScene = ({scene, durationInFrames}: {scene: FilmScene; durationInFrames: number}) => {
+  const seconds = useSeconds()
+  const s = [0, 1, 2, 3, 4].map((index) => sentenceAt(scene, index))
+  const execute = EVIDENCE.execute as {passport?: string} | undefined
+  const security = EVIDENCE.security as {passport?: string} | undefined
+  const cards: PassportCard[] = [
+    {src: execute?.passport ?? 'stills/passport-verified.png', title: '分两笔预留 · 第一笔', status: '已执行 · 回执已签发', tone: 'green'},
+    {src: security?.passport ?? 'stills/passport-locked.png', title: '¥1,800 转账', status: '三次验证失败 · 已锁定', tone: 'red'},
+  ]
+  const activeRow = seconds >= s[3] ? 2 : seconds >= s[2] ? 1 : seconds >= s[1] ? 0 : -1
+  const rule = appear(seconds, s[4] + 0.2, 0.6)
+
+  return (
+    <Canvas>
+      <SceneExit durationInFrames={durationInFrames}>
+        <AbsoluteFill style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 34, justifyContent: 'center', paddingTop: 40}}>
+          <div style={{display: 'flex', gap: 64}}>
+            {cards.map((card, index) => {
+              const p = appear(seconds, 0.5 + index * 0.4, 0.7)
+              return (
+                <div key={card.src} style={{display: 'flex', flexDirection: 'column', gap: 18, opacity: p, transform: `translateY(${(1 - p) * 20}px)`}}>
+                  <div style={{alignItems: 'center', display: 'flex', justifyContent: 'space-between'}}>
+                    <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 28, fontWeight: 800}}>{card.title}</span>
+                    <span
+                      style={{
+                        border: `1px solid ${TONE[card.tone]}`,
+                        borderRadius: 999,
+                        color: TONE[card.tone],
+                        fontFamily: FONTS.sans,
+                        fontSize: 19,
+                        fontWeight: 700,
+                        padding: '5px 14px',
+                      }}
+                    >
+                      {card.status}
+                    </span>
+                  </div>
+                  <div style={{borderRadius: 18, boxShadow: '0 30px 80px rgba(0, 0, 0, 0.45)', height: STILL_H, overflow: 'hidden', position: 'relative', width: STILL_W}}>
+                    <Img src={staticFile(card.src)} style={{display: 'block', height: STILL_H, width: STILL_W}} />
+                    {PASSPORT_ROWS.map((row, rowIndex) => {
+                      const dim = activeRow === -1 || activeRow === rowIndex ? 0 : 0.55
+                      return (
+                        <div
+                          key={row.label}
+                          style={{
+                            background: `rgba(7, 17, 31, ${dim})`,
+                            boxShadow: activeRow === rowIndex ? `inset 0 0 0 3px ${TONE[card.tone]}` : 'none',
+                            height: (row.to - row.from) * STILL_H,
+                            left: 0,
+                            position: 'absolute',
+                            right: 0,
+                            top: row.from * STILL_H,
+                          }}
+                        />
+                      )
+                    })}
                   </div>
                 </div>
               )
             })}
           </div>
+          <div
+            style={{
+              alignItems: 'center',
+              background: COLORS.white,
+              borderRadius: 999,
+              color: COLORS.navy,
+              display: 'flex',
+              fontFamily: FONTS.sans,
+              fontSize: 28,
+              fontWeight: 800,
+              gap: 14,
+              opacity: rule,
+              padding: '14px 30px',
+              transform: `translateY(${(1 - rule) * 12}px)`,
+            }}
+          >
+            <Mark size={26} inverse />
+            任何单一验证信号，都不能独立授权高风险资金动作
+          </div>
         </AbsoluteFill>
-      </Fade>
+        {scene.chapter && <ChapterChip chapter={scene.chapter} persistent />}
+        <DemoDisclosure />
+        <Subtitles beats={placeBeats(scene)} />
+      </SceneExit>
     </Canvas>
   )
 }
 
-const PILLARS = [
-  {word: '听得懂', line: '一句话说出你的需求', at: 0.1, icon: 'ear'},
-  {word: '看得见', line: '每一步过程清清楚楚', at: 2.3, icon: 'eye'},
-  {word: '守得住', line: '每一笔资金由你确认', at: 4.6, icon: 'shield'},
-] as const
+const COVERAGE: {clip: string; title: string; tier: string; tone: Tone; speed: number}[] = [
+  {clip: 'cov-transfer', title: '转账', tier: '黄色 · 确认后执行', tone: 'amber', speed: 1.6},
+  {clip: 'cov-bill', title: '账单', tier: '只读 · 异常识别', tone: 'cobalt', speed: 1},
+  {clip: 'cov-invest', title: '理财', tier: '只读 · 产品对比', tone: 'cobalt', speed: 1},
+  {clip: 'cov-card', title: '卡片', tier: '只读 · 状态与额度', tone: 'cobalt', speed: 1},
+  {clip: 'cov-subscription', title: '订阅', tier: '只读 · 续费提醒', tone: 'cobalt', speed: 1},
+  {clip: 'cov-plan', title: '跨场景资金计划', tier: '计划 · 分步授权', tone: 'green', speed: 1.3},
+]
+const ITEM_SECONDS = 3.3
+const WINDOW_W = 1240
+const WINDOW_H = (WINDOW_W * 864) / 1536
 
-export const PrinciplesScene = ({durationInFrames}: {durationInFrames: number}) => {
-  const {t} = useSceneTime()
-  const closing = interpolate(t, [7.2, 8.0], [0, 1], out)
+export const CoverageScene = ({scene, durationInFrames}: {scene: FilmScene; durationInFrames: number}) => {
+  const seconds = useSeconds()
+  const {fps} = useVideoConfig()
+  const start = 0.6
+  const active = Math.min(COVERAGE.length - 1, Math.max(0, Math.floor((seconds - start) / ITEM_SECONDS)))
+  const itemFrames = Math.round(ITEM_SECONDS * fps)
+
   return (
     <Canvas>
-      <Fade durationInFrames={durationInFrames}>
-        <AbsoluteFill style={{alignItems: 'center', flexDirection: 'column', gap: 90, justifyContent: 'center'}}>
-          <div style={{display: 'flex', gap: 40}}>
-            {PILLARS.map((pillar) => {
-              const p = interpolate(t, [pillar.at, pillar.at + 0.8], [0, 1], out)
+      <SceneExit durationInFrames={durationInFrames}>
+        <AbsoluteFill style={{alignItems: 'center', display: 'flex', flexDirection: 'row', gap: 64, justifyContent: 'center', paddingTop: 60}}>
+          <div style={{display: 'flex', flexDirection: 'column', gap: 14, width: 400}}>
+            {COVERAGE.map((item, index) => {
+              const on = index === active
+              const done = index < active
               return (
                 <div
-                  key={pillar.word}
+                  key={item.clip}
                   style={{
-                    background: COLORS.panel,
-                    border: `1px solid ${COLORS.line}`,
-                    borderRadius: 26,
+                    background: on ? COLORS.panel : 'transparent',
+                    border: `1px solid ${on ? `${TONE[item.tone]}88` : 'transparent'}`,
+                    borderRadius: 16,
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 26,
-                    opacity: p,
-                    padding: '48px 46px',
-                    transform: `translateY(${(1 - p) * 30}px)`,
-                    width: 440,
+                    gap: 6,
+                    opacity: on ? 1 : done ? 0.6 : 0.4,
+                    padding: '14px 20px',
                   }}
                 >
-                  <span style={{alignItems: 'center', background: 'rgba(49, 91, 255, 0.16)', borderRadius: 16, display: 'flex', height: 64, justifyContent: 'center', width: 64}}>
-                    {pillar.icon === 'shield' ? (
-                      <ShieldIcon size={34} color={COLORS.white} />
-                    ) : pillar.icon === 'eye' ? (
-                      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke={COLORS.white} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                    ) : (
-                      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke={COLORS.white} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
-                      </svg>
-                    )}
-                  </span>
-                  <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 76, fontWeight: 900, letterSpacing: '0.04em'}}>{pillar.word}</span>
-                  <span style={{color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 30}}>{pillar.line}</span>
+                  <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 30, fontWeight: 800}}>{item.title}</span>
+                  <span style={{color: TONE[item.tone], fontFamily: FONTS.sans, fontSize: 19, fontWeight: 700, letterSpacing: '0.04em'}}>{item.tier}</span>
                 </div>
               )
             })}
           </div>
-          <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 34, fontWeight: 600, letterSpacing: '0.1em', opacity: closing}}>
-            这是我们对智能银行的理解
+          <div style={{borderRadius: 14, boxShadow: '0 40px 120px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(214, 226, 242, 0.14)', height: WINDOW_H, overflow: 'hidden', position: 'relative', width: WINDOW_W}}>
+            {COVERAGE.map((item, index) => {
+              const clip = CLIPS[item.clip]
+              if (!clip) return null
+              return (
+                <Sequence key={item.clip} from={Math.round((start + index * ITEM_SECONDS) * fps)} durationInFrames={itemFrames + 8} layout="none">
+                  <CoverageClip src={clip.src} trimBefore={Math.round(clip.trimBeforeSeconds * fps)} speed={item.speed} />
+                </Sequence>
+              )
+            })}
           </div>
         </AbsoluteFill>
-      </Fade>
+        {scene.chapter && <ChapterChip chapter={scene.chapter} persistent />}
+        <DemoDisclosure />
+        <Subtitles beats={placeBeats(scene)} />
+      </SceneExit>
     </Canvas>
   )
 }
 
-export const OutroScene = ({durationInFrames}: {durationInFrames: number}) => {
-  const {frame, fps, t} = useSceneTime()
-  const lock = spring({fps, frame, config: {damping: 200}, durationInFrames: 30})
+const CoverageClip = ({src, trimBefore, speed}: {src: string; trimBefore: number; speed: number}) => {
+  const frame = useCurrentFrame()
+  const p = interpolate(frame, [0, 8], [0, 1], clamp)
+  return (
+    <AbsoluteFill style={{opacity: p}}>
+      <Video src={staticFile(src)} trimBefore={trimBefore} playbackRate={speed} muted style={{height: '100%', width: '100%'}} />
+    </AbsoluteFill>
+  )
+}
+
+export const OutroScene = ({scene, durationInFrames}: {scene: FilmScene; durationInFrames: number}) => {
+  const seconds = useSeconds()
+  const lockup = appear(seconds, 0.3, 0.9)
+  const credits = appear(seconds, 4.2, 0.8)
   return (
     <Canvas>
-      <AbsoluteFill style={{opacity: interpolate(frame, [durationInFrames - 24, durationInFrames], [1, 0], clamp)}}>
-        <AbsoluteFill style={{alignItems: 'center', flexDirection: 'column', gap: 40, justifyContent: 'center'}}>
-          <div style={{opacity: lock, transform: `scale(${0.9 + lock * 0.1})`}}>
-            <Lockup size={84} />
+      <SceneExit durationInFrames={durationInFrames}>
+        <AbsoluteFill style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 64, justifyContent: 'center'}}>
+          <div style={{opacity: lockup, transform: `translateY(${(1 - lockup) * 14}px)`}}>
+            <Lockup size={80} />
           </div>
-          <Reveal at={1.6}>
-            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 64, fontWeight: 800, letterSpacing: '0.04em'}}>一句话，办好每一笔银行业务。</div>
-          </Reveal>
-          <Reveal at={3}>
-            <div style={{alignItems: 'center', display: 'flex', gap: 14}}>
-              <Check size={26} color={COLORS.teal} />
-              <Shimmer text="听得懂需求 · 看得见过程 · 守得住资金" size={28} color={COLORS.steel} highlight={COLORS.white} />
-            </div>
-          </Reveal>
+          <BoundaryLine at={0.9} />
+          <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 22, fontWeight: 600, letterSpacing: '0.12em', opacity: credits}}>
+            Next.js 工作台 · Go 银行 API · 全程真实录制 · 合成账本
+          </div>
         </AbsoluteFill>
-        <div
-          style={{
-            bottom: 48,
-            color: COLORS.steel,
-            fontFamily: FONTS.sans,
-            fontSize: 20,
-            left: 0,
-            opacity: interpolate(t, [3.6, 4.4], [0, 1], clamp),
-            position: 'absolute',
-            right: 0,
-            textAlign: 'center',
-          }}
-        >
-          演示中的账户、金额与交易均为合成数据，画面为本地运行的真实产品录屏
-        </div>
-      </AbsoluteFill>
+        <Subtitles beats={placeBeats(scene)} />
+      </SceneExit>
     </Canvas>
   )
 }

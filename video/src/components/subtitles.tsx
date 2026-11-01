@@ -6,6 +6,7 @@ import {clamp} from './brand'
 type Cue = {text: string; start: number; end: number}
 
 const MAX_CHARS = 24
+const MIN_CHARS = 10
 
 function splitLong(sentence: Cue): Cue[] {
   const clean = sentence.text.replace(/[。；]$/, '')
@@ -14,7 +15,7 @@ function splitLong(sentence: Cue): Cue[] {
   const chunks: string[] = []
   let current = ''
   for (const clause of clauses) {
-    if (current && (current + clause).length > MAX_CHARS) {
+    if (current.length >= MIN_CHARS && (current + clause).length > MAX_CHARS) {
       chunks.push(current)
       current = clause
     } else {

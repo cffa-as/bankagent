@@ -38,6 +38,11 @@ export const EVIDENCE = (timeline as unknown as {evidence: Record<string, Record
 export type NarrationEntry = {duration: number; sentences: {text: string; start: number; end: number}[]}
 export const NARRATION = narration as Record<string, NarrationEntry>
 
+function snapshotNote() {
+  const hash = (EVIDENCE.execute?.snapshotHash as string | undefined) ?? ''
+  return hash ? `快照 SHA-256 ${hash.slice(0, 12)}… 金额与用途已锁定` : '金额 · 用途 · 节点写入不可变快照'
+}
+
 const LEAD_IN = 0.5
 const BEAT_GAP = 0.3
 const TAIL = 1.6
@@ -104,7 +109,7 @@ export const SCENES: FilmScene[] = [
     camera: [{at: 0, zoom: 1.04, x: 0.6, y: 0.5}],
     notes: [
       {cue: 'plan', offset: 1.2, seconds: 4.6, text: '第二笔未到期，服务端不会提前执行', tone: 'cobalt'},
-      {cue: 'snapshot', offset: 0.4, seconds: 4.2, text: '金额 · 用途 · 节点写入不可变快照', tone: 'amber'},
+      {cue: 'snapshot', offset: 0.4, seconds: 4.6, text: snapshotNote(), tone: 'amber'},
     ],
     evidence: 'replay',
   },

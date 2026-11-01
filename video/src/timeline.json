@@ -183,6 +183,164 @@
         "receipt": 32.103,
         "replay": 38.764
       }
+    },
+    "security": {
+      "src": "recordings/security.mp4",
+      "trimBeforeSeconds": 0.696,
+      "seconds": 41.366,
+      "spots": [
+        {
+          "at": 2.898,
+          "until": 5.298,
+          "tone": "cobalt",
+          "x": 574,
+          "y": 262,
+          "w": 676,
+          "h": 73
+        },
+        {
+          "at": 10.167,
+          "until": 14.567,
+          "tone": "red",
+          "x": 589,
+          "y": 678,
+          "w": 646,
+          "h": 65
+        },
+        {
+          "at": 15.9,
+          "until": 18.9,
+          "tone": "green",
+          "x": 574,
+          "y": 527,
+          "w": 676,
+          "h": 73
+        },
+        {
+          "at": 35.261,
+          "until": 38.661,
+          "tone": "red",
+          "x": 1139,
+          "y": 54,
+          "w": 383,
+          "h": 298
+        },
+        {
+          "at": 38.669,
+          "until": 41.269,
+          "tone": "red",
+          "x": 1139,
+          "y": 549,
+          "w": 383,
+          "h": 108
+        }
+      ],
+      "cues": {
+        "typing": 5.298,
+        "injection": 9.76,
+        "balance": 15.893,
+        "mfa": 22.653,
+        "locked": 34.734
+      }
+    },
+    "cov-transfer": {
+      "src": "recordings/cov-transfer.mp4",
+      "trimBeforeSeconds": 1.911,
+      "seconds": 9.002,
+      "spots": [
+        {
+          "at": 0.006,
+          "until": 2.206,
+          "tone": "amber",
+          "x": 1124,
+          "y": 0,
+          "w": 412,
+          "h": 864
+        },
+        {
+          "at": 2.973,
+          "until": 5.373,
+          "tone": "green",
+          "x": 1124,
+          "y": 0,
+          "w": 412,
+          "h": 864
+        }
+      ],
+      "cues": {}
+    },
+    "cov-bill": {
+      "src": "recordings/cov-bill.mp4",
+      "trimBeforeSeconds": 1.869,
+      "seconds": 8.003,
+      "spots": [
+        {
+          "at": 0.007,
+          "until": 3.607,
+          "tone": "red",
+          "x": 579,
+          "y": 317,
+          "w": 666,
+          "h": 110
+        }
+      ],
+      "cues": {}
+    },
+    "cov-invest": {
+      "src": "recordings/cov-invest.mp4",
+      "trimBeforeSeconds": 2.051,
+      "seconds": 7.002,
+      "spots": [],
+      "cues": {}
+    },
+    "cov-card": {
+      "src": "recordings/cov-card.mp4",
+      "trimBeforeSeconds": 2.263,
+      "seconds": 7.002,
+      "spots": [],
+      "cues": {}
+    },
+    "cov-subscription": {
+      "src": "recordings/cov-subscription.mp4",
+      "trimBeforeSeconds": 2.279,
+      "seconds": 7.004,
+      "spots": [],
+      "cues": {}
+    },
+    "cov-plan": {
+      "src": "recordings/cov-plan.mp4",
+      "trimBeforeSeconds": 3.135,
+      "seconds": 9.003,
+      "spots": [],
+      "cues": {}
+    },
+    "audit": {
+      "src": "recordings/audit.mp4",
+      "trimBeforeSeconds": 0.69,
+      "seconds": 18.005,
+      "spots": [
+        {
+          "at": 5.523,
+          "until": 12.323,
+          "tone": "cobalt",
+          "x": 291,
+          "y": 209,
+          "w": 650,
+          "h": 240
+        },
+        {
+          "at": 12.333,
+          "until": 16.533,
+          "tone": "green",
+          "x": 321,
+          "y": 388,
+          "w": 618,
+          "h": 59
+        }
+      ],
+      "cues": {
+        "timeline": 4.39
+      }
     }
   },
   "evidence": {
@@ -213,6 +371,11 @@
         "message": "动作当前状态不允许此操作"
       },
       "passport": "stills/passport-verified.png"
+    },
+    "security": {
+      "injectionCode": "PROMPT_INJECTION_BLOCKED",
+      "lockedCode": "MFA_LOCKED",
+      "passport": "stills/passport-locked.png"
     }
   }
 }
