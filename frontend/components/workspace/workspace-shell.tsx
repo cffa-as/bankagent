@@ -117,6 +117,19 @@ export function WorkspaceShell() {
     }
   }
 
+  // Cancelling a plan also cancels its pending node action on the server, so
+  // the open panel must re-read that action instead of still offering to confirm it.
+  const cancelWorkflow = async (workflowId: string) => {
+    const result = await workflows.cancel(workflowId)
+    const openActionId = action?.action_id
+    if (!result || !openActionId || !result.nodes.some((node) => node.action_id === openActionId)) return
+    try {
+      session.adoptAction(await session.adapter.getAction(openActionId))
+    } catch {
+      // The plan view already shows the cancelled node; the panel refreshes on its next read.
+    }
+  }
+
   const selectAlternative = async (simulation: LiquiditySimulation, alt: LiquidityAlternative) => {
     if (alt.reservations.length === 0) return
     const start = new Date(simulation.start_at ?? Date.now())
@@ -239,7 +252,7 @@ export function WorkspaceShell() {
 
             {view === 'workflows' && (
               <div className="ws-scroll min-h-0 flex-1 overflow-y-auto">
-                <WorkflowView workflows={workflows} onOpenAction={(id) => void inspectAction(id)} onAdvance={(id) => void advanceWorkflow(id)} />
+                <WorkflowView workflows={workflows} onOpenAction={(id) => void inspectAction(id)} onAdvance={(id) => void advanceWorkflow(id)} onCancel={(id) => void cancelWorkflow(id)} />
               </div>
             )}
 

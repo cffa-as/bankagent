@@ -1,35 +1,43 @@
 {
   "fps": 30,
   "clips": {
-    "request": {
-      "src": "recordings/request.mp4",
-      "trimBeforeSeconds": 0.681,
-      "seconds": 22.01,
+    "dag-create": {
+      "src": "recordings/dag-create.mp4",
+      "trimBeforeSeconds": 0.68,
+      "seconds": 17.473,
       "spots": [
         {
-          "at": 10.84,
-          "until": 19.24,
-          "tone": "amber",
-          "x": 532,
-          "y": 169,
-          "w": 720,
-          "h": 228
+          "at": 5.781,
+          "until": 7.781,
+          "tone": "cobalt",
+          "x": 576,
+          "y": 255,
+          "w": 672,
+          "h": 82
+        },
+        {
+          "at": 9.466,
+          "until": 17.466,
+          "tone": "cobalt",
+          "x": 272,
+          "y": 281,
+          "w": 1240,
+          "h": 412
         }
       ],
       "cues": {
-        "sent": 4.446,
-        "drawer": 4.453,
-        "trace": 10.814
+        "card": 5.774,
+        "dag": 9.183
       }
     },
-    "sandbox": {
-      "src": "recordings/sandbox.mp4",
-      "trimBeforeSeconds": 2.315,
-      "seconds": 46.003,
+    "twin": {
+      "src": "recordings/twin.mp4",
+      "trimBeforeSeconds": 0.712,
+      "seconds": 30.003,
       "spots": [
         {
-          "at": 0.312,
-          "until": 5.112,
+          "at": 4.597,
+          "until": 7.997,
           "tone": "red",
           "x": 917,
           "y": 84,
@@ -37,8 +45,8 @@
           "h": 125
         },
         {
-          "at": 5.122,
-          "until": 9.922,
+          "at": 8.009,
+          "until": 11.009,
           "tone": "amber",
           "x": 915,
           "y": 332,
@@ -46,8 +54,8 @@
           "h": 49
         },
         {
-          "at": 10.525,
-          "until": 19.125,
+          "at": 11.611,
+          "until": 18.011,
           "tone": "cobalt",
           "x": 915,
           "y": 130,
@@ -55,93 +63,48 @@
           "h": 460
         },
         {
-          "at": 19.874,
-          "until": 24.874,
-          "tone": "cobalt",
+          "at": 19.01,
+          "until": 25.41,
+          "tone": "green",
           "x": 915,
-          "y": 121,
+          "y": 89,
           "w": 603,
-          "h": 256
-        },
-        {
-          "at": 25.91,
-          "until": 29.31,
-          "tone": "green",
-          "x": 917,
-          "y": 189,
-          "w": 599,
-          "h": 192
-        },
-        {
-          "at": 31.894,
-          "until": 34.594,
-          "tone": "amber",
-          "x": 917,
-          "y": 313,
-          "w": 599,
-          "h": 192
-        },
-        {
-          "at": 37.179,
-          "until": 40.179,
-          "tone": "amber",
-          "x": 917,
-          "y": 505,
-          "w": 599,
-          "h": 192
-        },
-        {
-          "at": 40.186,
-          "until": 45.186,
-          "tone": "green",
-          "x": 913,
-          "y": 693,
-          "w": 607,
-          "h": 36
+          "h": 775
         }
       ],
       "cues": {
-        "chart": 10.519,
-        "events": 19.868,
-        "alternatives": 25.466,
-        "note": 40.179
+        "drawer": 4.227,
+        "chart": 11.605,
+        "alternatives": 19.004
       }
     },
-    "execute": {
-      "src": "recordings/execute.mp4",
-      "trimBeforeSeconds": 2.312,
-      "seconds": 49.006,
+    "green": {
+      "src": "recordings/green.mp4",
+      "trimBeforeSeconds": 0.676,
+      "seconds": 9.002,
       "spots": [
         {
-          "at": 0.008,
-          "until": 2.208,
-          "tone": "amber",
-          "x": 917,
-          "y": 505,
-          "w": 599,
-          "h": 192
-        },
-        {
-          "at": 5.005,
-          "until": 11.005,
-          "tone": "cobalt",
-          "x": 272,
-          "y": 281,
-          "w": 1240,
-          "h": 228
-        },
-        {
-          "at": 12.369,
-          "until": 16.269,
+          "at": 2.758,
+          "until": 6.758,
           "tone": "green",
-          "x": 917,
-          "y": 84,
-          "w": 599,
-          "h": 125
-        },
+          "x": 574,
+          "y": 262,
+          "w": 676,
+          "h": 73
+        }
+      ],
+      "cues": {
+        "result": 2.752
+      }
+    },
+    "yellow": {
+      "src": "recordings/yellow.mp4",
+      "trimBeforeSeconds": 0.699,
+      "seconds": 24.004,
+      "spots": [
         {
-          "at": 19.185,
-          "until": 23.785,
+          "at": 3.462,
+          "until": 7.662,
           "tone": "amber",
           "x": 1137,
           "y": 575,
@@ -149,134 +112,38 @@
           "h": 34
         },
         {
-          "at": 23.793,
-          "until": 26.593,
-          "tone": "red",
-          "x": 1137,
-          "y": 184,
-          "w": 387,
-          "h": 82
-        },
-        {
-          "at": 26.602,
-          "until": 29.402,
-          "tone": "red",
+          "at": 7.672,
+          "until": 10.272,
+          "tone": "amber",
           "x": 1139,
           "y": 272,
           "w": 383,
           "h": 298
         },
         {
-          "at": 32.725,
-          "until": 38.725,
+          "at": 11.538,
+          "until": 15.338,
           "tone": "green",
-          "x": 1139,
-          "y": 79,
-          "w": 383,
-          "h": 298
+          "x": 1137,
+          "y": 679,
+          "w": 387,
+          "h": 143
         }
       ],
       "cues": {
-        "plan": 4.998,
-        "precheck": 12.362,
-        "snapshot": 19.179,
-        "receipt": 32.103,
-        "replay": 38.764
+        "snapshot": 3.454,
+        "receipt": 11.032,
+        "replay": 15.376
       }
-    },
-    "security": {
-      "src": "recordings/security.mp4",
-      "trimBeforeSeconds": 0.696,
-      "seconds": 41.366,
-      "spots": [
-        {
-          "at": 2.898,
-          "until": 5.298,
-          "tone": "cobalt",
-          "x": 574,
-          "y": 262,
-          "w": 676,
-          "h": 73
-        },
-        {
-          "at": 10.167,
-          "until": 14.567,
-          "tone": "red",
-          "x": 589,
-          "y": 678,
-          "w": 646,
-          "h": 65
-        },
-        {
-          "at": 15.9,
-          "until": 18.9,
-          "tone": "green",
-          "x": 574,
-          "y": 527,
-          "w": 676,
-          "h": 73
-        },
-        {
-          "at": 35.261,
-          "until": 38.661,
-          "tone": "red",
-          "x": 1139,
-          "y": 54,
-          "w": 383,
-          "h": 298
-        },
-        {
-          "at": 38.669,
-          "until": 41.269,
-          "tone": "red",
-          "x": 1139,
-          "y": 549,
-          "w": 383,
-          "h": 108
-        }
-      ],
-      "cues": {
-        "typing": 5.298,
-        "injection": 9.76,
-        "balance": 15.893,
-        "mfa": 22.653,
-        "locked": 34.734
-      }
-    },
-    "cov-transfer": {
-      "src": "recordings/cov-transfer.mp4",
-      "trimBeforeSeconds": 1.911,
-      "seconds": 9.002,
-      "spots": [
-        {
-          "at": 0.006,
-          "until": 2.206,
-          "tone": "amber",
-          "x": 1124,
-          "y": 0,
-          "w": 412,
-          "h": 864
-        },
-        {
-          "at": 2.973,
-          "until": 5.373,
-          "tone": "green",
-          "x": 1124,
-          "y": 0,
-          "w": 412,
-          "h": 864
-        }
-      ],
-      "cues": {}
     },
     "cov-bill": {
       "src": "recordings/cov-bill.mp4",
-      "trimBeforeSeconds": 1.869,
-      "seconds": 8.003,
+      "trimBeforeSeconds": 1.886,
+      "seconds": 9.003,
       "spots": [
         {
-          "at": 0.007,
-          "until": 3.607,
+          "at": 0.009,
+          "until": 4.009,
           "tone": "red",
           "x": 579,
           "y": 317,
@@ -288,94 +155,42 @@
     },
     "cov-invest": {
       "src": "recordings/cov-invest.mp4",
-      "trimBeforeSeconds": 2.051,
-      "seconds": 7.002,
+      "trimBeforeSeconds": 2.05,
+      "seconds": 8.002,
       "spots": [],
       "cues": {}
     },
     "cov-card": {
       "src": "recordings/cov-card.mp4",
-      "trimBeforeSeconds": 2.263,
-      "seconds": 7.002,
+      "trimBeforeSeconds": 2.248,
+      "seconds": 8.001,
       "spots": [],
       "cues": {}
     },
     "cov-subscription": {
       "src": "recordings/cov-subscription.mp4",
-      "trimBeforeSeconds": 2.279,
-      "seconds": 7.004,
+      "trimBeforeSeconds": 2.265,
+      "seconds": 8.002,
       "spots": [],
       "cues": {}
-    },
-    "cov-plan": {
-      "src": "recordings/cov-plan.mp4",
-      "trimBeforeSeconds": 3.135,
-      "seconds": 9.003,
-      "spots": [],
-      "cues": {}
-    },
-    "audit": {
-      "src": "recordings/audit.mp4",
-      "trimBeforeSeconds": 0.69,
-      "seconds": 18.005,
-      "spots": [
-        {
-          "at": 5.523,
-          "until": 12.323,
-          "tone": "cobalt",
-          "x": 291,
-          "y": 209,
-          "w": 650,
-          "h": 240
-        },
-        {
-          "at": 12.333,
-          "until": 16.533,
-          "tone": "green",
-          "x": 321,
-          "y": 388,
-          "w": 618,
-          "h": 59
-        }
-      ],
-      "cues": {
-        "timeline": 4.39
-      }
     }
   },
   "evidence": {
-    "execute": {
-      "actionId": "act_75e070f66d8ec477",
-      "traceId": "tr_7374ffe6f2130b27",
-      "snapshotHash": "ddbdfa8eeebd0e595e31f7b2b5a53537dc4affc3189bfa6be84053eb7d555216",
+    "dag": {
+      "dueAt": 1793542620000
+    },
+    "yellow": {
+      "actionId": "act_5f42fd6f19a48c9f",
+      "traceId": "tr_018321d87b5b1c7c",
+      "snapshotHash": "4840f1755881121a5726d7dffe32d426579e822d23ee8f6dd78f1c3e34016375",
       "status": "succeeded",
-      "security": {
-        "source": {
-          "type": "structured_api",
-          "trust": "validated",
-          "sanitized": true,
-          "injection_checked": true
-        },
-        "identity": {
-          "method": "action_bound_mfa",
-          "state": "verified",
-          "attempts_remaining": 3
-        },
-        "outcome": {
-          "receipt": "verified"
-        }
-      },
       "replay": {
+        "method": "POST",
+        "path": "/v1/actions/act_5f42fd6f19a48c9f/confirm",
         "status": 409,
         "code": "ACTION_STATE_CONFLICT",
         "message": "动作当前状态不允许此操作"
-      },
-      "passport": "stills/passport-verified.png"
-    },
-    "security": {
-      "injectionCode": "PROMPT_INJECTION_BLOCKED",
-      "lockedCode": "MFA_LOCKED",
-      "passport": "stills/passport-locked.png"
+      }
     }
   }
 }

@@ -118,10 +118,12 @@ export function WorkflowView({
   workflows,
   onOpenAction,
   onAdvance,
+  onCancel,
 }: {
   workflows: WorkflowsState
   onOpenAction: (id: string) => void
   onAdvance: (workflowId: string) => void
+  onCancel: (workflowId: string) => void
 }) {
   const { list, detail, selectedId, setSelectedId, pending, error } = workflows
   const items = list.data ?? []
@@ -202,7 +204,7 @@ export function WorkflowView({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => void workflows.cancel(workflow.workflow_id)}
+                  onClick={() => onCancel(workflow.workflow_id)}
                   disabled={pending !== null}
                   className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-red-ink transition-colors hover:bg-red-soft disabled:opacity-50"
                 >

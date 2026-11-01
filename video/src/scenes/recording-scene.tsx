@@ -124,13 +124,13 @@ const Callout = ({note, side}: {note: Note; side: 'left' | 'right'}) => {
   )
 }
 
-type Replay = {actionId: string; replay: {status: number; code: string | null; message: string | null}}
+type Replay = {replay: {method: string; path: string; status: number; code: string | null; message: string | null}}
 
-/** Shows the response the recorder got when it re-sent the same MFA verification during the take. */
+/** Shows the response the recorder got when it re-sent the same confirmation during the take. */
 const ReplayEvidence = ({at}: {at: number}) => {
   const frame = useCurrentFrame()
   const {fps} = useVideoConfig()
-  const evidence = EVIDENCE.execute as unknown as Replay | undefined
+  const evidence = EVIDENCE.yellow as unknown as Replay | undefined
   if (!evidence) return null
   const seconds = frame / fps
   const p = interpolate(seconds, [at, at + 0.5], [0, 1], {...clamp, easing: Easing.out(Easing.cubic)})
@@ -156,9 +156,9 @@ const ReplayEvidence = ({at}: {at: number}) => {
         width: 640,
       }}
     >
-      <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 18, fontWeight: 700, letterSpacing: '0.14em'}}>重放同一验证请求</div>
+      <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 18, fontWeight: 700, letterSpacing: '0.14em'}}>重放同一确认请求</div>
       <div style={{...mono, color: COLORS.platinum, fontSize: 21, lineHeight: 1.5, wordBreak: 'break-all'}}>
-        POST /v1/actions/{evidence.actionId}/mfa/verify
+        {evidence.replay.method} {evidence.replay.path}
       </div>
       <div style={{alignItems: 'baseline', display: 'flex', gap: 16, opacity: code}}>
         <span style={{...mono, color: COLORS.red, fontSize: 44, fontWeight: 800}}>{evidence.replay.status}</span>
@@ -235,7 +235,7 @@ export const RecordingScene = ({spec, durationInFrames}: {spec: RecordingSpec; d
                 }}
               >
                 <Mark size={13} inverse />
-                localhost:3001/workspace · Next.js 工作台 → Go 银行 API
+                VAULTLINE · 安全银行工作台
               </div>
             </div>
             <span style={{width: 49}} />
