@@ -21,10 +21,10 @@
 
 ## 文档与设计入口
 
-- `docs/赛题解析.md`：赛题要求和范围取舍。
-- `docs/技术方案.md`：系统方案、安全边界、首期验收和待确认决策。
-- `docs/产品需求.md`：用户、场景、功能和交互需求。
-- `docs/概要设计.md`：数据结构、API、数据库和关键业务流程；机器可读契约见 `docs/openapi.yaml`。
+- `docs/submission/Vaultline-技术文档.pdf`：系统方案、核心算法、安全边界和验证证据。
+- `docs/submission/Vaultline-安全自评报告.pdf`：权限分级、控制证据和已知风险。
+- `docs/submission/Vaultline-答辩材料.pptx`：对外答辩材料。
+- `backend/api/openapi.yaml`：前后端共同遵循的机器可读契约。
 - `.agents/skills/bankagent-design/SKILL.md`：编写或评审上述设计文档时必须遵循。
 - `.agents/skills/bankagent-test-engineering/SKILL.md`：编写或评审测试时必须遵循。
 - `.agents/skills/bankagent-go-engineering/SKILL.md`：编写或评审 Go 后端时必须遵循。

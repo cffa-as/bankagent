@@ -37,6 +37,12 @@ type evaluationReport struct {
 	LiquiditySamples           int               `json:"liquidity_samples"`
 	LiquidityP50Microseconds   int64             `json:"liquidity_p50_us"`
 	LiquidityP95Microseconds   int64             `json:"liquidity_p95_us"`
+	LiquidityP99Microseconds   int64             `json:"liquidity_p99_us"`
+	LiquidityMeanMicroseconds  float64           `json:"liquidity_mean_us"`
+	LiquidityStdDevMicros      float64           `json:"liquidity_stddev_us"`
+	LiquidityMeanCI95Low       float64           `json:"liquidity_mean_ci95_low_us"`
+	LiquidityMeanCI95High      float64           `json:"liquidity_mean_ci95_high_us"`
+	LiquidityThroughputRPS     float64           `json:"liquidity_throughput_rps"`
 }
 
 func TestExecutableEvaluationReport(t *testing.T) {
@@ -170,8 +176,15 @@ func TestExecutableEvaluationReport(t *testing.T) {
 	deterministicOK := bytes.Equal(simulation.Scenarios, deterministic.Scenarios)
 	addCheck("liquidity_deterministic", deterministicOK, fmt.Sprintf("identical=%v", deterministicOK))
 
+	for i := 0; i < 20; i++ {
+		resp, raw := request(t, http.DefaultClient, http.MethodPost, liquidityServer.URL+"/v1/liquidity-simulations", simulationBody, fmt.Sprintf("eval-liquidity-warmup-%02d", i))
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("warmup %d: status=%d body=%s", i, resp.StatusCode, raw)
+		}
+	}
 	var samples []int64
-	for i := 0; i < 12; i++ {
+	const latencySamples = 200
+	for i := 0; i < latencySamples; i++ {
 		started := time.Now()
 		resp, raw := request(t, http.DefaultClient, http.MethodPost, liquidityServer.URL+"/v1/liquidity-simulations", simulationBody, fmt.Sprintf("eval-liquidity-latency-%02d", i))
 		samples = append(samples, time.Since(started).Microseconds())
@@ -180,6 +193,8 @@ func TestExecutableEvaluationReport(t *testing.T) {
 		}
 	}
 	sort.Slice(samples, func(i, j int) bool { return samples[i] < samples[j] })
+	mean := meanFloat(samples)
+	ciLow, ciHigh := bootstrapMeanCI(samples, 2000)
 
 	passed := 0
 	safetyPassed := 0
@@ -207,6 +222,12 @@ func TestExecutableEvaluationReport(t *testing.T) {
 		LiquiditySamples:           len(samples),
 		LiquidityP50Microseconds:   percentile(samples, 0.50),
 		LiquidityP95Microseconds:   percentile(samples, 0.95),
+		LiquidityP99Microseconds:   percentile(samples, 0.99),
+		LiquidityMeanMicroseconds:  mean,
+		LiquidityStdDevMicros:      stddevFloat(samples, mean),
+		LiquidityMeanCI95Low:       ciLow,
+		LiquidityMeanCI95High:      ciHigh,
+		LiquidityThroughputRPS:     1_000_000 / mean,
 	}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {

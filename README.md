@@ -108,11 +108,28 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 - **Snapshot / 动作快照**：金额、收款人、产品等关键字段锁定；变化必须创建新动作并重新授权。
 - **Idempotency / 幂等**：确认与执行支持幂等键，同一请求只能产生一次副作用。
 - **Audit / 审计**：决策链、授权证据和业务回执通过 Trace ID 关联，敏感字段脱敏。
+- **Gateway auth / 网关认证**：服务端使用配置化 Bearer Token 和常量时间比较；前端同源代理注入，浏览器不持有服务令牌。
 - **Failure-safe / 失败安全**：取消、过期、MFA 失败、余额不足和未知回执都有明确状态，不盲目重试。
 - **Run controls / 运行控制**：支持停止当前运行、转人工接管，以及撤销待执行动作；已执行资金动作只能进入人工复核或补偿，不能被静默冲正。
 - **Channel adapter / 渠道适配**：Web 工作台复用同一 Agent API；APP 与 IM 网关可通过受控的 `/v1/channels/{channel}/messages` 入口接入。
 
 <a id="product-film"></a>
+
+## 测评 / Evaluation
+
+测评不是把单测换个名字。项目分成三层：普通单元测试、带 `integration` 标签的 API/SQLite 集成评测，以及 Playwright 驱动的真实浏览器 E2E。
+
+| 实验 | 规模 | 结果 |
+| --- | ---: | --- |
+| Intent classification | 64 条 / 10 类 | Accuracy 100%，Macro-F1 1.000，Cohen's κ 1.000 |
+| Slot extraction | 10 条 | Exact match 100%，amount MAE 0 |
+| Risk policy | 20 条边界用例 | Red Precision / Recall / F1 均为 1.000 |
+| Security robustness | 24 攻击 + 24 良性 | ASR 0%，FPR 0%，Policy compliance 100% |
+| Replay / concurrency | 12 + 16 | 重复副作用 0，并发确认 1 成功 / 15 冲突 |
+| Browser E2E | 8 条真实业务链路 | 8 / 8 通过，console error 0，HTTP 5xx 0 |
+| Latency | 200 次 warm HTTP | p50 407 µs，p95 588 µs，p99 2568 µs |
+
+完整指标、混淆矩阵、置信区间、延迟 CDF 和全部用例明细见 [HTML 测评报告](evaluation/results/academic-report.html)。原始数据见 [academic.json](evaluation/results/academic.json) 与 [cases.csv](evaluation/results/cases.csv)。
 
 ## 产品演示 / Product demo
 
@@ -122,7 +139,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 
 演示使用真实工作台和真实服务端状态，不伪造界面、进度或成功结果。当前版本覆盖查询、账单、理财、卡片、订阅、流动性预演、工作流、确认、MFA 和审计等流程。
 
-[观看完整业务演示](frontend/public/demo/vaultline-product.mp4) · 制作流程见 [产品演示视频方案](docs/demo-video-production.md) 和 [视频工程说明](video/README.md)。
+[观看完整业务演示](frontend/public/demo/vaultline-product.mp4) · 视频工程说明见 [video/README.md](video/README.md)。
 
 <details>
 <summary><strong>Architecture / 架构</strong></summary>
@@ -178,7 +195,8 @@ pnpm install
 pnpm dev
 ```
 
-打开 <http://localhost:3000>。演示身份为 `Bearer demo-user-1`，演示 MFA 验证码为 `000000`。
+打开 <http://localhost:3000>。本地默认使用 `BANKAGENT_AUTH_TOKEN=demo-user-1`，演示 MFA 验证码为 `000000`。
+共享环境请设置至少 24 位随机 `BANKAGENT_AUTH_TOKEN`，并由前端 `/backend` 同源代理注入，令牌不会下发到浏览器。
 
 > [!IMPORTANT]
 > 当前版本只连接本地 Mock 银行账本。没有真实账户、真实资金、真实短信/人脸认证或银行核心系统接入；所有演示数据均为合成数据。
@@ -189,14 +207,12 @@ pnpm dev
 
 | Document | Purpose |
 | --- | --- |
-| [文档导航](docs/README.md) | 参赛材料、技术设计与工程入口 |
-| [作品简介](docs/作品简介.md) | 报名系统提交版项目介绍 |
-| [产品需求](docs/产品需求.md) | 用户、场景、功能和交互要求 |
-| [概要设计](docs/概要设计.md) | 数据模型、API、数据库和关键流程 |
-| [OpenAPI](docs/openapi.yaml) | 前后端共同遵循的机器可读契约 |
-| [技术方案](docs/技术方案.md) | 架构、安全边界、验收和风险 |
-| [竞品与技术评测](docs/竞品评测.md) | 可执行指标、竞品能力矩阵和复现方式 |
-| [安全自评报告](docs/安全自评报告.md) | 权限分级实现说明与已知风险 |
+| [技术文档](docs/submission/Vaultline-技术文档.pdf) | 系统架构、核心算法、安全设计与评测证据 |
+| [答辩材料](docs/submission/Vaultline-答辩材料.pptx) | 14 页答辩演示，图表和架构均可编辑 |
+| [源代码与部署材料](docs/submission/Vaultline-源代码与部署材料.zip) | README、源码、部署说明、测试与 OpenAPI |
+| [安全自评报告](docs/submission/Vaultline-安全自评报告.pdf) | 权限分级实现说明与已知风险清单 |
+| [OpenAPI](backend/api/openapi.yaml) | 前后端共同遵循的机器可读契约 |
+| [完整测评报告](evaluation/results/academic-report.html) | 集成/E2E 指标、混淆矩阵、置信区间和完整用例明细 |
 | [品牌规范](frontend/BRAND.md) | Vaultline 视觉方向、标识和用色 |
 | [视频工程](video/README.md) | 演示视频资产与生产流程 |
 

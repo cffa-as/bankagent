@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -16,14 +17,31 @@ import (
 	"github.com/cffa-as/bankagent/internal/domain"
 )
 
-const demoUser = domain.DemoUserID
 const maxRequestBodyBytes = 1 << 20
 
 type Handler struct {
-	service *domain.Service
+	service       *domain.Service
+	authTokenHash [sha256.Size]byte
+	userID        string
 }
 
-func New(service *domain.Service) http.Handler { return &Handler{service: service} }
+type AuthConfig struct {
+	Token  string
+	UserID string
+}
+
+func New(service *domain.Service, auth AuthConfig) (http.Handler, error) {
+	token := strings.TrimSpace(auth.Token)
+	userID := strings.TrimSpace(auth.UserID)
+	if token == "" || userID == "" {
+		return nil, errors.New("authentication token and user ID are required")
+	}
+	return &Handler{
+		service:       service,
+		authTokenHash: sha256.Sum256([]byte(token)),
+		userID:        userID,
+	}, nil
+}
 
 type bufferedResponse struct {
 	header http.Header
@@ -67,7 +85,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, envelope(map[string]string{"status": "ok"}, "tr_health"))
 		return
 	}
-	userID, ok := authenticate(r)
+	userID, ok := h.authenticate(r)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "缺失或无效认证", "tr_auth")
 		return
@@ -312,12 +330,21 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request, userID, path str
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "资源不存在", "tr_not_found")
 }
 
-func authenticate(r *http.Request) (string, bool) {
+func (h *Handler) authenticate(r *http.Request) (string, bool) {
 	value := strings.TrimSpace(r.Header.Get("Authorization"))
-	if value == "Bearer demo-user-1" || value == "Bearer "+demoUser {
-		return demoUser, true
+	const prefix = "Bearer "
+	if !strings.HasPrefix(value, prefix) {
+		return "", false
 	}
-	return "", false
+	token := strings.TrimSpace(strings.TrimPrefix(value, prefix))
+	if token == "" {
+		return "", false
+	}
+	candidate := sha256.Sum256([]byte(token))
+	if subtle.ConstantTimeCompare(candidate[:], h.authTokenHash[:]) != 1 {
+		return "", false
+	}
+	return h.userID, true
 }
 
 func (h *Handler) createConversation(w http.ResponseWriter, r *http.Request, userID string) {

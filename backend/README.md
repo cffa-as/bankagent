@@ -46,3 +46,5 @@ go run ./cmd/bankagent
 ```
 
 未配置模型时使用确定性规则解析；配置 `BANKAGENT_LLM_BASE_URL`、`BANKAGENT_LLM_API_KEY` 和 `BANKAGENT_LLM_MODEL` 后启用 OpenAI-compatible Adapter。API Key 只放在本地环境变量中。
+
+认证使用服务端 `BANKAGENT_AUTH_TOKEN`，令牌以 SHA-256 摘要保存到 Handler 并用常量时间比较。本地未设置时使用 `demo-user-1`；共享环境必须设置至少 24 位随机值。API 不接受请求体指定用户身份。

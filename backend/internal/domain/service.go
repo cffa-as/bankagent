@@ -1532,6 +1532,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
+		action.Result = map[string]any{"card_id": snapshot.CardID, "limit_minor": snapshot.TargetLimitMinor, "status": "updated"}
 		return nil
 	case "card_status_change":
 		var snapshot struct {
@@ -1546,6 +1547,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
+		action.Result = map[string]any{"card_id": snapshot.CardID, "previous_status": snapshot.PreviousStatus, "status": snapshot.TargetStatus}
 		return nil
 	case "subscription_cancel":
 		var snapshot struct {
@@ -1558,6 +1560,7 @@ func (s *Service) execute(ctx context.Context, action *Action, trace string) err
 			return err
 		}
 		action.Status, action.UpdatedAt = "succeeded", now
+		action.Result = map[string]any{"subscription_id": snapshot.SubscriptionID, "status": "cancelled"}
 		return nil
 	case "workflow_budget_lock":
 		var snapshot struct {

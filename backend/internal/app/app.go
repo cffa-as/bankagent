@@ -2,8 +2,10 @@ package app
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cffa-as/bankagent/internal/agent"
@@ -13,13 +15,19 @@ import (
 )
 
 type Config struct {
-	Address  string
-	Database string
-	Now      func() time.Time
+	Address   string
+	Database  string
+	AuthToken string
+	Now       func() time.Time
 }
 
 func DefaultConfig() Config {
-	return Config{Address: ":8080", Database: "bankagent.db", Now: time.Now}
+	return Config{
+		Address:   ":8080",
+		Database:  "bankagent.db",
+		AuthToken: strings.TrimSpace(os.Getenv("BANKAGENT_AUTH_TOKEN")),
+		Now:       time.Now,
+	}
 }
 
 type Application struct {
@@ -41,7 +49,23 @@ func New(cfg Config) (*Application, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Application{db: db, service: service, handler: httpapi.New(service)}, nil
+	authToken := strings.TrimSpace(cfg.AuthToken)
+	if authToken == "" {
+		authToken = "demo-user-1"
+	}
+	if authToken != "demo-user-1" && len(authToken) < 24 {
+		db.Close()
+		return nil, errors.New("BANKAGENT_AUTH_TOKEN must be at least 24 characters")
+	}
+	handler, err := httpapi.New(service, httpapi.AuthConfig{
+		Token:  authToken,
+		UserID: domain.DemoUserID,
+	})
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return &Application{db: db, service: service, handler: handler}, nil
 }
 
 func (a *Application) Handler() http.Handler { return a.handler }

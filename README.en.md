@@ -104,9 +104,26 @@ The product is designed as a regulated banking control surface, not a generic AI
 - **Snapshot** — key fields are locked; any change requires a new action and a new authorization.
 - **Idempotency** — confirmation and execution use idempotency keys to prevent duplicate side effects.
 - **Audit** — decisions, authorization evidence, and receipts are linked by Trace ID with sensitive fields redacted.
+- **Gateway auth** — the server validates a configurable bearer token in constant time; a same-origin Next.js proxy injects it, so browser code never holds the service token.
 - **Failure safety** — cancellation, expiry, MFA failure, insufficient balance, and unknown receipts have explicit states.
 - **Run controls** — users can stop a run, hand it to a human, or roll back pending actions; executed money movements require review or compensation instead of silent reversal.
 - **Channel adapter** — the web workspace and APP/IM gateways share the same Agent API through the controlled `/v1/channels/{channel}/messages` surface.
+
+## Evaluation
+
+Evaluation is deliberately separated from ordinary unit tests: unit tests cover pure rules, a tagged `integration` suite covers the real HTTP handler and SQLite transaction layer, and Playwright covers the built browser workspace against the real Go API.
+
+| Experiment | Size | Result |
+| --- | ---: | --- |
+| Intent classification | 64 cases / 10 classes | 100% accuracy, 1.000 macro-F1, 1.000 Cohen's κ |
+| Slot extraction | 10 cases | 100% exact match, 0 amount MAE |
+| Risk policy | 20 boundary cases | Red precision / recall / F1 all 1.000 |
+| Security robustness | 24 attacks + 24 benign cases | 0% ASR, 0% FPR, 100% policy compliance |
+| Replay / concurrency | 12 + 16 | 0 duplicate side effects, 1 winner / 15 conflicts |
+| Browser E2E | 8 real journeys | 8 / 8 passed, 0 console errors, 0 HTTP 5xx |
+| Latency | 200 warm HTTP requests | p50 407 µs, p95 588 µs, p99 2568 µs |
+
+See the [HTML evaluation report](evaluation/results/academic-report.html) for confusion matrices, confidence intervals, latency CDF, and the complete case ledger. Raw artifacts are in [academic.json](evaluation/results/academic.json) and [cases.csv](evaluation/results/cases.csv).
 
 ## Product demo
 
@@ -116,7 +133,7 @@ The full demo follows one control line from intent to proof:
 
 The demo uses real workspace captures and real server states. It never fabricates UI, progress, or success outcomes. The current cut covers queries, bills, investments, cards, subscriptions, liquidity, workflows, confirmation, MFA, and audit.
 
-[Watch the full business demo](frontend/public/demo/vaultline-product.mp4) · See the [production plan](docs/demo-video-production.md) and the [video production guide](video/README.md).
+[Watch the full business demo](frontend/public/demo/vaultline-product.mp4) · See the [video production guide](video/README.md).
 
 <details>
 <summary><strong>Architecture</strong></summary>
@@ -170,7 +187,8 @@ pnpm install
 pnpm dev
 ```
 
-Open <http://localhost:3000>. The demo identity is `Bearer demo-user-1`; the mock MFA code is `000000`.
+Open <http://localhost:3000>. Local development defaults to `BANKAGENT_AUTH_TOKEN=demo-user-1`; the mock MFA code is `000000`.
+For shared environments, set a random `BANKAGENT_AUTH_TOKEN` of at least 24 characters. The same-origin Next.js `/backend` proxy injects it server-side, so the token is not sent to the browser.
 
 > [!IMPORTANT]
 > This build uses only a local mock banking ledger. It has no real accounts, funds, SMS/biometric authentication, or core-banking integration. All demo data is synthetic.
@@ -179,14 +197,12 @@ Open <http://localhost:3000>. The demo identity is `Bearer demo-user-1`; the moc
 
 | Document | Purpose |
 | --- | --- |
-| [Documentation index](docs/README.md) | Submission, technical design and engineering entry points |
-| [Project introduction](docs/作品简介.md) | Submission-ready Chinese project introduction |
-| [Product requirements](docs/产品需求.md) | Users, scenarios, capabilities, and interaction requirements |
-| [High-level design](docs/概要设计.md) | Data model, API, database, and key flows |
-| [OpenAPI](docs/openapi.yaml) | Shared machine-readable API contract |
-| [Technical design](docs/技术方案.md) | Architecture, security boundaries, acceptance, and risks |
-| [Competitive and technical evaluation](docs/竞品评测.md) | Executable metrics, public capability matrix, and reproduction steps |
-| [Security self-assessment](docs/安全自评报告.md) | Permission model and known risks |
+| [Technical dossier](docs/submission/Vaultline-技术文档.pdf) | Architecture, core algorithms, security design, and evaluation evidence |
+| [Presentation](docs/submission/Vaultline-答辩材料.pptx) | 14-slide technical presentation with editable charts and diagrams |
+| [Source and deployment package](docs/submission/Vaultline-源代码与部署材料.zip) | README, source, deployment instructions, tests, and OpenAPI |
+| [Security self-assessment](docs/submission/Vaultline-安全自评报告.pdf) | Permission model and known-risk register |
+| [OpenAPI](backend/api/openapi.yaml) | Shared machine-readable API contract |
+| [Evaluation report](evaluation/results/academic-report.html) | Integration/E2E metrics, confusion matrices, confidence intervals, and the complete case ledger |
 | [Brand direction](frontend/BRAND.md) | Vaultline visual direction and usage |
 | [Video production](video/README.md) | Demo assets and production workflow |
 

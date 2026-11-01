@@ -132,7 +132,7 @@ paths:
       summary: 从 APP 或 IM 网关提交消息
       description: |
         同一 Banking Agent 的受控渠道适配入口。渠道网关必须先完成终端用户认证，
-        只使用服务端签发的演示 Bearer 身份调用；`conversation_id` 由渠道会话映射维护。
+        只使用服务端配置的 Bearer 网关身份调用；`conversation_id` 由渠道会话映射维护。
         当前支持 `app`、`im`、`wecom`、`feishu` 和 `dingtalk` 标签，不包含各平台原始 Webhook 验签。
       operationId: createChannelMessage
       parameters:
@@ -1150,7 +1150,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: demo-token
+      bearerFormat: gateway-token
   parameters:
     ConversationID:
       name: conversation_id

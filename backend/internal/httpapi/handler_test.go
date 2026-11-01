@@ -72,13 +72,31 @@ func newServerWithClockAndPath(t *testing.T, now func() time.Time) (*httptest.Se
 	return server, dbPath, func() { server.Close(); _ = application.Close() }
 }
 
+func newServerWithToken(t *testing.T, token string) (*httptest.Server, func()) {
+	t.Helper()
+	application, err := app.New(app.Config{
+		Database:  filepath.Join(t.TempDir(), "bankagent.db"),
+		AuthToken: token,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler())
+	return server, func() { server.Close(); _ = application.Close() }
+}
+
 func request(t *testing.T, client *http.Client, method, url, body, idem string) (*http.Response, []byte) {
+	t.Helper()
+	return requestWithToken(t, client, method, url, body, idem, "demo-user-1")
+}
+
+func requestWithToken(t *testing.T, client *http.Client, method, url, body, idem, token string) (*http.Response, []byte) {
 	t.Helper()
 	req, err := http.NewRequest(method, url, bytes.NewBufferString(body))
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Authorization", "Bearer demo-user-1")
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	if idem != "" {
 		req.Header.Set("Idempotency-Key", idem)
@@ -142,6 +160,32 @@ func TestConversationEventStreamRequiresAuthentication(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusUnauthorized || !bytes.Contains(body, []byte(`"code":"UNAUTHENTICATED"`)) {
 		t.Fatalf("unauthenticated stream: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
+func TestConfiguredBearerTokenAuthentication(t *testing.T) {
+	token := strings.Repeat("a", 32)
+	server, cleanup := newServerWithToken(t, token)
+	defer cleanup()
+
+	resp, body := requestWithToken(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/conversations", "{}", "custom-auth-reject", "demo-user-1")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("default demo token must be rejected when a configured token exists: status=%d body=%s", resp.StatusCode, body)
+	}
+
+	resp, body = requestWithToken(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/conversations", "{}", "custom-auth-accept", token)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("configured token must authenticate: status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
+func TestRejectsShortConfiguredBearerToken(t *testing.T) {
+	_, err := app.New(app.Config{
+		Database:  filepath.Join(t.TempDir(), "bankagent.db"),
+		AuthToken: "too-short",
+	})
+	if err == nil {
+		t.Fatal("expected short configured token to be rejected")
 	}
 }
 
@@ -915,7 +959,7 @@ func TestCardStatusActionAndSubscriptionCancellation(t *testing.T) {
 		t.Fatalf("card message: status=%d result=%+v body=%s", status, result, body)
 	}
 	resp, body := request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", `{}`, "card-confirm")
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"result"`)) || !bytes.Contains(body, []byte(`"status":"frozen"`)) {
 		t.Fatalf("card confirm: status=%d body=%s", resp.StatusCode, body)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")
@@ -928,7 +972,7 @@ func TestCardStatusActionAndSubscriptionCancellation(t *testing.T) {
 		t.Fatalf("subscription message: status=%d result=%+v body=%s", status, result, body)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+result.Action.ID+"/confirm", `{}`, "sub-confirm")
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"result"`)) || !bytes.Contains(body, []byte(`"subscription_id":"sub_streaming"`)) || !bytes.Contains(body, []byte(`"status":"cancelled"`)) {
 		t.Fatalf("subscription confirm: status=%d body=%s", resp.StatusCode, body)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/subscriptions?status=cancelled", "", "")
@@ -1052,7 +1096,7 @@ func TestDirectCardLimitRequiresMFA(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+action.ID+"/mfa/verify", `{"code":"000000"}`, "direct-card-limit-mfa")
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"result"`)) || !bytes.Contains(body, []byte(`"limit_minor":800000`)) {
 		t.Fatalf("card limit mfa: status=%d body=%s", resp.StatusCode, body)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")
@@ -1081,7 +1125,7 @@ func TestDirectCardAndSubscriptionActionsUseConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodPost, server.URL+"/v1/actions/"+cardAction.ID+"/confirm", `{}`, "direct-card-confirm")
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`"result"`)) || !bytes.Contains(body, []byte(`"status":"frozen"`)) {
 		t.Fatalf("card confirm: status=%d body=%s", resp.StatusCode, body)
 	}
 	resp, body = request(t, http.DefaultClient, http.MethodGet, server.URL+"/v1/cards", "", "")

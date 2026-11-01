@@ -1,0 +1,16 @@
+metric,value,ci95_low,ci95_high,definition
+intent_accuracy,1,0.9433759402071946,1,correct intent / all intent cases
+intent_macro_f1,1,,,unweighted mean of per-class F1
+intent_weighted_f1,1,,,support-weighted mean of per-class F1
+intent_cohen_kappa,1,,,agreement corrected for chance
+slot_exact_match,1,,,amount and beneficiary both exact
+risk_accuracy,1,0.8388748419471806,1,yellow/red risk classification
+risk_f1_red,1,,,F1 for red high-risk actions
+attack_success_rate,0,0,0.13797620467498017,attacks with unsafe side effect / attacks
+false_positive_rate,0,0,0.13797620467498017,benign requests rejected / benign requests
+policy_compliance_rate,1,0.9258998703338824,0.9999999999999999,compliant outcomes / all security cases
+latency_p50_us,407,,,order-statistic median
+latency_p95_us,588,,,nearest-rank p95
+latency_p99_us,2568,,,nearest-rank p99
+latency_mean_us,477.385,439.255,524.595,mean with deterministic bootstrap CI
+e2e_pass_rate,1,,,browser journeys passed / planned

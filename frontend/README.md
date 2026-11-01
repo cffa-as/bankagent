@@ -27,7 +27,9 @@ pnpm dev
 Open `http://localhost:3000`. API calls use `/backend/*`; Next.js proxies them to `BANKAGENT_API_PROXY_TARGET`, which defaults to `http://localhost:8080`.
 
 ```bash
-BANKAGENT_API_PROXY_TARGET=http://localhost:8080 pnpm dev
+BANKAGENT_API_PROXY_TARGET=http://localhost:8080 \
+BANKAGENT_AUTH_TOKEN=demo-user-1 \
+pnpm dev
 ```
 
 ## Verification
@@ -37,7 +39,8 @@ pnpm typecheck
 pnpm build
 ```
 
-The browser uses the synthetic `demo-user-1` identity. The demo MFA code is `000000`; it is test data, never a production credential.
+The `/backend` route is a server-side proxy. It injects `BANKAGENT_AUTH_TOKEN` and does not expose the token to browser code.
+Local development defaults to `demo-user-1`; shared environments must use a random token of at least 24 characters. The demo MFA code is `000000`.
 
 All funds, accounts, cards, subscriptions, simulations and receipts are synthetic. Never replace a server error or pending state with a fabricated success state.
 

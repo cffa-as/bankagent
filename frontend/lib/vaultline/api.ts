@@ -26,7 +26,6 @@ import type {
 } from './types'
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || '/backend').replace(/\/+$/, '')
-const SYNTHETIC_BEARER = 'demo-user-1'
 /** The Go server currently runs one synthetic user and account. Set NEXT_PUBLIC_VAULTLINE_ENV=production to drop synthetic hints. */
 export const SYNTHETIC_ENVIRONMENT = process.env.NEXT_PUBLIC_VAULTLINE_ENV !== 'production'
 const REQUEST_TIMEOUT_MS = 12000
@@ -67,7 +66,6 @@ async function call(method: 'GET' | 'POST', path: string, body?: unknown, idempo
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${SYNTHETIC_BEARER}`,
     Accept: 'application/json',
   }
   if (method === 'POST') {
@@ -166,7 +164,7 @@ export async function streamConversationEvents(
   let response: Response
   try {
     response = await fetch(`${API_BASE_URL}/v1/conversations/${seg(conversationId)}/events`, {
-      headers: { Authorization: `Bearer ${SYNTHETIC_BEARER}`, Accept: 'text/event-stream' },
+      headers: { Accept: 'text/event-stream' },
       signal,
       cache: 'no-store',
     })
