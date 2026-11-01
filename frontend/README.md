@@ -4,7 +4,7 @@ Vaultline's Next.js product surface. The homepage presents the product and the `
 
 The assistant prepares candidate actions. Risk, confirmation, Action-bound MFA, execution, idempotency, audit and the final receipt remain server-owned.
 
-The homepage presents the 30-second huashu-motion launch film. The complete 3-minute real-API demo is linked separately below the player.
+The homepage presents the 30-second brand film. The full real-API product demo is linked separately.
 
 ## Requirements
 

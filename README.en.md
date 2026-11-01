@@ -48,7 +48,7 @@
 </p>
 
 > [!NOTE]
-> The 30-second launch film is built with the huashu-motion code-animation workflow and a locally synthesized score. A separate 3-minute business demo is captured from the real Next.js frontend and Go API with Playwright. All accounts, balances, actions, and receipts are synthetic demo data.
+> The 30-second launch film uses a code-driven motion pipeline and a locally synthesized score. The full business demo is captured automatically from the real Next.js frontend and Go API. All accounts, balances, actions, and receipts are synthetic demo data.
 
 ## Product
 
@@ -117,7 +117,7 @@ The launch film follows one control line from intent to proof:
 
 The launch film rebuilds real workspace captures into motion shots and never fabricates UI, progress, or success states. The longer business demo preserves the working query, investment, card, subscription, liquidity, and workflow flows.
 
-[Watch the 3-minute business demo](frontend/public/demo/vaultline-product.mp4) · See the [production plan](docs/demo-video-production.md) and the reusable [video pipeline](video/README.md).
+[Watch the full business demo](frontend/public/demo/vaultline-product.mp4) · See the [production plan](docs/demo-video-production.md) and the [video production guide](video/README.md).
 
 <details>
 <summary><strong>Architecture</strong></summary>
@@ -180,6 +180,7 @@ Open <http://localhost:3000>. The demo identity is `Bearer demo-user-1`; the moc
 
 | Document | Purpose |
 | --- | --- |
+| [Documentation index](docs/README.md) | Submission, technical design and engineering entry points |
 | [Project introduction](docs/作品简介.md) | Submission-ready Chinese project introduction |
 | [Product requirements](docs/产品需求.md) | Users, scenarios, capabilities, and interaction requirements |
 | [High-level design](docs/概要设计.md) | Data model, API, database, and key flows |
@@ -188,7 +189,7 @@ Open <http://localhost:3000>. The demo identity is `Bearer demo-user-1`; the moc
 | [Competitive and technical evaluation](docs/竞品评测.md) | Executable metrics, public capability matrix, and reproduction steps |
 | [Security self-assessment](docs/安全自评报告.md) | Permission model and known risks |
 | [Brand direction](frontend/BRAND.md) | Vaultline visual direction and usage |
-| [Video pipeline](video/README.md) | Capture, voiceover, and Remotion rendering workflow |
+| [Video production](video/README.md) | Demo assets and production workflow |
 
 <p align="center">
   <sub>VAULTLINE · UNDERSTAND INTENT · GOVERN EXECUTION · PROVE THE OUTCOME</sub>

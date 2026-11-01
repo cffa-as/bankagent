@@ -48,7 +48,7 @@
 </p>
 
 > [!NOTE]
-> 30 秒品牌片由 huashu-motion 的代码化动画流程生成，配乐和音效在本地合成；3 分钟业务演示由 Playwright 驱动真实前端和 Go API 录制。所有账户、金额、动作与回执均为合成演示数据。
+> 30 秒品牌片由代码化动效流程生成，配乐和音效在本地合成；完整业务演示由自动录屏驱动真实前端和 Go API 生成。所有账户、金额、动作与回执均为合成演示数据。
 
 <a id="product"></a>
 
@@ -121,11 +121,11 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 
 `自然语言输入 → 动作快照 → 风险判定 → Action-bound MFA → 业务回执 → 审计追踪`
 
-品牌片使用真实工作台截图和真实服务端状态重新编排，不伪造界面、进度或成功结果。完整的 3 分钟业务演示保留了查询、理财、卡片、订阅、流动性预演和工作流等逐项操作。
+品牌片使用真实工作台截图和真实服务端状态重新编排，不伪造界面、进度或成功结果。3:46 完整业务演示保留了查询、理财、卡片、订阅、流动性预演和工作流等逐项操作。
 
-The 30-second launch film is built with the huashu-motion code-animation workflow and a locally synthesized score. The separate 3-minute business demo is captured from the real Next.js UI and Go API. All funds, balances, and receipts are synthetic.
+The 30-second launch film uses a code-driven motion pipeline and a locally synthesized score. The full business demo is captured automatically from the real Next.js UI and Go API. All funds, balances, and receipts are synthetic.
 
-[观看 3 分钟完整业务演示](frontend/public/demo/vaultline-product.mp4) · 制作流程见 [产品演示视频方案](docs/demo-video-production.md)，可复用工程见 [`video/`](video/README.md)。
+[观看完整业务演示](frontend/public/demo/vaultline-product.mp4) · 制作流程见 [产品演示视频方案](docs/demo-video-production.md) 和 [视频工程说明](video/README.md)。
 
 <details>
 <summary><strong>Architecture / 架构</strong></summary>
@@ -192,6 +192,7 @@ pnpm dev
 
 | Document | Purpose |
 | --- | --- |
+| [文档导航](docs/README.md) | 参赛材料、技术设计与工程入口 |
 | [作品简介](docs/作品简介.md) | 报名系统提交版项目介绍 |
 | [产品需求](docs/产品需求.md) | 用户、场景、功能和交互要求 |
 | [概要设计](docs/概要设计.md) | 数据模型、API、数据库和关键流程 |
@@ -200,7 +201,7 @@ pnpm dev
 | [竞品与技术评测](docs/竞品评测.md) | 可执行指标、竞品能力矩阵和复现方式 |
 | [安全自评报告](docs/安全自评报告.md) | 权限分级实现说明与已知风险 |
 | [品牌规范](frontend/BRAND.md) | Vaultline 视觉方向、标识和用色 |
-| [视频工程](video/README.md) | 录屏、旁白、Remotion 渲染流程 |
+| [视频工程](video/README.md) | 演示视频资产与生产流程 |
 
 <p align="center">
   <sub>VAULTLINE · UNDERSTAND INTENT · GOVERN EXECUTION · PROVE THE OUTCOME</sub>

@@ -54,7 +54,7 @@ mono = font("/System/Library/Fonts/SFNSMono.ttf", 17)
 
 draw.text((220, 106), "VAULTLINE", font=sans_bold, fill=WHITE, anchor="lm")
 draw.text((222, 151), "安全 AI 银行工作台", font=small, fill=STEEL, anchor="lm")
-draw.text((1504, 106), "FULL PRODUCT FILM / 03:02", font=mono, fill=STEEL, anchor="rm")
+draw.text((1504, 106), "FULL PRODUCT FILM / 03:46", font=mono, fill=STEEL, anchor="rm")
 
 draw.text((120, 322), "让银行业务", font=display, fill=WHITE, anchor="lt")
 draw.text((120, 415), "一句话开始。", font=display, fill=WHITE, anchor="lt")

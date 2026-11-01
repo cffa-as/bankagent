@@ -4,7 +4,7 @@ description: 编写或评审 bankagent 的产品需求和概要设计。适用�
 metadata:
   repo: bankagent
   language: zh-CN
-  source: adapted from xrobot architecture-first guidance
+source: bankagent design standards
 ---
 
 # bankagent 设计规范

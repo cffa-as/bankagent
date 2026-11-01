@@ -4,7 +4,7 @@ description: 设计、编写和评审 bankagent 的单元测试、集成测试�
 metadata:
   repo: bankagent
   language: zh-CN
-  source: adapted from xrobot-test-engineering
+source: bankagent test engineering standards
 ---
 
 # bankagent 测试工程规范

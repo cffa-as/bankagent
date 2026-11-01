@@ -4,7 +4,7 @@ description: 编写或评审 bankagent 的 Go 后端代码。适用于 HTTP API�
 metadata:
   repo: bankagent
   language: zh-CN
-  source: adapted from xrobot Go engineering guidance
+source: bankagent Go engineering standards
 ---
 
 # bankagent Go 后端工程规范
