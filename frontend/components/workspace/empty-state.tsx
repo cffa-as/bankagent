@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeftRight, ChevronRight, CreditCard, LineChart, Receipt, Repeat, Wallet } from 'lucide-react'
+import { ArrowLeftRight, ChartLine, ChevronRight, CreditCard, LineChart, Receipt, Repeat, Wallet } from 'lucide-react'
 
 const SHORTCUTS = [
   { prompt: '查一下我的余额', icon: Wallet, tag: '查询', color: 'bg-teal' },
@@ -53,6 +53,21 @@ export function EmptyState({ onPick, disabled }: { onPick: (prompt: string) => v
           </li>
         ))}
         </ul>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onPick('如果预留 2000 元，会影响未来 30 天的必要支出吗？')}
+          className="group mt-5 flex items-center gap-3 border-l-2 border-teal py-2 pl-4 text-left transition-colors hover:bg-card disabled:opacity-50"
+        >
+          <ChartLine className="size-4 shrink-0 text-teal" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-medium">直接问现金流影响</span>
+            <span className="mt-0.5 block text-[12px] leading-5 text-muted-foreground">
+              例如：预留 2000 元，会影响未来 30 天的必要支出吗？
+            </span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-steel opacity-30 transition-opacity group-hover:opacity-100" aria-hidden />
+        </button>
       </div>
     </div>
   )

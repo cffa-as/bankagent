@@ -4,7 +4,6 @@ import type {
   BankAction,
   Conversation,
   JsonObject,
-  LiquiditySimulation,
   MessageResult,
   Workflow,
   WorkflowAdvanceResult,
@@ -22,7 +21,6 @@ export interface VaultlineAdapter {
   verifyActionMfa(actionId: string, code: string, key: string): Promise<BankAction>
   cancelAction(actionId: string, key: string): Promise<BankAction>
   triggerAction(actionId: string, key: string): Promise<BankAction>
-  createLiquiditySimulation(input: JsonObject, key: string): Promise<LiquiditySimulation>
   listWorkflows(): Promise<Workflow[]>
   getWorkflow(workflowId: string): Promise<Workflow>
   createWorkflow(input: JsonObject, key: string): Promise<Workflow>
@@ -39,7 +37,6 @@ export const liveAdapter: VaultlineAdapter = {
   verifyActionMfa: api.verifyActionMfa,
   cancelAction: api.cancelAction,
   triggerAction: api.triggerAction,
-  createLiquiditySimulation: api.createLiquiditySimulation,
   listWorkflows: api.listWorkflows,
   getWorkflow: api.getWorkflow,
   createWorkflow: api.createWorkflow,

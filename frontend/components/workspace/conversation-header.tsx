@@ -1,6 +1,6 @@
 'use client'
 
-import { ChartLine, SquarePen } from 'lucide-react'
+import { SquarePen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ConnectionState } from '@/lib/vaultline/use-workspace-session'
 
@@ -13,11 +13,9 @@ const CONNECTION: Record<ConnectionState, { label: string; dot: string }> = {
 export function ConversationHeader({
   connection,
   onNewSession,
-  onOpenLiquidity,
 }: {
   connection: ConnectionState
   onNewSession?: () => void
-  onOpenLiquidity: () => void
 }) {
   const c = CONNECTION[connection]
   return (
@@ -30,15 +28,6 @@ export function ConversationHeader({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          onClick={onOpenLiquidity}
-          className="inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-3 text-[13px] font-medium transition-colors hover:border-line-strong"
-        >
-          <ChartLine className="size-4 text-muted-foreground" aria-hidden />
-          <span className="hidden sm:inline">流动性预检</span>
-          <span className="sr-only sm:hidden">流动性预检</span>
-        </button>
         {onNewSession && (
           <button
             type="button"

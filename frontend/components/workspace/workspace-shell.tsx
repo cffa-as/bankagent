@@ -194,7 +194,6 @@ export function WorkspaceShell() {
               <ConversationHeader
                 connection={session.connection}
                 onNewSession={session.thread.length > 0 ? session.reset : undefined}
-                onOpenLiquidity={() => setLiquidityOpen(true)}
               />
               <div ref={scrollRef} className="ws-scroll min-h-0 flex-1 overflow-y-auto">
                 <div className="mx-auto w-full max-w-[780px] px-4 py-6 sm:px-8 sm:py-8">

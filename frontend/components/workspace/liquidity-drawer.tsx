@@ -1,17 +1,15 @@
 'use client'
 
 import { Check, X } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { VaultlineSeal } from '@/components/vaultline/seal'
 import { cn } from '@/lib/utils'
-import { newIdempotencyKey, toApiError } from '@/lib/vaultline/api'
-import { mapApiError, type SafeErrorState } from '@/lib/vaultline/errors'
 import { formatDate, formatMoney } from '@/lib/vaultline/format'
 import { TONE, VERDICT } from '@/lib/vaultline/status'
 import type { LiquidityAlternative, LiquiditySimulation } from '@/lib/vaultline/types'
 import type { WorkspaceSession } from '@/lib/vaultline/use-workspace-session'
 import { LiquidityChart } from './liquidity-chart'
-import { Callout, CopyId, FieldList, RawData, SectionLabel, Spinner, StatusPill } from './primitives'
+import { CopyId, FieldList, RawData, SectionLabel, Spinner, StatusPill } from './primitives'
 
 interface LiquidityDrawerProps {
   open: boolean
@@ -19,68 +17,6 @@ interface LiquidityDrawerProps {
   session: WorkspaceSession
   creatingWorkflow: boolean
   onSelectAlternative: (simulation: LiquiditySimulation, alternative: LiquidityAlternative) => void
-}
-
-function RequestForm({ session }: { session: WorkspaceSession }) {
-  const inputId = useId()
-  const [budget, setBudget] = useState('')
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<SafeErrorState | null>(null)
-  const keyRef = useRef<{ budget: string; key: string } | null>(null)
-
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    const amount = Number(budget)
-    if (!Number.isFinite(amount) || amount <= 0 || pending) return
-    if (keyRef.current?.budget !== budget) keyRef.current = { budget, key: newIdempotencyKey() }
-    setPending(true)
-    setError(null)
-    try {
-      const simulation = await session.adapter.createLiquiditySimulation({ proposed_budget: amount, horizon_days: 30 }, keyRef.current.key)
-      keyRef.current = null
-      session.setLiquidity(simulation)
-      session.rememberTrace(simulation.trace_id)
-    } catch (e) {
-      setError(mapApiError(toApiError(e)))
-    } finally {
-      setPending(false)
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-3">
-      <p className="text-pretty text-[15px] leading-relaxed">在锁定预算前，看清未来 30 天的现金流最低点。</p>
-      <label htmlFor={inputId} className="text-[13px] text-muted-foreground">
-        拟锁定预算（元）
-      </label>
-      <div className="flex gap-2">
-        <input
-          id={inputId}
-          name="budget_amount"
-          value={budget}
-          onChange={(e) => setBudget(e.target.value.replace(/[^\d.]/g, ''))}
-          autoComplete="off"
-          inputMode="decimal"
-          placeholder="例如 5000"
-          className="h-10 min-w-0 flex-1 rounded-lg border border-input bg-card px-3 font-mono text-[15px] outline-none focus:border-cobalt"
-        />
-        <button
-          type="submit"
-          disabled={pending || !budget}
-          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-cobalt px-4 text-[14px] font-medium text-primary-foreground transition-colors hover:bg-cobalt-ink disabled:opacity-50"
-        >
-          {pending && <Spinner />}
-          运行预检
-        </button>
-      </div>
-      {error && (
-        <Callout tone={error.tone} title={error.title}>
-          <p>{error.body}</p>
-        </Callout>
-      )}
-      <p className="text-[12.5px] leading-relaxed text-muted-foreground">预检只读，不冻结资金、不创建动作。结果由服务端根据账户现金流计算。</p>
-    </form>
-  )
 }
 
 function Alternatives({
@@ -241,9 +177,9 @@ export function LiquidityDrawer({ open, onClose, session, creatingWorkflow, onSe
           <VaultlineSeal className="size-7 shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 id="ws-liquidity-title" className="text-[16px] font-semibold tracking-tight">
-              流动性预检
+              流动性预检报告
             </h2>
-            <p className="truncate text-[13px] text-muted-foreground">所有数值由银行服务端返回，前端不做二次计算</p>
+            <p className="truncate text-[13px] text-muted-foreground">由 Agent 发起，银行服务端生成；前端不二次计算</p>
           </div>
           <button
             type="button"
@@ -265,15 +201,17 @@ export function LiquidityDrawer({ open, onClose, session, creatingWorkflow, onSe
                 onSelect={(alt) => onSelectAlternative(simulation, alt)}
               />
             ) : (
-              <RequestForm session={session} />
+              <p className="text-[14px] leading-relaxed text-muted-foreground">
+                请先在对话中描述预算和现金流问题。Agent 会调用银行服务端的流动性预检工具。
+              </p>
             )}
             {simulation && (
               <button
                 type="button"
-                onClick={() => session.setLiquidity(null)}
+                onClick={onClose}
                 className="self-start text-[13px] font-medium text-cobalt-ink hover:underline"
               >
-                以新的预算重新预检
+                关闭报告，返回对话继续追问
               </button>
             )}
           </div>

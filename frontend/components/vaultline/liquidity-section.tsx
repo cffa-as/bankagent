@@ -16,7 +16,7 @@ export function LiquiditySection() {
               锁定预算之前，先做流动性预检
             </h2>
             <p className="text-pretty leading-relaxed text-muted-foreground">
-              从工作台顶部打开预检，输入计划支出，服务端返回推演结果与可选方案。
+              直接问 Agent：“预留 2000 元会影响必要支出吗？”服务端返回推演结果与可选方案。
             </p>
           </div>
           <dl className="flex flex-col divide-y divide-border border-y border-border">
@@ -31,7 +31,7 @@ export function LiquiditySection() {
         <figure className="relative aspect-[16/7] overflow-hidden rounded-sm border border-border bg-card shadow-[0_24px_60px_-30px_rgb(15_23_42/0.28)] md:w-7/12">
           <Image
             src="/product/workspace-liquidity.png"
-            alt="工作台中打开的流动性预检抽屉，用于输入计划支出并请求服务端推演"
+            alt="Agent 发起流动性预检后，工作台展示服务端返回的情景曲线与替代方案"
             width={1440}
             height={900}
             sizes="(min-width: 768px) 60vw, 100vw"

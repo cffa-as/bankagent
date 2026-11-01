@@ -1,6 +1,5 @@
 import {
   asObject,
-  asNumber,
   asText,
   normalizeAction,
   normalizeAdvance,
@@ -16,7 +15,6 @@ import type {
   BankAction,
   Conversation,
   JsonObject,
-  LiquiditySimulation,
   MessageResult,
   Workflow,
   WorkflowAdvanceResult,
@@ -146,24 +144,6 @@ export const verifyActionMfa = (id: string, code: string, key: string) =>
   actionCall('POST', `/v1/actions/${seg(id)}/mfa/verify`, { code }, key)
 export const cancelAction = (id: string, key: string) => actionCall('POST', `/v1/actions/${seg(id)}/cancel`, {}, key)
 export const triggerAction = (id: string, key: string) => actionCall('POST', `/v1/actions/${seg(id)}/trigger`, {}, key)
-
-/* ---------- Liquidity ---------- */
-
-export async function createLiquiditySimulation(input: JsonObject, key: string): Promise<LiquiditySimulation> {
-  const budget = asNumber(input.proposed_budget)
-  if (budget === null || budget <= 0) {
-    throw new VaultlineApiError('invalid', '流动性预检金额无效。')
-  }
-  const body: JsonObject = {
-    account_id: asText(input.account_id) ?? 'acct_demo',
-    proposed_budget_minor: Math.round(budget * 100),
-    horizon_days: asNumber(input.horizon_days) ?? 30,
-  }
-  const buffer = asNumber(input.essential_buffer)
-  if (buffer !== null && buffer >= 0) body.essential_buffer_minor = Math.round(buffer * 100)
-  const { data, traceId } = await call('POST', '/v1/liquidity-simulations', body, key)
-  return requireValue(normalizeLiquidity(data, traceId), '流动性模拟结果')
-}
 
 /* ---------- Workflows ---------- */
 
