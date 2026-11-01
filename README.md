@@ -39,7 +39,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:45</strong></a>
+  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:58</strong></a>
   <br />
   <sub>点击封面或标题播放 · 真实前端 · 真实 Go API · Synthetic data only</sub>
 </p>
@@ -125,7 +125,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 | Browser E2E | 8 条真实业务链路 | 8 / 8 通过，console error 0，HTTP 5xx 0 |
 | Latency | 200 次 warm HTTP | p50 413 µs，p95 599 µs，p99 2498 µs |
 
-完整指标、混淆矩阵、置信区间、延迟 CDF 和全部用例明细见 [HTML 测评报告](evaluation/results/academic-report.html)。原始数据见 [academic.json](evaluation/results/academic.json) 与 [cases.csv](evaluation/results/cases.csv)。
+完整指标、混淆矩阵、置信区间、延迟 CDF 和全部用例明细见 [HTML 测评报���](evaluation/results/academic-report.html)。原始数据见 [academic.json](evaluation/results/academic.json) 与 [cases.csv](evaluation/results/cases.csv)。
 
 <details>
 <summary><strong>Architecture / 架构</strong></summary>
