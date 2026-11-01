@@ -295,7 +295,7 @@ function normalizeNode(value: unknown, index: number): WorkflowNode | null {
   return {
     node_id: asText(pick(node, 'node_id', 'id', 'key')) ?? `node_${index}`,
     kind: asText(pick(node, 'kind', 'type')) ?? 'unknown',
-    label: asText(pick(node, 'label', 'title', 'name')),
+    label: asText(pick(node, 'label', 'title', 'name', 'merchant')),
     status: asText(node.status),
     depends_on: asArray(pick(node, 'depends_on', 'dependencies'))
       .map(asText)

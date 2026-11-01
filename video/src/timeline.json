@@ -1,35 +1,43 @@
 {
   "fps": 30,
   "clips": {
-    "request": {
-      "src": "recordings/request.mp4",
-      "trimBeforeSeconds": 0.681,
-      "seconds": 22.01,
+    "dag-create": {
+      "src": "recordings/dag-create.mp4",
+      "trimBeforeSeconds": 0.686,
+      "seconds": 17.454,
       "spots": [
         {
-          "at": 10.84,
-          "until": 19.24,
-          "tone": "amber",
-          "x": 532,
-          "y": 169,
-          "w": 720,
-          "h": 228
+          "at": 5.756,
+          "until": 7.756,
+          "tone": "cobalt",
+          "x": 576,
+          "y": 255,
+          "w": 672,
+          "h": 82
+        },
+        {
+          "at": 9.445,
+          "until": 17.445,
+          "tone": "cobalt",
+          "x": 272,
+          "y": 281,
+          "w": 1240,
+          "h": 412
         }
       ],
       "cues": {
-        "sent": 4.446,
-        "drawer": 4.453,
-        "trace": 10.814
+        "card": 5.749,
+        "dag": 9.168
       }
     },
-    "sandbox": {
-      "src": "recordings/sandbox.mp4",
-      "trimBeforeSeconds": 2.315,
-      "seconds": 46.003,
+    "twin": {
+      "src": "recordings/twin.mp4",
+      "trimBeforeSeconds": 0.67,
+      "seconds": 30.005,
       "spots": [
         {
-          "at": 0.312,
-          "until": 5.112,
+          "at": 4.561,
+          "until": 7.961,
           "tone": "red",
           "x": 917,
           "y": 84,
@@ -37,8 +45,8 @@
           "h": 125
         },
         {
-          "at": 5.122,
-          "until": 9.922,
+          "at": 7.969,
+          "until": 10.969,
           "tone": "amber",
           "x": 915,
           "y": 332,
@@ -46,8 +54,8 @@
           "h": 49
         },
         {
-          "at": 10.525,
-          "until": 19.125,
+          "at": 11.576,
+          "until": 17.976,
           "tone": "cobalt",
           "x": 915,
           "y": 130,
@@ -55,93 +63,48 @@
           "h": 460
         },
         {
-          "at": 19.874,
-          "until": 24.874,
-          "tone": "cobalt",
+          "at": 18.992,
+          "until": 25.392,
+          "tone": "green",
           "x": 915,
-          "y": 121,
+          "y": 89,
           "w": 603,
-          "h": 256
-        },
-        {
-          "at": 25.91,
-          "until": 29.31,
-          "tone": "green",
-          "x": 917,
-          "y": 189,
-          "w": 599,
-          "h": 192
-        },
-        {
-          "at": 31.894,
-          "until": 34.594,
-          "tone": "amber",
-          "x": 917,
-          "y": 313,
-          "w": 599,
-          "h": 192
-        },
-        {
-          "at": 37.179,
-          "until": 40.179,
-          "tone": "amber",
-          "x": 917,
-          "y": 505,
-          "w": 599,
-          "h": 192
-        },
-        {
-          "at": 40.186,
-          "until": 45.186,
-          "tone": "green",
-          "x": 913,
-          "y": 693,
-          "w": 607,
-          "h": 36
+          "h": 775
         }
       ],
       "cues": {
-        "chart": 10.519,
-        "events": 19.868,
-        "alternatives": 25.466,
-        "note": 40.179
+        "drawer": 4.231,
+        "chart": 11.569,
+        "alternatives": 18.985
       }
     },
-    "execute": {
-      "src": "recordings/execute.mp4",
-      "trimBeforeSeconds": 2.312,
-      "seconds": 49.006,
+    "green": {
+      "src": "recordings/green.mp4",
+      "trimBeforeSeconds": 0.671,
+      "seconds": 9.004,
       "spots": [
         {
-          "at": 0.008,
-          "until": 2.208,
-          "tone": "amber",
-          "x": 917,
-          "y": 505,
-          "w": 599,
-          "h": 192
-        },
-        {
-          "at": 5.005,
-          "until": 11.005,
-          "tone": "cobalt",
-          "x": 272,
-          "y": 281,
-          "w": 1240,
-          "h": 228
-        },
-        {
-          "at": 12.369,
-          "until": 16.269,
+          "at": 2.811,
+          "until": 6.811,
           "tone": "green",
-          "x": 917,
-          "y": 84,
-          "w": 599,
-          "h": 125
-        },
+          "x": 574,
+          "y": 262,
+          "w": 676,
+          "h": 73
+        }
+      ],
+      "cues": {
+        "result": 2.803
+      }
+    },
+    "yellow": {
+      "src": "recordings/yellow.mp4",
+      "trimBeforeSeconds": 0.684,
+      "seconds": 24.004,
+      "spots": [
         {
-          "at": 19.185,
-          "until": 23.785,
+          "at": 3.453,
+          "until": 7.653,
           "tone": "amber",
           "x": 1137,
           "y": 575,
@@ -149,134 +112,38 @@
           "h": 34
         },
         {
-          "at": 23.793,
-          "until": 26.593,
-          "tone": "red",
-          "x": 1137,
-          "y": 184,
-          "w": 387,
-          "h": 82
-        },
-        {
-          "at": 26.602,
-          "until": 29.402,
-          "tone": "red",
+          "at": 7.665,
+          "until": 10.265,
+          "tone": "amber",
           "x": 1139,
           "y": 272,
           "w": 383,
           "h": 298
         },
         {
-          "at": 32.725,
-          "until": 38.725,
+          "at": 11.538,
+          "until": 15.338,
           "tone": "green",
-          "x": 1139,
-          "y": 79,
-          "w": 383,
-          "h": 298
+          "x": 1137,
+          "y": 679,
+          "w": 387,
+          "h": 143
         }
       ],
       "cues": {
-        "plan": 4.998,
-        "precheck": 12.362,
-        "snapshot": 19.179,
-        "receipt": 32.103,
-        "replay": 38.764
+        "snapshot": 3.443,
+        "receipt": 11.031,
+        "replay": 15.37
       }
-    },
-    "security": {
-      "src": "recordings/security.mp4",
-      "trimBeforeSeconds": 0.696,
-      "seconds": 41.366,
-      "spots": [
-        {
-          "at": 2.898,
-          "until": 5.298,
-          "tone": "cobalt",
-          "x": 574,
-          "y": 262,
-          "w": 676,
-          "h": 73
-        },
-        {
-          "at": 10.167,
-          "until": 14.567,
-          "tone": "red",
-          "x": 589,
-          "y": 678,
-          "w": 646,
-          "h": 65
-        },
-        {
-          "at": 15.9,
-          "until": 18.9,
-          "tone": "green",
-          "x": 574,
-          "y": 527,
-          "w": 676,
-          "h": 73
-        },
-        {
-          "at": 35.261,
-          "until": 38.661,
-          "tone": "red",
-          "x": 1139,
-          "y": 54,
-          "w": 383,
-          "h": 298
-        },
-        {
-          "at": 38.669,
-          "until": 41.269,
-          "tone": "red",
-          "x": 1139,
-          "y": 549,
-          "w": 383,
-          "h": 108
-        }
-      ],
-      "cues": {
-        "typing": 5.298,
-        "injection": 9.76,
-        "balance": 15.893,
-        "mfa": 22.653,
-        "locked": 34.734
-      }
-    },
-    "cov-transfer": {
-      "src": "recordings/cov-transfer.mp4",
-      "trimBeforeSeconds": 1.911,
-      "seconds": 9.002,
-      "spots": [
-        {
-          "at": 0.006,
-          "until": 2.206,
-          "tone": "amber",
-          "x": 1124,
-          "y": 0,
-          "w": 412,
-          "h": 864
-        },
-        {
-          "at": 2.973,
-          "until": 5.373,
-          "tone": "green",
-          "x": 1124,
-          "y": 0,
-          "w": 412,
-          "h": 864
-        }
-      ],
-      "cues": {}
     },
     "cov-bill": {
       "src": "recordings/cov-bill.mp4",
-      "trimBeforeSeconds": 1.869,
-      "seconds": 8.003,
+      "trimBeforeSeconds": 1.885,
+      "seconds": 9.002,
       "spots": [
         {
-          "at": 0.007,
-          "until": 3.607,
+          "at": 0.009,
+          "until": 4.009,
           "tone": "red",
           "x": 579,
           "y": 317,
@@ -288,40 +155,120 @@
     },
     "cov-invest": {
       "src": "recordings/cov-invest.mp4",
-      "trimBeforeSeconds": 2.051,
-      "seconds": 7.002,
+      "trimBeforeSeconds": 2.094,
+      "seconds": 8.003,
       "spots": [],
       "cues": {}
     },
     "cov-card": {
       "src": "recordings/cov-card.mp4",
-      "trimBeforeSeconds": 2.263,
-      "seconds": 7.002,
+      "trimBeforeSeconds": 2.276,
+      "seconds": 8.003,
       "spots": [],
       "cues": {}
     },
     "cov-subscription": {
       "src": "recordings/cov-subscription.mp4",
-      "trimBeforeSeconds": 2.279,
-      "seconds": 7.004,
+      "trimBeforeSeconds": 2.266,
+      "seconds": 8.003,
       "spots": [],
       "cues": {}
     },
-    "cov-plan": {
-      "src": "recordings/cov-plan.mp4",
-      "trimBeforeSeconds": 3.135,
-      "seconds": 9.003,
-      "spots": [],
-      "cues": {}
+    "dag-run": {
+      "src": "recordings/dag-run.mp4",
+      "trimBeforeSeconds": 1.601,
+      "seconds": 50.006,
+      "spots": [
+        {
+          "at": 0.796,
+          "until": 3.196,
+          "tone": "green",
+          "x": 315,
+          "y": 311,
+          "w": 1194,
+          "h": 81
+        },
+        {
+          "at": 4.63,
+          "until": 7.43,
+          "tone": "green",
+          "x": 917,
+          "y": 84,
+          "w": 599,
+          "h": 125
+        },
+        {
+          "at": 8.915,
+          "until": 11.115,
+          "tone": "red",
+          "x": 1137,
+          "y": 184,
+          "w": 387,
+          "h": 82
+        },
+        {
+          "at": 14.35,
+          "until": 17.35,
+          "tone": "green",
+          "x": 1139,
+          "y": 79,
+          "w": 383,
+          "h": 298
+        },
+        {
+          "at": 20.208,
+          "until": 22.808,
+          "tone": "amber",
+          "x": 1137,
+          "y": 468,
+          "w": 387,
+          "h": 34
+        },
+        {
+          "at": 23.964,
+          "until": 26.364,
+          "tone": "green",
+          "x": 1137,
+          "y": 610,
+          "w": 387,
+          "h": 254
+        },
+        {
+          "at": 29.111,
+          "until": 31.111,
+          "tone": "amber",
+          "x": 315,
+          "y": 609,
+          "w": 782,
+          "h": 81
+        },
+        {
+          "at": 34,
+          "until": 41,
+          "tone": "cobalt",
+          "x": 272,
+          "y": 281,
+          "w": 1240,
+          "h": 412
+        }
+      ],
+      "cues": {
+        "reminder": 0.788,
+        "budget": 4.621,
+        "budget-ok": 13.833,
+        "flowers": 20.201,
+        "cake": 29.103,
+        "cancel": 33.338
+      }
     },
     "audit": {
       "src": "recordings/audit.mp4",
-      "trimBeforeSeconds": 0.69,
-      "seconds": 18.005,
+      "trimBeforeSeconds": 0.691,
+      "seconds": 16.003,
       "spots": [
         {
-          "at": 5.523,
-          "until": 12.323,
+          "at": 5.352,
+          "until": 11.752,
           "tone": "cobalt",
           "x": 291,
           "y": 209,
@@ -329,8 +276,8 @@
           "h": 240
         },
         {
-          "at": 12.333,
-          "until": 16.533,
+          "at": 11.763,
+          "until": 15.363,
           "tone": "green",
           "x": 321,
           "y": 388,
@@ -339,43 +286,155 @@
         }
       ],
       "cues": {
-        "timeline": 4.39
+        "timeline": 4.232
+      }
+    },
+    "red": {
+      "src": "recordings/red.mp4",
+      "trimBeforeSeconds": 0.692,
+      "seconds": 25.287,
+      "spots": [
+        {
+          "at": 3.764,
+          "until": 6.764,
+          "tone": "red",
+          "x": 1137,
+          "y": 184,
+          "w": 387,
+          "h": 82
+        },
+        {
+          "at": 19.365,
+          "until": 22.565,
+          "tone": "red",
+          "x": 1139,
+          "y": 54,
+          "w": 383,
+          "h": 298
+        },
+        {
+          "at": 22.578,
+          "until": 25.178,
+          "tone": "red",
+          "x": 1139,
+          "y": 549,
+          "w": 383,
+          "h": 108
+        }
+      ],
+      "cues": {
+        "mfa": 3.754,
+        "wrong": 6.766,
+        "locked": 18.839
+      }
+    },
+    "injection": {
+      "src": "recordings/injection.mp4",
+      "trimBeforeSeconds": 0.689,
+      "seconds": 20.003,
+      "spots": [
+        {
+          "at": 2.634,
+          "until": 4.634,
+          "tone": "cobalt",
+          "x": 574,
+          "y": 262,
+          "w": 676,
+          "h": 73
+        },
+        {
+          "at": 8.814,
+          "until": 13.014,
+          "tone": "red",
+          "x": 589,
+          "y": 678,
+          "w": 646,
+          "h": 65
+        },
+        {
+          "at": 14.347,
+          "until": 17.547,
+          "tone": "green",
+          "x": 574,
+          "y": 527,
+          "w": 676,
+          "h": 73
+        }
+      ],
+      "cues": {
+        "typing": 4.635,
+        "injection": 8.408,
+        "balance": 14.342
+      }
+    },
+    "breaker": {
+      "src": "recordings/breaker.mp4",
+      "trimBeforeSeconds": 0.69,
+      "seconds": 14.676,
+      "spots": [
+        {
+          "at": 9.673,
+          "until": 14.673,
+          "tone": "red",
+          "x": 589,
+          "y": 678,
+          "w": 646,
+          "h": 65
+        }
+      ],
+      "cues": {
+        "attempts": 6.61,
+        "locked": 9.264
       }
     }
   },
   "evidence": {
-    "execute": {
-      "actionId": "act_75e070f66d8ec477",
-      "traceId": "tr_7374ffe6f2130b27",
-      "snapshotHash": "ddbdfa8eeebd0e595e31f7b2b5a53537dc4affc3189bfa6be84053eb7d555216",
-      "status": "succeeded",
-      "security": {
-        "source": {
-          "type": "structured_api",
-          "trust": "validated",
-          "sanitized": true,
-          "injection_checked": true
+    "dag": {
+      "dueAt": 1793542980000,
+      "workflowId": "wf_e89f8878115649bf",
+      "status": "cancelled",
+      "nodes": [
+        {
+          "id": "birthday_reminder",
+          "status": "succeeded"
         },
-        "identity": {
-          "method": "action_bound_mfa",
-          "state": "verified",
-          "attempts_remaining": 3
+        {
+          "id": "budget_lock",
+          "status": "succeeded"
         },
-        "outcome": {
-          "receipt": "verified"
+        {
+          "id": "flowers",
+          "status": "succeeded"
+        },
+        {
+          "id": "cake",
+          "status": "skipped"
         }
-      },
+      ],
+      "passport": "stills/passport-verified.png"
+    },
+    "yellow": {
+      "actionId": "act_8e4226979d29e504",
+      "traceId": "tr_425cc9070d1ac1ce",
+      "snapshotHash": "4840f1755881121a5726d7dffe32d426579e822d23ee8f6dd78f1c3e34016375",
+      "status": "succeeded",
       "replay": {
+        "method": "POST",
+        "path": "/v1/actions/act_8e4226979d29e504/confirm",
         "status": 409,
         "code": "ACTION_STATE_CONFLICT",
         "message": "动作当前状态不允许此操作"
-      },
-      "passport": "stills/passport-verified.png"
+      }
     },
-    "security": {
-      "injectionCode": "PROMPT_INJECTION_BLOCKED",
+    "red": {
       "lockedCode": "MFA_LOCKED",
       "passport": "stills/passport-locked.png"
+    },
+    "breaker": {
+      "code": "SECURITY_LOCKED",
+      "threshold": 6,
+      "windowMinutes": 10,
+      "lockMinutes": 15
     }
   }
 }
