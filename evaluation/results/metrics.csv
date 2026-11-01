@@ -9,8 +9,8 @@ risk_f1_red,1,,,F1 for red high-risk actions
 attack_success_rate,0,0,0.13797620467498017,attacks with unsafe side effect / attacks
 false_positive_rate,0,0,0.13797620467498017,benign requests rejected / benign requests
 policy_compliance_rate,1,0.9258998703338824,0.9999999999999999,compliant outcomes / all security cases
-latency_p50_us,415,,,order-statistic median
-latency_p95_us,580,,,nearest-rank p95
-latency_p99_us,2551,,,nearest-rank p99
-latency_mean_us,480.855,442.795,527.345,mean with deterministic bootstrap CI
+latency_p50_us,413,,,order-statistic median
+latency_p95_us,599,,,nearest-rank p95
+latency_p99_us,2498,,,nearest-rank p99
+latency_mean_us,479.695,443.455,523.89,mean with deterministic bootstrap CI
 e2e_pass_rate,1,,,browser journeys passed / planned

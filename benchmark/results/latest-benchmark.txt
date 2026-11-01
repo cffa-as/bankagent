@@ -2,6 +2,6 @@ goos: darwin
 goarch: arm64
 pkg: github.com/cffa-as/bankagent/internal/httpapi
 cpu: Apple M5
-BenchmarkLiquiditySimulationHTTP-10    	    2552	    468365 ns/op	  242976 B/op	    1875 allocs/op
+BenchmarkLiquiditySimulationHTTP-10    	    2466	    479904 ns/op	  236804 B/op	    1872 allocs/op
 PASS
-ok  	github.com/cffa-as/bankagent/internal/httpapi	2.540s
+ok  	github.com/cffa-as/bankagent/internal/httpapi	2.582s

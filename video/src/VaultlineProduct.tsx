@@ -4,7 +4,7 @@ import {clamp} from './components/brand'
 import {NARRATION, NARRATION_DELAY, SCENES, sceneSeconds, type FilmScene} from './film-plan'
 import {AgentScene} from './scenes/agent-scene'
 import {RecordingScene} from './scenes/recording-scene'
-import {IntroScene, OutroScene, PrinciplesScene, ProblemScene} from './scenes/title-scenes'
+import {CoverageScene, IntroScene, OutroScene, PrinciplesScene, ProblemScene} from './scenes/title-scenes'
 import {COLORS, FPS} from './theme'
 
 type Placed = {scene: FilmScene; from: number; durationInFrames: number}
@@ -38,12 +38,25 @@ const SceneBody = ({scene, durationInFrames}: {scene: FilmScene; durationInFrame
       return <ProblemScene durationInFrames={durationInFrames} />
     case 'agent':
       return <AgentScene durationInFrames={durationInFrames} />
+    case 'coverage':
+      return <CoverageScene durationInFrames={durationInFrames} />
     case 'principles':
       return <PrinciplesScene durationInFrames={durationInFrames} />
     case 'outro':
       return <OutroScene durationInFrames={durationInFrames} />
     case 'recording':
-      return <RecordingScene id={scene.id} chapter={scene.chapter} title={scene.title} camera={scene.camera} durationInFrames={durationInFrames} />
+      return (
+        <RecordingScene
+          id={scene.id}
+          chapter={scene.chapter}
+          title={scene.title}
+          tier={scene.tier}
+          speed={scene.speed ?? 1}
+          camera={scene.camera}
+          notes={scene.notes}
+          durationInFrames={durationInFrames}
+        />
+      )
   }
 }
 

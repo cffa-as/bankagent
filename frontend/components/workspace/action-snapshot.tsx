@@ -6,18 +6,35 @@ import { describeStatus } from '@/lib/vaultline/status'
 import type { BankAction } from '@/lib/vaultline/types'
 import { CopyId, Disclosure, FieldList, RiskBadge, StatusPill } from './primitives'
 
-const HIDDEN_SNAPSHOT_KEYS = new Set(['currency', 'amount', 'amount_minor', 'amount_cents', 'kind'])
+const HIDDEN_SNAPSHOT_KEYS = new Set(['currency', 'amount', 'amount_minor', 'amount_cents', 'kind', 'total_amount_minor'])
+
+type SplitParticipant = { name: string; amount: number | null; isPayer: boolean }
 
 export function actionCurrency(action: BankAction) {
   return asText(action.snapshot.currency) ?? 'CNY'
 }
 
 export function actionAmount(action: BankAction) {
-  return pickMoney(action.snapshot, 'amount')
+  const s = action.snapshot
+  return pickMoney(s, 'amount') ?? pickMoney(s, 'total_amount') ?? pickMoney(s, 'principal')
+}
+
+function splitParticipants(action: BankAction): SplitParticipant[] {
+  const raw = action.snapshot.participants
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+    const entry = item as Record<string, unknown>
+    const name = asText(entry.name) ?? asText(entry.phone)
+    if (!name) return []
+    return [{ name, amount: pickMoney(entry as BankAction['snapshot'], 'amount'), isPayer: entry.is_payer === true }]
+  })
 }
 
 export function actionTarget(action: BankAction) {
   const s = action.snapshot
+  const participants = splitParticipants(action)
+  if (participants.length > 0) return `${participants.length} 人均摊`
   return (
     asText(s.beneficiary_name) ??
     asText(s.beneficiary) ??
@@ -39,6 +56,8 @@ export function confirmLabel(action: BankAction) {
   switch (action.kind) {
     case 'transfer':
       return `确认转账${money}`
+    case 'transfer_split':
+      return `确认发起 AA 收款${money}`
     case 'payment':
     case 'bill_payment':
       return `确认付款${money}`
@@ -95,14 +114,33 @@ export function ActionHeading({ action }: { action: BankAction }) {
 
 export function SnapshotFields({ action }: { action: BankAction }) {
   const currency = actionCurrency(action)
+  const participants = splitParticipants(action)
   const rows = Object.entries(action.snapshot)
-    .filter(([key, value]) => !HIDDEN_SNAPSHOT_KEYS.has(key) && value !== null && typeof value !== 'object')
+    .filter(([key, value]) => !HIDDEN_SNAPSHOT_KEYS.has(key) && value !== null && value !== '' && typeof value !== 'object')
     .map(([key, value]) => {
       const f = formatField(key, value, currency)
       return { label: labelField(key), value: f.text, mono: f.mono }
     })
   return (
-    <div>
+    <div className="flex flex-col gap-3">
+      {participants.length > 0 && (
+        <ul className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card" aria-label="AA 分摊明细">
+          {participants.map((participant) => (
+            <li key={participant.name} className="flex items-center justify-between gap-3 px-3 py-2.5 text-[13.5px]">
+              <span className="flex items-center gap-2">
+                {participant.name}
+                {participant.isPayer && (
+                  <span className="rounded bg-ice px-1.5 py-px text-[11px] font-medium text-cobalt-ink">收款人</span>
+                )}
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="text-[12px] text-muted-foreground">{participant.isPayer ? '自付' : '应付'}</span>
+                <span className="font-mono">{formatMoney(participant.amount, currency)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       {rows.length > 0 ? (
         <FieldList rows={rows} />
       ) : (

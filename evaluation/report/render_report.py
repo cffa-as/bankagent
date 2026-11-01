@@ -419,7 +419,7 @@ tr:last-child td {{ border-bottom: 0; }}
         <div class="callout" style="margin-top:20px">
           <strong>Evaluation boundary.</strong> The intent corpus is a curated synthetic in-domain benchmark. Integration evaluation exercises the full HTTP handler, SQLite transaction layer, auth boundary and action state machine. Browser E2E exercises the real Next.js workspace and same-origin token proxy. It does not claim production internet latency or external-bank capacity.
         </div>
-        <h3>Implemented hardening controls</h3>
+        <h3>Current security controls</h3>
         <table>
           <thead><tr><th>Control</th><th>Implementation</th><th>Evidence</th></tr></thead>
           <tbody>
