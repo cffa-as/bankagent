@@ -33,15 +33,25 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4">
-    <img src="frontend/public/demo/vaultline-product-poster.png" width="100%" alt="Vaultline 产品演示" />
-  </a>
+  <img src="frontend/public/product/homepage.png" width="100%" alt="Vaultline 官网首页" />
+</p>
+
+<p align="center">
+  <sub>官网首页 / Landing page</sub>
+</p>
+
+<p align="center">
+  <img src="frontend/public/product/workspace-assistant.png" width="100%" alt="Vaultline 安全工作台" />
+</p>
+
+<p align="center">
+  <sub>真实工作台 / Safety workspace</sub>
 </p>
 
 <p align="center">
   <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:58</strong></a>
   <br />
-  <sub>点击封面或标题播放 · 真实前端 · 真实 Go API · Synthetic data only</sub>
+  <sub>真实前端 · 真实 Go API · Synthetic data only</sub>
 </p>
 
 > [!NOTE]

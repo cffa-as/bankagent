@@ -33,15 +33,25 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4">
-    <img src="frontend/public/demo/vaultline-product-poster.png" width="100%" alt="Vaultline product demo" />
-  </a>
+  <img src="frontend/public/product/homepage.png" width="100%" alt="Vaultline landing page" />
+</p>
+
+<p align="center">
+  <sub>Landing page</sub>
+</p>
+
+<p align="center">
+  <img src="frontend/public/product/workspace-assistant.png" width="100%" alt="Vaultline safety workspace" />
+</p>
+
+<p align="center">
+  <sub>Real safety workspace</sub>
 </p>
 
 <p align="center">
   <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ Watch the full product demo · 4:58</strong></a>
   <br />
-  <sub>Click the cover or title to play · Real UI · Real Go API · Synthetic data only</sub>
+  <sub>Real UI · Real Go API · Synthetic data only</sub>
 </p>
 
 > [!NOTE]
