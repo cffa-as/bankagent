@@ -33,15 +33,15 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-product.mp4">
+  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4">
     <img src="frontend/public/product/workspace-assistant.png" width="100%" alt="Vaultline workspace" />
   </a>
 </p>
 
 <p align="center">
-  <strong>▶ Latest product demo · 4:45</strong>
+  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ Watch the full product demo · 4:45</strong></a>
   <br />
-  <sub>Real UI · Real Go API · Server-governed actions · Synthetic data only</sub>
+  <sub>Click the cover or title to play · Real UI · Real Go API · Synthetic data only</sub>
 </p>
 
 > [!NOTE]

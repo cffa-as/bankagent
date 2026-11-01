@@ -33,15 +33,15 @@
 </p>
 
 <p align="center">
-  <a href="frontend/public/demo/vaultline-product.mp4">
+  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4">
     <img src="frontend/public/product/workspace-assistant.png" width="100%" alt="Vaultline 工作台" />
   </a>
 </p>
 
 <p align="center">
-  <strong>▶ 最新产品演示 · 4:45</strong>
+  <a href="https://github.com/cffa-as/bankagent/raw/refs/heads/main/frontend/public/demo/vaultline-product.mp4"><strong>▶ 播放完整产品演示 · 4:45</strong></a>
   <br />
-  <sub>真实前端 · 真实 Go API · Server-governed actions · Synthetic data only</sub>
+  <sub>点击封面或标题播放 · 真实前端 · 真实 Go API · Synthetic data only</sub>
 </p>
 
 > [!NOTE]
