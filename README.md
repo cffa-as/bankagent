@@ -139,7 +139,7 @@ Vaultline turns natural-language requests into reviewable banking actions. The m
 
 演示使用真实工作台和真实服务端状态，不伪造界面、进度或成功结果。当前版本覆盖查询、账单、理财、卡片、订阅、流动性预演、工作流、确认、MFA 和审计等流程。
 
-[观看完整业务演示](frontend/public/demo/vaultline-product.mp4) · 视频工程说明见 [video/README.md](video/README.md)。
+[观看完整业务演示](frontend/public/demo/vaultline-product.mp4)。
 
 <details>
 <summary><strong>Architecture / 架构</strong></summary>

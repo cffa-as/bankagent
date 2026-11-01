@@ -133,7 +133,7 @@ The full demo follows one control line from intent to proof:
 
 The demo uses real workspace captures and real server states. It never fabricates UI, progress, or success outcomes. The current cut covers queries, bills, investments, cards, subscriptions, liquidity, workflows, confirmation, MFA, and audit.
 
-[Watch the full business demo](frontend/public/demo/vaultline-product.mp4) · See the [video production guide](video/README.md).
+[Watch the full business demo](frontend/public/demo/vaultline-product.mp4).
 
 <details>
 <summary><strong>Architecture</strong></summary>
