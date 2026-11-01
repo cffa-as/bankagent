@@ -6,6 +6,7 @@ import type { VaultlineAdapter } from '@/lib/vaultline/adapters'
 import { toApiError } from '@/lib/vaultline/api'
 import { mapApiError } from '@/lib/vaultline/errors'
 import { formatDateTime, shortId } from '@/lib/vaultline/format'
+import { ACTOR_LABELS, AUDIT_ONLY_STEPS, EVENT_STEPS, OUTCOME_LABELS } from '@/lib/vaultline/event-labels'
 import { TONE, type Tone } from '@/lib/vaultline/status'
 import { Callout, CopyId, Spinner } from './primitives'
 
@@ -24,10 +25,15 @@ const EVENT_LABELS: [RegExp, string, Tone][] = [
   [/fail|reject/, '未完成', 'fail'],
 ]
 
+const STEP_TONE: Record<string, Tone> = { done: 'done', guard: 'held', fail: 'fail' }
+
 function describeEvent(type: string) {
+  const step = EVENT_STEPS[type]
+  if (step) return { label: step.label, tone: STEP_TONE[step.tone ?? 'done'] }
+  if (AUDIT_ONLY_STEPS[type]) return { label: AUDIT_ONLY_STEPS[type], tone: 'neutral' as Tone }
   const lower = type.toLowerCase()
   for (const [pattern, label, tone] of EVENT_LABELS) if (pattern.test(lower)) return { label, tone }
-  return { label: type, tone: 'neutral' as Tone }
+  return { label: '系统记录', tone: 'neutral' as Tone }
 }
 
 export function AuditTimeline({ adapter, traceId }: { adapter: VaultlineAdapter; traceId: string }) {
@@ -39,7 +45,7 @@ export function AuditTimeline({ adapter, traceId }: { adapter: VaultlineAdapter;
   if (isLoading) {
     return (
       <p role="status" className="flex items-center gap-2 text-[13px] text-muted-foreground">
-        <Spinner /> 正在读取审计链…
+        <Spinner /> 正在读取操作记录…
       </p>
     )
   }
@@ -82,38 +88,30 @@ export function AuditTimeline({ adapter, traceId }: { adapter: VaultlineAdapter;
                 </div>
                 {event.summary && <p className="text-[13px] leading-relaxed text-foreground/80">{event.summary}</p>}
                 <dl className="flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-muted-foreground">
-                  <div className="flex gap-1">
-                    <dt>序号</dt>
-                    <dd className="font-mono text-foreground">{event.sequence ?? '—'}</dd>
-                  </div>
-                  <div className="flex gap-1">
-                    <dt>类型</dt>
-                    <dd className="font-mono text-foreground">{event.event_type}</dd>
-                  </div>
                   {event.actor && (
                     <div className="flex gap-1">
-                      <dt>主体</dt>
-                      <dd className="text-foreground">{event.actor}</dd>
+                      <dt>执行方</dt>
+                      <dd className="text-foreground">{ACTOR_LABELS[event.actor] ?? event.actor}</dd>
                     </div>
                   )}
                   {event.outcome && (
                     <div className="flex gap-1">
                       <dt>结果</dt>
-                      <dd className={TONE[meta.tone].text}>{event.outcome}</dd>
-                    </div>
-                  )}
-                  {event.policy_version && (
-                    <div className="flex gap-1">
-                      <dt>策略</dt>
-                      <dd className="font-mono text-foreground">{event.policy_version}</dd>
+                      <dd className={TONE[meta.tone].text}>{OUTCOME_LABELS[event.outcome] ?? event.outcome}</dd>
                     </div>
                   )}
                   {event.action_id && (
                     <div className="flex gap-1">
-                      <dt>动作</dt>
+                      <dt>业务单</dt>
                       <dd className="font-mono text-foreground" title={event.action_id}>
                         {shortId(event.action_id)}
                       </dd>
+                    </div>
+                  )}
+                  {event.policy_version && (
+                    <div className="flex gap-1">
+                      <dt>规则版本</dt>
+                      <dd className="font-mono">{event.policy_version}</dd>
                     </div>
                   )}
                 </dl>
@@ -123,7 +121,7 @@ export function AuditTimeline({ adapter, traceId }: { adapter: VaultlineAdapter;
         })}
       </ol>
       <p className="text-[12px] leading-relaxed text-muted-foreground">
-        审计记录为脱敏的过程证据，用于追溯，不构成授权凭证。不包含模型推理过程与验证码。
+        以上为脱敏后的办理记录，可用于核对与追溯，不包含验证码等敏感信息。
       </p>
     </div>
   )

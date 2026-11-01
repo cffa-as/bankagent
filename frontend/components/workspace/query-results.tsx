@@ -42,6 +42,12 @@ const CATEGORY_LABELS: Record<string, string> = {
   housing: '居住',
   entertainment: '娱乐',
   transfer: '转账',
+  utilities: '生活缴费',
+  subscription: '订阅',
+  subscriptions: '订阅',
+  income: '收入',
+  salary: '工资',
+  investment: '理财',
   other: '其他',
 }
 
@@ -131,7 +137,7 @@ function Transactions({ data }: { data: unknown }) {
               </span>
             </td>
             <td className="max-w-48 truncate py-2 pr-3">{text(row, 'description', 'merchant', 'counterparty') ?? '未返回'}</td>
-            <td className="py-2 pr-3 text-muted-foreground">{text(row, 'category') ?? '—'}</td>
+            <td className="py-2 pr-3 text-muted-foreground">{labelCategory(text(row, 'category'))}</td>
             <td className="py-2 pr-3 font-mono text-[12px] text-muted-foreground">
               {formatDateTime(text(row, 'occurred_at', 'posted_at', 'time', 'created_at'))}
             </td>

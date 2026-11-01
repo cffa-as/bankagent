@@ -99,7 +99,7 @@ export function WorkflowDag({ workflow, onOpenAction }: { workflow: Workflow; on
             {i < groups.length - 1 && <span className="-mb-4 mt-1 w-px flex-1 bg-cobalt/40" />}
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-2">
-            <p className="text-[13px] text-muted-foreground">{i === 0 ? '无依赖，可先推进' : `在第 ${i} 阶段完成后推进`}</p>
+            <p className="text-[13px] text-muted-foreground">{i === 0 ? '可立即办理' : `在第 ${i} 步完成后办理`}</p>
             <ul className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
               {group.map((node) => (
                 <NodeCard key={node.node_id} node={node} nodes={workflow.nodes} currency={workflow.currency} onOpenAction={onOpenAction} />
@@ -173,7 +173,7 @@ export function WorkflowView({
                   <div className="min-w-0">
                     <p className="truncate text-[14px] font-medium">{w.title ?? '未命名计划'}</p>
                     <p className="font-mono text-[12px] text-muted-foreground">
-                      {shortId(w.workflow_id)} · {w.nodes.length} 个节点 · {formatDateTime(w.created_at)}
+                      {shortId(w.workflow_id)} · {w.nodes.length} 个步骤 · {formatDateTime(w.created_at)}
                     </p>
                   </div>
                   <StatusPill tone={s.tone} label={s.label} />
@@ -214,7 +214,7 @@ export function WorkflowView({
                   className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-cobalt px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-cobalt-ink disabled:opacity-50"
                 >
                   {pending === 'advance' && <Spinner className="size-3.5" />}
-                  推进下一节点
+                  办理下一步
                 </button>
               </div>
             )}
@@ -226,7 +226,7 @@ export function WorkflowView({
             </Callout>
           )}
 
-          <SectionLabel>节点与依赖</SectionLabel>
+          <SectionLabel>办理步骤</SectionLabel>
           <WorkflowDag workflow={workflow} onOpenAction={onOpenAction} />
           {workflow.trace_id && workflow.trace_id !== 'tr_workflow' && <CopyId label="流水号" value={workflow.trace_id} />}
         </section>

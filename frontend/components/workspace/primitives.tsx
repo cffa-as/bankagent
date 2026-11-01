@@ -113,7 +113,7 @@ export function Disclosure({ summary, children, className }: { summary: string; 
 export function RawData({ value }: { value: unknown }) {
   if (value === null || value === undefined) return null
   return (
-    <Disclosure summary="查看服务端数据">
+    <Disclosure summary="查看原始数据">
       <pre className="ws-scroll max-h-72 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[12px] leading-relaxed text-foreground">
         {JSON.stringify(value, null, 2)}
       </pre>

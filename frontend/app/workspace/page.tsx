@@ -3,7 +3,7 @@ import { WorkspaceShell } from '@/components/workspace/workspace-shell'
 
 export const metadata: Metadata = {
   title: '工作台 · Vaultline',
-  description: 'Vaultline 中文银行智能工作台：助理准备候选动作，风险、授权、MFA、执行与回执由银行服务端决定。',
+  description: 'Vaultline 智能银行助理工作台：用一句话办理银行业务，资金操作均需你亲自确认。',
 }
 
 export const viewport: Viewport = {

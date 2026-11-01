@@ -3,47 +3,39 @@
   "clips": {
     "overview": {
       "src": "recordings/overview.webm",
-      "trimBeforeSeconds": 1.485
+      "trimBeforeSeconds": 2.369
     },
     "transactions": {
       "src": "recordings/transactions.webm",
-      "trimBeforeSeconds": 1.465
+      "trimBeforeSeconds": 2.12
     },
-    "products": {
-      "src": "recordings/products.webm",
-      "trimBeforeSeconds": 1.488
-    },
-    "cards": {
-      "src": "recordings/cards.webm",
-      "trimBeforeSeconds": 1.461
-    },
-    "subscriptions": {
-      "src": "recordings/subscriptions.webm",
-      "trimBeforeSeconds": 1.477
+    "services": {
+      "src": "recordings/services.webm",
+      "trimBeforeSeconds": 2.097
     },
     "liquidity": {
       "src": "recordings/liquidity.webm",
-      "trimBeforeSeconds": 1.463
+      "trimBeforeSeconds": 2.164
     },
-    "workflow": {
-      "src": "recordings/workflow.webm",
-      "trimBeforeSeconds": 1.479
+    "plan": {
+      "src": "recordings/plan.webm",
+      "trimBeforeSeconds": 3.72
     },
     "transfer-confirm": {
       "src": "recordings/transfer-confirm.webm",
-      "trimBeforeSeconds": 1.457
-    },
-    "transfer-mfa": {
-      "src": "recordings/transfer-mfa.webm",
-      "trimBeforeSeconds": 1.478
+      "trimBeforeSeconds": 2.064
     },
     "audit": {
       "src": "recordings/audit.webm",
-      "trimBeforeSeconds": 1.46
+      "trimBeforeSeconds": 3.425
+    },
+    "transfer-mfa": {
+      "src": "recordings/transfer-mfa.webm",
+      "trimBeforeSeconds": 1.991
     },
     "security": {
       "src": "recordings/security.webm",
-      "trimBeforeSeconds": 1.474
+      "trimBeforeSeconds": 2.109
     }
   }
 }
