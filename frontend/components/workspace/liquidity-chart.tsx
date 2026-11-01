@@ -11,6 +11,8 @@ const SCENARIO_META: Record<string, { label: string; color: string; dash?: strin
   base: { label: '预期', color: 'var(--cobalt)' },
   conservative: { label: '保守', color: 'var(--amber)', dash: '5 4' },
   stress: { label: '保守', color: 'var(--amber)', dash: '5 4' },
+  income_stress: { label: '收入延迟', color: 'var(--steel)' },
+  income_delay: { label: '收入延迟', color: 'var(--steel)' },
 }
 const FALLBACK_COLORS = ['var(--cobalt)', 'var(--teal)', 'var(--amber)', 'var(--steel)']
 
@@ -18,12 +20,12 @@ const FALLBACK_COLORS = ['var(--cobalt)', 'var(--teal)', 'var(--amber)', 'var(--
 export function LiquidityChart({ simulation }: { simulation: LiquiditySimulation }) {
   const { scenarios, currency, essential_buffer: buffer } = simulation
   if (scenarios.length === 0) {
-    return <p className="text-[13px] text-muted-foreground">服务端未返回情景曲线。</p>
+    return <p className="text-[13px] text-muted-foreground">暂无余额走势数据。</p>
   }
 
   const series = scenarios.map((s, i) => ({
     key: s.key,
-    label: s.label ?? SCENARIO_META[s.key]?.label ?? s.key,
+    label: SCENARIO_META[s.key]?.label ?? (s.label && s.label !== s.key ? s.label : '其他情景'),
     color: SCENARIO_META[s.key]?.color ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length],
     dash: SCENARIO_META[s.key]?.dash,
   }))

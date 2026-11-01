@@ -1,78 +1,88 @@
 'use client'
 
-import {
-  BrainCircuit,
-  Check,
-  ChevronRight,
-  Database,
-  Fingerprint,
-  Pause,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
-  Undo2,
-  UserRoundCheck,
-} from 'lucide-react'
+import { Check, ChevronRight, Hand, Pause, ShieldAlert, Undo2, UserRound } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { formatTime, shortId } from '@/lib/vaultline/format'
+import { EVENT_STEPS as STEPS, type StepTone } from '@/lib/vaultline/event-labels'
 import type { LiveActivityEvent } from '@/lib/vaultline/types'
 
-type StepKind = 'intent' | 'tool' | 'policy' | 'action' | 'security' | 'result'
+const NEXT: Record<string, string> = {
+  agent_run_started: '正在理解你的需求',
+  model_plan_requested: '正在理解你的需求',
+  model_plan_validated: '正在调取所需信息',
+  balance_queried: '正在整理账户情况',
+  transactions_queried: '正在整理交易明细',
+  bill_analyzed: '正在整理消费分析',
+  investment_products_queried: '正在整理产品对比',
+  investment_holdings_queried: '正在整理持仓情况',
+  cards_queried: '正在整理卡片信息',
+  subscriptions_queried: '正在整理订阅情况',
+  subscription_reminders_queried: '正在整理续费提醒',
+  model_liquidity_simulation_selected: '正在测算现金流',
+  liquidity_simulation_completed: '正在整理测算结论',
+  action_created: '正在准备业务单',
+  confirmation_succeeded: '正在提交银行办理',
+  mfa_succeeded: '正在提交银行办理',
+  authorization_gate_passed: '银行正在办理',
+}
 
-interface StepMeta {
+const TONE_ICON = { done: Check, guard: ShieldAlert, fail: ShieldAlert } as const
+
+function useElapsed(events: LiveActivityEvent[], running: boolean) {
+  const [startedAt] = useState(() => Date.now())
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!running) return
+    const timer = setInterval(() => setNow(Date.now()), 100)
+    return () => clearInterval(timer)
+  }, [running])
+  if (running) return now - startedAt
+  const first = events.at(0) && new Date(events[0].occurredAt).getTime()
+  const last = events.at(-1) && new Date(events[events.length - 1].occurredAt).getTime()
+  if (!first || !last || Number.isNaN(first) || Number.isNaN(last)) return null
+  return Math.max(0, last - first)
+}
+
+function formatElapsed(ms: number | null) {
+  if (ms === null || ms < 100) return null
+  return ms < 60_000 ? `${(ms / 1000).toFixed(1)} 秒` : `${Math.floor(ms / 60_000)} 分 ${Math.round((ms % 60_000) / 1000)} 秒`
+}
+
+function summarize(events: LiveActivityEvent[]) {
+  const types = new Set(events.map((e) => e.eventType))
+  if (types.has('run_human_handoff')) return { text: '已转交人工客服', tone: 'guard' as const }
+  if (types.has('run_interrupted')) return { text: '已停止处理', tone: 'guard' as const }
+  if (types.has('suspicious_input_detected') || types.has('model_plan_rejected')) return { text: '已按安全规则处理', tone: 'guard' as const }
+  if (types.has('run_failed') || events.some((e) => e.outcome === 'failed')) return { text: '处理未完成', tone: 'fail' as const }
+  return { text: '处理完成', tone: 'done' as const }
+}
+
+function ControlButton({
+  icon: Icon,
+  label,
+  busyLabel,
+  busy,
+  disabled,
+  onClick,
+}: {
+  icon: typeof Pause
   label: string
-  detail: string
-  kind: StepKind
-}
-
-const STEP_META: Record<string, StepMeta> = {
-  agent_run_started: { label: '接收业务请求', detail: '建立运行上下文与审计 Trace', kind: 'intent' },
-  model_plan_requested: { label: '解析业务意图', detail: '模型仅生成候选计划，不参与授权', kind: 'intent' },
-  model_plan_validated: { label: '候选计划通过校验', detail: 'Schema、意图与工具白名单检查完成', kind: 'policy' },
-  model_plan_rejected: { label: '候选计划已拒绝', detail: '未创建动作，等待重新表述', kind: 'security' },
-  model_plan_unknown: { label: '未识别业务意图', detail: '未进入工具调用或授权流程', kind: 'security' },
-  suspicious_input_detected: { label: '可疑输入已拦截', detail: '安全策略阻止越权指令并记录证据', kind: 'security' },
-  balance_queried: { label: '查询账户余额', detail: '只读工具 · 服务端账本', kind: 'tool' },
-  transactions_queried: { label: '读取交易记录', detail: '只读工具 · 服务端账本', kind: 'tool' },
-  bill_analyzed: { label: '分析消费与异常', detail: '只读工具 · 账单分析', kind: 'tool' },
-  investment_products_queried: { label: '读取理财产品', detail: '只读工具 · 产品目录', kind: 'tool' },
-  investment_holdings_queried: { label: '读取理财持仓', detail: '只读工具 · 持仓账本', kind: 'tool' },
-  cards_queried: { label: '读取卡片状态', detail: '只读工具 · 卡片中心', kind: 'tool' },
-  subscriptions_queried: { label: '检查订阅代扣', detail: '只读工具 · 订阅账本', kind: 'tool' },
-  subscription_reminders_queried: { label: '读取续费提醒', detail: '只读工具 · 代扣计划', kind: 'tool' },
-  model_liquidity_simulation_selected: { label: '运行未来现金流测算', detail: '确定性现金流模型 · 非模型结论', kind: 'tool' },
-  liquidity_simulation_completed: { label: '现金流测算完成', detail: '多情景现金流结果已生成', kind: 'result' },
-  action_created: { label: '锁定动作快照', detail: '风险级别与授权边界由服务端生成', kind: 'action' },
-  confirmation_succeeded: { label: '用户确认已记录', detail: '动作快照未发生静默修改', kind: 'action' },
-  mfa_succeeded: { label: 'MFA 验证通过', detail: '验证凭证绑定当前 Action', kind: 'security' },
-  authorization_gate_passed: { label: '一次性执行闸门放行', detail: '状态、授权和幂等检查通过', kind: 'policy' },
-  action_scheduled: { label: '动作已预约', detail: '等待服务端在指定时间复核', kind: 'action' },
-  action_succeeded: { label: '业务回执已返回', detail: '最终结果来自银行业务工具', kind: 'result' },
-  action_failed: { label: '业务执行未完成', detail: '服务端已返回失败或对账状态', kind: 'security' },
-  action_cancelled: { label: '动作已取消', detail: '后续执行与工具调用已拒绝', kind: 'result' },
-  action_expired: { label: '动作已过期', detail: '授权窗口已关闭，未继续执行', kind: 'result' },
-  run_completed: { label: '运行已完成', detail: '本次 Agent 运行正常结束', kind: 'result' },
-  run_failed: { label: '运行未完成', detail: '服务端终止本次运行，未伪装业务成功', kind: 'security' },
-  run_interrupted: { label: '运行已停止', detail: '用户停止后不再进入新的工具或动作', kind: 'result' },
-  run_human_handoff: { label: '已转人工接管', detail: 'Agent 已冻结后续推进，等待人工处理', kind: 'action' },
-  run_rollback_completed: { label: '撤销边界已处理', detail: '取消可撤销动作；已执行动作进入人工复核', kind: 'policy' },
-}
-
-const STEP_ICON: Record<StepKind, typeof BrainCircuit> = {
-  intent: BrainCircuit,
-  tool: Database,
-  policy: ShieldCheck,
-  action: Fingerprint,
-  security: ShieldAlert,
-  result: Check,
-}
-
-function describeStep(event: LiveActivityEvent): StepMeta {
-  return STEP_META[event.eventType] ?? {
-    label: '服务端执行里程碑',
-    detail: event.eventType.replaceAll('_', ' '),
-    kind: 'policy',
-  }
+  busyLabel: string
+  busy: boolean
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:opacity-50"
+    >
+      <Icon className="size-3" aria-hidden />
+      {busy ? busyLabel : label}
+    </button>
+  )
 }
 
 export function AgentActivity({
@@ -92,163 +102,134 @@ export function AgentActivity({
   onHandoff?: () => void
   onRollback?: () => void
 }) {
+  const [open, setOpen] = useState(false)
+  const elapsed = formatElapsed(useElapsed(events, running))
+  const steps = events.filter((e) => STEPS[e.eventType])
   const last = events.at(-1)
-  const lastMeta = last ? describeStep(last) : null
-  const controlled = events.some((event) => event.eventType === 'run_interrupted' || event.eventType === 'run_human_handoff')
+  const controlled = events.some((e) => e.eventType === 'run_interrupted' || e.eventType === 'run_human_handoff')
   const live = running && !controlled
+  const summary = summarize(events)
+  const expanded = live || open
+  const nowLabel = live ? ((last && NEXT[last.eventType]) ?? (last ? '正在处理' : '正在理解你的需求')) : summary.text
 
   return (
-    <div
-      className={cn(
-        'overflow-hidden rounded-xl border bg-card transition-colors duration-200',
-        live ? 'border-cobalt/35 shadow-[0_8px_28px_rgb(49_91_255_/_0.07)]' : 'border-border',
-      )}
-    >
-      <details open={running || undefined} className="group">
-        <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
-          <span
-            className={cn(
-              'relative flex size-8 shrink-0 items-center justify-center rounded-lg border',
-              live ? 'border-cobalt/25 bg-ice text-cobalt-ink' : 'border-border bg-surface text-steel',
-            )}
-            aria-hidden
-          >
-            {live && <span className="absolute inset-0 animate-ping rounded-lg bg-cobalt/10 motion-reduce:animate-none" />}
-            <Sparkles className="relative size-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-2">
-              <span className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-cobalt-ink">
-                Agent execution
-              </span>
-              {live && (
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-cobalt-ink">
-                  <span className="size-1.5 animate-pulse rounded-full bg-cobalt motion-reduce:animate-none" aria-hidden />
-                  实时
-                </span>
-              )}
-            </span>
-            <span className="mt-0.5 block truncate text-[13px] font-medium text-foreground">
-              {running
-                ? lastMeta
-                  ? controlled
-                    ? `${lastMeta.label}，控制状态已生效`
-                    : `${lastMeta.label}已完成，等待下一步`
-                  : '正在建立安全执行上下文'
-                : `${events.length} 个服务端执行里程碑`}
-            </span>
-          </span>
-          <span className="hidden shrink-0 font-mono text-[11px] text-muted-foreground sm:block">
-            {controlled ? 'CONTROLLED' : running ? 'LIVE' : 'AUDITABLE'}
-          </span>
-          <ChevronRight className="size-4 shrink-0 text-steel transition-transform group-open:rotate-90" aria-hidden />
-        </summary>
-
-        <div className="border-t border-border px-4 pb-3 pt-3">
-          <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
-            以下为服务端审计事件与工具里程碑，不包含模型私有思维链。
-          </p>
-          {events.length === 0 ? (
-            <div className="flex items-center gap-3 text-[13px] text-muted-foreground" aria-live="polite">
-              <span className="relative flex size-7 items-center justify-center rounded-full border border-cobalt/30 bg-ice text-cobalt-ink">
-                <span className="absolute inset-0 animate-ping rounded-full bg-cobalt/10 motion-reduce:animate-none" aria-hidden />
-                <BrainCircuit className="relative size-3.5" aria-hidden />
-              </span>
-              等待服务端返回首个执行里程碑…
-            </div>
+    <div className="flex flex-col">
+      <div className="flex min-h-8 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          disabled={live}
+          aria-expanded={expanded}
+          className="group -ml-1 inline-flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-left disabled:cursor-default"
+        >
+          {live ? (
+            <span
+              className="size-3.5 shrink-0 animate-spin rounded-full border-[1.5px] border-cobalt/20 border-t-cobalt motion-reduce:animate-none"
+              aria-hidden
+            />
           ) : (
-            <ol aria-live="polite" aria-relevant="additions">
-              {events.map((event, index) => {
-                const meta = describeStep(event)
-                const Icon = STEP_ICON[meta.kind]
-                const active = running && index === events.length - 1
-                const failed = event.outcome === 'failed'
-                return (
-                  <li key={event.eventId} className="relative flex gap-3 pb-4 last:pb-0">
-                    {index < events.length - 1 && (
-                      <span className="absolute bottom-0 left-[13px] top-7 w-px bg-border" aria-hidden />
-                    )}
-                    <span
-                      className={cn(
-                        'relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full border',
-                        active
-                          ? 'border-cobalt/35 bg-ice text-cobalt-ink'
-                          : failed
-                            ? 'border-red/35 bg-red-soft text-red-ink'
-                            : 'border-teal/30 bg-teal-soft text-teal-ink',
-                      )}
-                    >
-                      {active && <span className="absolute inset-0 animate-ping rounded-full bg-cobalt/10 motion-reduce:animate-none" aria-hidden />}
-                      <Icon className="relative size-3.5" aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1 pt-0.5">
-                      <span className="flex items-baseline justify-between gap-3">
-                        <span
-                          className={cn(
-                            'text-[13px] font-medium',
-                            failed ? 'text-red-ink' : active ? 'text-cobalt-ink' : 'text-foreground',
-                          )}
-                        >
-                          {meta.label}
-                        </span>
-                        <time className="shrink-0 font-mono text-[10.5px] text-muted-foreground" dateTime={event.occurredAt}>
-                          {formatTime(event.occurredAt)}
-                        </time>
-                      </span>
-                      <span className="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">{meta.detail}</span>
-                    </span>
-                  </li>
-                )
-              })}
-            </ol>
+            <span
+              className={cn(
+                'flex size-4 shrink-0 items-center justify-center rounded-full',
+                summary.tone === 'done' ? 'bg-teal-soft text-teal-ink' : summary.tone === 'fail' ? 'bg-red-soft text-red-ink' : 'bg-amber-soft text-amber-ink',
+              )}
+              aria-hidden
+            >
+              {summary.tone === 'done' ? <Check className="size-2.5" strokeWidth={3} /> : <ShieldAlert className="size-2.5" />}
+            </span>
           )}
-          {last && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2.5">
-              <div className="flex min-h-7 items-center gap-2">
-                {running && runId && !controlled && onInterrupt && (
-                  <button
-                    type="button"
-                    onClick={onInterrupt}
-                    disabled={Boolean(control)}
-                    className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-[11px] font-medium text-foreground transition-colors hover:border-line-strong disabled:opacity-50"
-                  >
-                    <Pause className="size-3" aria-hidden />
-                    {control === 'interrupt' ? '停止中…' : '停止运行'}
-                  </button>
-                )}
-                {running && runId && !controlled && onHandoff && (
-                  <button
-                    type="button"
-                    onClick={onHandoff}
-                    disabled={Boolean(control)}
-                    className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-[11px] font-medium text-foreground transition-colors hover:border-line-strong disabled:opacity-50"
-                  >
-                    <UserRoundCheck className="size-3" aria-hidden />
-                    {control === 'handoff' ? '转接中…' : '转人工'}
-                  </button>
-                )}
-                {!running && runId && onRollback && (
-                  <button
-                    type="button"
-                    onClick={onRollback}
-                    disabled={Boolean(control)}
-                    className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-[11px] font-medium text-foreground transition-colors hover:border-line-strong disabled:opacity-50"
-                  >
-                    <Undo2 className="size-3" aria-hidden />
-                    {control === 'rollback' ? '撤销中…' : '撤销可撤销项'}
-                  </button>
-                )}
-                <span className="text-[10.5px] text-muted-foreground">
-                  {controlled ? '控制状态已生效，等待原请求安全收敛。' : running ? '继续等待真实服务端状态…' : '显示内容均可追溯至审计链'}
+          <span role="status" aria-live="polite" className={cn('truncate text-[13.5px]', live ? 'vl-shimmer font-medium' : 'text-muted-foreground')}>
+            {nowLabel}
+          </span>
+          {!live &&
+            [steps.length > 0 && `${steps.length} 个步骤`, elapsed && `用时 ${elapsed}`]
+              .filter(Boolean)
+              .map((part) => (
+                <span key={String(part)} className="flex shrink-0 items-center gap-2 text-[12.5px] text-steel">
+                  <span className="size-0.5 rounded-full bg-steel" aria-hidden />
+                  {part}
                 </span>
-              </div>
-              <code className="min-w-0 truncate font-mono text-[10.5px] text-muted-foreground" title={last.traceId}>
-                trace {shortId(last.traceId)}
-              </code>
-            </div>
+              ))}
+          {live && elapsed && <span className="shrink-0 font-mono text-[11.5px] tabular-nums text-steel">{elapsed}</span>}
+          {!live && steps.length > 0 && (
+            <ChevronRight className={cn('size-3.5 shrink-0 text-steel transition-transform', expanded && 'rotate-90')} aria-hidden />
           )}
-        </div>
-      </details>
+        </button>
+
+        {live && runId && (
+          <div className="ml-auto flex shrink-0 items-center">
+            {onInterrupt && (
+              <ControlButton
+                icon={Pause}
+                label="停止"
+                busyLabel="停止中…"
+                busy={control === 'interrupt'}
+                disabled={Boolean(control)}
+                onClick={onInterrupt}
+              />
+            )}
+            {onHandoff && (
+              <ControlButton
+                icon={UserRound}
+                label="转人工"
+                busyLabel="转接中…"
+                busy={control === 'handoff'}
+                disabled={Boolean(control)}
+                onClick={onHandoff}
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {expanded && steps.length > 0 && (
+        <ol className="vl-enter ml-[7px] mt-1 flex flex-col gap-2 border-l border-border py-1 pl-4" aria-label="处理过程">
+          {steps.map((event) => {
+            const step = STEPS[event.eventType]
+            const tone: StepTone = event.outcome === 'failed' ? 'fail' : (step.tone ?? 'done')
+            const Icon = TONE_ICON[tone]
+            return (
+              <li key={event.eventId} className="flex items-center gap-2.5 text-[13px]">
+                <Icon
+                  className={cn('size-3.5 shrink-0', tone === 'done' ? 'text-teal-ink' : tone === 'fail' ? 'text-red-ink' : 'text-amber-ink')}
+                  aria-hidden
+                />
+                <span className={cn('min-w-0 truncate', tone === 'fail' ? 'text-red-ink' : 'text-foreground')}>{step.label}</span>
+                {step.source && (
+                  <span className="shrink-0 rounded bg-card px-1.5 py-px text-[11px] text-muted-foreground ring-1 ring-border">{step.source}</span>
+                )}
+              </li>
+            )
+          })}
+          {live && (
+            <li className="flex items-center gap-2.5 text-[13px] text-muted-foreground">
+              <span className="flex size-3.5 items-center justify-center" aria-hidden>
+                <span className="size-1.5 animate-pulse rounded-full bg-cobalt motion-reduce:animate-none" />
+              </span>
+              {nowLabel.replace(/^正在/, '')}
+            </li>
+          )}
+          {!live && runId && onRollback && (
+            <li className="pt-1">
+              <button
+                type="button"
+                onClick={onRollback}
+                disabled={Boolean(control)}
+                className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] text-muted-foreground ring-1 ring-border transition-colors hover:text-foreground hover:ring-line-strong disabled:opacity-50"
+              >
+                <Undo2 className="size-3" aria-hidden />
+                {control === 'rollback' ? '撤销中…' : '撤销本次可撤销的操作'}
+              </button>
+            </li>
+          )}
+          {controlled && (
+            <li className="flex items-center gap-2.5 text-[12.5px] text-muted-foreground">
+              <Hand className="size-3.5 shrink-0" aria-hidden />
+              后续步骤已暂停，不会再发起新的业务。
+            </li>
+          )}
+        </ol>
+      )}
     </div>
   )
 }

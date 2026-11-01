@@ -34,7 +34,7 @@ const notoSerif = Noto_Serif_SC({
 export const metadata: Metadata = {
   title: 'Vaultline · 银行智能工作台',
   description:
-    'Vaultline 是面向受监管金融流程的中文银行智能工作台。助理理解意图并准备候选操作；风险、确认、MFA、执行与回执始终由银行服务端掌控。',
+    'Vaultline 智能银行助理：一句话查询余额、分析账单、转账汇款与规划现金流。每一笔资金操作都需要你亲自确认。',
   generator: 'v0.app',
 }
 

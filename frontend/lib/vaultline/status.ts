@@ -72,7 +72,7 @@ export const TONE: Record<Tone, { text: string; dot: string; soft: string; line:
 export const WORKFLOW_STATUS: Record<string, { label: string; tone: Tone }> = {
   pending: { label: '等待中', tone: 'neutral' },
   waiting: { label: '等待依赖', tone: 'neutral' },
-  ready: { label: '可推进', tone: 'live' },
+  ready: { label: '可办理', tone: 'live' },
   awaiting_authorization: { label: '待授权', tone: 'confirm' },
   awaiting_confirmation: { label: '待确认', tone: 'confirm' },
   awaiting_mfa: { label: '待安全验证', tone: 'mfa' },

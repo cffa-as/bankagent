@@ -3,14 +3,14 @@
 This directory produces two separate deliverables:
 
 - a 30-second cinematic launch film driven by huashu-motion;
-- a 3:02 business demo captured from the real Next.js frontend and Go API.
+- a 3:46 product film captured from the real Next.js frontend and Go API.
 
 ## Current output
 
 - `frontend/public/demo/vaultline-launch.mp4` — 30s, 1920×1080, H.264/AAC launch film
 - `frontend/public/demo/vaultline-launch-cover.png` — README cover
 - `frontend/public/demo/vaultline-launch-poster.png` — player poster
-- `frontend/public/demo/vaultline-product.mp4` — 3:02, 1920×1080, H.264/AAC product film
+- `frontend/public/demo/vaultline-product.mp4` — 3:46, 1920×1080, H.264/AAC product film
 - `frontend/public/demo/vaultline-product-cover.png` — full-demo cover
 - `frontend/public/demo/vaultline-product-poster.png` — full-demo still
 
@@ -43,27 +43,30 @@ python3 video/huashu-vaultline/tools/make-cover.py
 
 ## Full business demo
 
-The long-form film covers:
+The long-form film (about 3:46) is a user-facing product story, not a feature checklist:
 
-1. unified workspace;
-2. transaction and bill queries;
-3. investment products;
-4. card controls;
-5. subscription reminders;
-6. 30-day liquidity preflight;
-7. multi-step workflow orchestration;
-8. yellow confirmation;
-9. red Action-bound MFA;
-10. audit replay;
-11. prompt-injection resistance.
+1. brand open and the problem (menus and long forms);
+2. 一句话开始 — the workspace;
+3. 看清每一笔 — transactions and spending analysis;
+4. 看得见的过程 — the live agent activity (steps stream in, then fold into "处理完成");
+5. 理财 · 卡片 · 订阅;
+6. 看清未来 30 天 — liquidity preflight;
+7. 一步一步来 — the multi-step fund plan;
+8. 确认后才执行 — locked business form, confirmation and bank receipt;
+9. 高风险，再验证 — action-bound verification code;
+10. 越权指令，直接拦截 — prompt-injection resistance;
+11. 每一笔都有记录 — operation history;
+12. 听得懂 / 看得见 / 守得住 and outro.
+
+Scene order, minimum lengths and camera keyframes live in `src/film-plan.ts`; each scene stretches to fit its narration.
 
 ### Pipeline
 
-1. Playwright drives the production frontend and records the real browser viewport as WebM.
-2. `scripts/record-demo.mjs` stores trim points in `src/timeline.json`.
-3. MiniMax `speech-2.8-hd` generates the professional Mandarin narration.
-4. Remotion adds the brand intro, camera movement, chapter treatment, captions, evidence tags and outro.
-5. Remotion renders the MP4 and poster; `scripts/make-cover.py` builds the README cover.
+1. Playwright drives the frontend and records the real browser viewport (1536×864) as WebM.
+2. `scripts/record-demo.mjs` stores trim points in `src/timeline.json` after every clip, so `--only a,b` re-records single clips.
+3. MiniMax `speech-2.8-hd` (or `generate-narration-edge.py`) generates the Mandarin narration and `src/narration-timing.json`.
+4. `pnpm score` synthesizes the ambient music bed (`public/audio/score.wav`, ducked under narration).
+5. Remotion adds the browser frame, camera moves, chapter pills, captions and the animated title / agent scenes.
 
 ## Requirements
 
@@ -115,6 +118,7 @@ python3 scripts/generate-narration.py
 Render the film and stills:
 
 ```bash
+pnpm score
 pnpm render
 pnpm poster
 ```
