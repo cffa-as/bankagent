@@ -41,7 +41,12 @@ export function formatTime(value: string | null | undefined) {
 
 export function formatRemaining(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000))
-  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`
+  const days = Math.floor(total / 86400)
+  const hours = Math.floor((total % 86400) / 3600)
+  const clock = `${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`
+  if (days > 0) return `${days} 天 ${pad(hours)}:${clock}`
+  if (hours > 0) return `${pad(hours)}:${clock}`
+  return clock
 }
 
 export function shortId(id: string | null | undefined, keep = 12) {
@@ -56,6 +61,7 @@ export function formatBps(value: number | null) {
 
 export const ACTION_KIND_LABELS: Record<string, string> = {
   transfer: '转账',
+  transfer_split: 'AA 收款',
   payment: '付款',
   bill_payment: '账单还款',
   investment_purchase: '理财申购',
@@ -117,9 +123,40 @@ export const FIELD_LABELS: Record<string, string> = {
   daily_outgoing_before_minor: '今日已转出',
   transaction_id: '交易编号',
   term_days: '期限（天）',
+  total_amount: 'AA 总额',
+  collectible: '待收金额',
+  holding_id: '持仓编号',
+  principal: '本金',
+  profit: '收益',
+  total: '到账金额',
+  annual_rate_bps: '业绩比较基准',
+  days_held: '持有天数',
+  previous_status: '当前状态',
+  target_status: '变更为',
+  status: '状态',
+  merchant_ref: '商户',
+  transfer_split_id: 'AA 单号',
+  conversation_id: '会话编号',
+  created_at: '受理时间',
+  node_id: '计划节点',
+  lock_id: '锁定编号',
+  order_id: '订单编号',
+  due_at: '计划时间',
 }
 
-const MONEY_KEY = /(^|_)(amount|limit|budget|balance)(_minor|_cents|_fen)?$/
+const CARD_STATUS_LABELS: Record<string, string> = {
+  active: '正常',
+  frozen: '已冻结',
+  lost: '已挂失',
+  closed: '已注销',
+  requested: '已发起收款',
+  locked: '已锁定',
+  placed: '已下单',
+  completed: '已完成',
+}
+const STATUS_KEY = /(^|_)status$/
+
+const MONEY_KEY = /(^|_)(amount|limit|budget|balance|principal|profit|total|collectible)(_minor|_cents|_fen)?$/
 const MINOR_KEY = /_(minor|cents|fen)$/
 const MONO_KEY = /(_id|_account|account|last4|masked_number|number)$/
 
@@ -131,6 +168,11 @@ export function labelField(key: string) {
 export function formatField(key: string, value: unknown, currency = 'CNY'): { text: string; mono: boolean } {
   if (value === null || value === undefined) return { text: '未返回', mono: false }
   if (typeof value === 'boolean') return { text: value ? '是' : '否', mono: false }
+  if (key.endsWith('_bps')) {
+    const n = typeof value === 'number' ? value : Number(value)
+    if (Number.isFinite(n)) return { text: formatBps(n), mono: true }
+  }
+  if (STATUS_KEY.test(key) && typeof value === 'string') return { text: CARD_STATUS_LABELS[value] ?? value, mono: false }
   if (MINOR_KEY.test(key)) {
     const n = typeof value === 'number' ? value : Number(value)
     if (Number.isFinite(n)) return { text: formatMoney(n / 100, currency), mono: true }
