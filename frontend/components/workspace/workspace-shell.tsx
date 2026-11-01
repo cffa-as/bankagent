@@ -1,39 +1,50 @@
 'use client'
 
+import { BellRing, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { VaultlineSeal } from '@/components/vaultline/seal'
 import { cn } from '@/lib/utils'
+import { describeKind, formatMoney } from '@/lib/vaultline/format'
 import { describeStatus } from '@/lib/vaultline/status'
-import type { LiquidityAlternative, LiquiditySimulation } from '@/lib/vaultline/types'
+import type { BankAction, LiquidityAlternative, LiquiditySimulation } from '@/lib/vaultline/types'
 import { useWorkflows } from '@/lib/vaultline/use-workflows'
 import { useWorkspaceSession } from '@/lib/vaultline/use-workspace-session'
+import { actionAmount, actionCurrency, actionTarget } from './action-snapshot'
 import { AuditView } from './audit-view'
 import { Composer, type ComposerHandle } from './composer'
 import { ConversationHeader } from './conversation-header'
 import { EmptyState } from './empty-state'
-import { Inspector, type InspectorTab } from './inspector'
+import { Inspector } from './inspector'
 import { LiquidityDrawer } from './liquidity-drawer'
 import { NavRail, VIEWS, type WorkspaceView } from './nav-rail'
 import { Thread } from './thread'
 import { WorkflowView } from './workflow-view'
 
-type MobilePane = 'main' | 'console'
+function pendingSummary(action: BankAction) {
+  const amount = actionAmount(action)
+  const target = actionTarget(action)
+  return [describeKind(action.kind), target, amount !== null ? formatMoney(amount, actionCurrency(action)) : null]
+    .filter(Boolean)
+    .join(' · ')
+}
 
 export function WorkspaceShell() {
   const session = useWorkspaceSession()
   const [view, setView] = useState<WorkspaceView>('assistant')
-  const [mobilePane, setMobilePane] = useState<MobilePane>('main')
-  const [tab, setTab] = useState<InspectorTab>('action')
+  const [panelOpen, setPanelOpen] = useState(false)
   const [liquidityOpen, setLiquidityOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const workflows = useWorkflows(session.adapter, view === 'workflows' || session.connection === 'connected')
   const scrollRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<ComposerHandle>(null)
   const lastLiquidityRef = useRef(session.liquidity)
+  const lastActionIdRef = useRef(session.activeActionId)
 
-  const attentionTone = describeStatus(session.activeAction?.status).tone
+  const action = session.activeAction
+  const attentionTone = describeStatus(action?.status).tone
   const attention = attentionTone === 'confirm' || attentionTone === 'mfa'
+  const pendingLabel = action && attention ? pendingSummary(action) : null
 
   useEffect(() => {
     const el = scrollRef.current
@@ -51,14 +62,17 @@ export function WorkspaceShell() {
     lastLiquidityRef.current = session.liquidity
   }, [session.liquidity, session.thread])
 
+  // A newly created action that needs the customer opens the confirmation panel on desktop.
+  useEffect(() => {
+    if (session.activeActionId && session.activeActionId !== lastActionIdRef.current && attention) {
+      if (window.matchMedia('(min-width: 768px)').matches) setPanelOpen(true)
+    }
+    lastActionIdRef.current = session.activeActionId
+  }, [session.activeActionId, attention])
+
   const switchView = (next: WorkspaceView) => {
     setView(next)
-    setMobilePane('main')
-  }
-
-  const openConsole = (nextTab: InspectorTab = 'action') => {
-    setTab(nextTab)
-    setMobilePane('console')
+    if (window.matchMedia('(max-width: 767px)').matches) setPanelOpen(false)
   }
 
   const inspectAction = async (actionId: string) => {
@@ -71,7 +85,7 @@ export function WorkspaceShell() {
         return
       }
     }
-    openConsole('action')
+    setPanelOpen(true)
   }
 
   const openWorkflow = (workflowId: string) => {
@@ -85,7 +99,7 @@ export function WorkspaceShell() {
     session.rememberTrace(result.trace_id)
     if (result.action) {
       session.adoptAction(result.action)
-      openConsole('action')
+      setPanelOpen(true)
     }
     if (result.liquidity) {
       session.setLiquidity(result.liquidity)
@@ -98,7 +112,7 @@ export function WorkspaceShell() {
     const start = new Date(simulation.start_at ?? Date.now())
     const horizon = simulation.horizon_days ?? 30
     const deadline = new Date(start.getTime() + (horizon + 1) * 86_400_000).toISOString()
-    const today = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai'}).format(new Date())
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date())
     const nodes = alt.reservations.map((reservation, index) => ({
       node_id: `liquidity_lock_${index + 1}`,
       kind: 'budget_lock' as const,
@@ -122,121 +136,120 @@ export function WorkspaceShell() {
 
   const editRequest = (text: string) => {
     setDraft(text)
-    switchView('assistant')
+    setView('assistant')
+    setPanelOpen(false)
     requestAnimationFrame(() => composerRef.current?.focus())
   }
 
-  const consoleActive = mobilePane === 'console'
+  const resetSession = () => {
+    session.reset()
+    setPanelOpen(false)
+  }
+
+  const showPanel = Boolean(action) && panelOpen
 
   return (
-    <div className="fixed inset-0 flex h-dvh flex-col overflow-hidden bg-background md:flex-row">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-card px-3 md:hidden">
-        <Link href="/" aria-label="返回 Vaultline 首页" className="inline-flex size-10 shrink-0 items-center justify-center rounded-md">
-          <VaultlineSeal className="size-7" />
-        </Link>
-        <div role="tablist" aria-label="工作台面板" className="flex h-10 flex-1 items-center rounded-md bg-surface p-1">
-          {(
-            [
-              { id: 'main', label: '对话' },
-              { id: 'console', label: '控制台' },
-            ] as const
-          ).map((pane) => {
-            const selected = mobilePane === pane.id
-            return (
-              <button
-                key={pane.id}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-controls={pane.id === 'main' ? 'ws-panel-main' : 'ws-panel-console'}
-                onClick={() => (pane.id === 'console' ? openConsole(tab) : setMobilePane('main'))}
-                className={cn(
-                  'relative flex h-8 flex-1 items-center justify-center rounded text-[13px] font-medium transition-colors',
-                  selected ? 'bg-card text-foreground shadow-[0_0_0_1px_var(--border)]' : 'text-muted-foreground',
-                )}
-              >
-                {pane.id === 'main' ? (VIEWS.find((v) => v.id === view)?.label ?? pane.label) : pane.label}
-                {pane.id === 'console' && attention && !selected && (
-                  <span className="ml-1.5 size-1.5 rounded-full bg-amber" aria-label="有待处理的授权" />
-                )}
-              </button>
-            )
-          })}
-        </div>
-        <nav aria-label="工作台导航" className="flex shrink-0 items-center">
-          {VIEWS.map(({ id, label, icon: Icon }) => {
-            const active = view === id && !consoleActive
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => switchView(id)}
-                aria-label={label}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'inline-flex size-10 items-center justify-center rounded-md transition-colors',
-                  active ? 'bg-ice text-cobalt-ink' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <Icon className="size-[18px]" aria-hidden />
-              </button>
-            )
-          })}
-        </nav>
-      </header>
+    <div className="fixed inset-0 flex h-dvh overflow-hidden bg-background">
+      <NavRail
+        view={view}
+        onChange={switchView}
+        onNewSession={resetSession}
+        canReset={session.thread.length > 0}
+        connection={session.connection}
+        pendingLabel={pendingLabel}
+        onOpenPending={() => setPanelOpen(true)}
+      />
 
-      <NavRail view={view} onChange={switchView} />
-
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <main id="ws-panel-main" className={cn('flex min-h-0 min-w-0 flex-1 flex-col bg-background', consoleActive && 'max-md:hidden')}>
-          {view === 'assistant' && (
-            <section aria-label="助理" className="flex min-h-0 flex-1 flex-col">
-              <ConversationHeader
-                connection={session.connection}
-                onNewSession={session.thread.length > 0 ? session.reset : undefined}
-              />
-              <div ref={scrollRef} className="ws-scroll min-h-0 flex-1 overflow-y-auto">
-                <div className="mx-auto w-full max-w-[780px] px-4 py-6 sm:px-8 sm:py-8">
-                  {session.thread.length === 0 ? (
-                    <EmptyState disabled={session.sending} onPick={session.send} />
-                  ) : (
-                    <Thread
-                      session={session}
-                      onInspectAction={(id) => void inspectAction(id)}
-                      onOpenLiquidity={() => setLiquidityOpen(true)}
-                      onOpenWorkflow={openWorkflow}
-                    />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3 md:hidden">
+          <Link href="/" aria-label="返回 Vaultline 首页" className="inline-flex size-10 shrink-0 items-center justify-center rounded-md">
+            <VaultlineSeal className="size-7" />
+          </Link>
+          <nav aria-label="工作台导航" className="flex items-center gap-1">
+            {VIEWS.map(({ id, label, icon: Icon }) => {
+              const active = view === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => switchView(id)}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-[13px] transition-colors',
+                    active ? 'bg-ice font-medium text-cobalt-ink' : 'text-muted-foreground',
                   )}
+                >
+                  <Icon className="size-4" aria-hidden />
+                  {label}
+                </button>
+              )
+            })}
+          </nav>
+        </header>
+
+        <div className="flex min-h-0 flex-1">
+          <main id="ws-panel-main" className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {view === 'assistant' && (
+              <section aria-label="智能助理" className="flex min-h-0 flex-1 flex-col">
+                <ConversationHeader title="智能助理" onNewSession={session.thread.length > 0 ? resetSession : undefined} />
+                <div ref={scrollRef} className="ws-scroll min-h-0 flex-1 overflow-y-auto">
+                  <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-8 sm:py-8">
+                    {session.thread.length === 0 ? (
+                      <EmptyState disabled={session.sending} onPick={session.send} />
+                    ) : (
+                      <Thread
+                        session={session}
+                        onInspectAction={(id) => void inspectAction(id)}
+                        onOpenLiquidity={() => setLiquidityOpen(true)}
+                        onOpenWorkflow={openWorkflow}
+                      />
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="shrink-0 px-4 pb-4 pt-2 sm:px-8 sm:pb-5">
-                <div className="mx-auto w-full max-w-[780px]">
-                  <Composer ref={composerRef} value={draft} onChange={setDraft} onSend={session.send} sending={session.sending} />
+                <div className="shrink-0 px-4 pb-4 pt-2 sm:px-8 sm:pb-5">
+                  <div className="mx-auto flex w-full max-w-[760px] flex-col gap-2">
+                    {pendingLabel && !showPanel && (
+                      <button
+                        type="button"
+                        onClick={() => setPanelOpen(true)}
+                        className="flex items-center gap-3 rounded-lg border border-amber/50 bg-amber-soft px-3.5 py-2.5 text-left text-amber-ink md:hidden"
+                      >
+                        <BellRing className="size-4 shrink-0" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate text-[13px]">
+                          <span className="font-medium">待你确认</span> · {pendingLabel}
+                        </span>
+                        <ChevronRight className="size-4 shrink-0" aria-hidden />
+                      </button>
+                    )}
+                    <Composer ref={composerRef} value={draft} onChange={setDraft} onSend={session.send} sending={session.sending} />
+                  </div>
                 </div>
+              </section>
+            )}
+
+            {view === 'workflows' && (
+              <div className="ws-scroll min-h-0 flex-1 overflow-y-auto">
+                <WorkflowView workflows={workflows} onOpenAction={(id) => void inspectAction(id)} onAdvance={(id) => void advanceWorkflow(id)} />
               </div>
-            </section>
-          )}
+            )}
 
-          {view === 'workflows' && (
-            <div className="ws-scroll min-h-0 flex-1 overflow-y-auto">
-              <WorkflowView workflows={workflows} onOpenAction={(id) => void inspectAction(id)} onAdvance={(id) => void advanceWorkflow(id)} />
-            </div>
-          )}
+            {view === 'audit' && (
+              <div className="ws-scroll min-h-0 flex-1 overflow-y-auto">
+                <AuditView session={session} />
+              </div>
+            )}
+          </main>
 
-          {view === 'audit' && (
-            <div className="ws-scroll min-h-0 flex-1 overflow-y-auto">
-              <AuditView session={session} />
-            </div>
+          {action && (
+            <Inspector
+              session={session}
+              action={action}
+              onClose={() => setPanelOpen(false)}
+              onEditRequest={editRequest}
+              className={cn('max-md:fixed max-md:inset-0 max-md:z-40 max-md:border-l-0', !showPanel && 'hidden')}
+            />
           )}
-        </main>
-
-        <Inspector
-          session={session}
-          tab={tab}
-          onTabChange={setTab}
-          onEditRequest={editRequest}
-          className={cn(!consoleActive && 'max-md:hidden')}
-        />
+        </div>
       </div>
 
       <LiquidityDrawer

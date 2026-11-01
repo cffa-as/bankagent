@@ -10,7 +10,7 @@ import { TONE, type Tone } from '@/lib/vaultline/status'
 import { Callout, CopyId, Spinner } from './primitives'
 
 const EVENT_LABELS: [RegExp, string, Tone][] = [
-  [/intent|plan|message|proposal/, '意图与服务端计划校验', 'neutral'],
+  [/intent|plan|message|proposal/, '需求识别与业务校验', 'neutral'],
   [/risk/, '风险评级', 'confirm'],
   [/action[._]?created|created/, '动作已创建', 'live'],
   [/confirm/, '确认结果', 'confirm'],
@@ -57,12 +57,12 @@ export function AuditTimeline({ adapter, traceId }: { adapter: VaultlineAdapter;
     )
   }
   if (!data || data.events.length === 0) {
-    return <p className="text-[13px] text-muted-foreground">服务端暂未记录此 Trace 的事件。</p>
+    return <p className="text-[13px] text-muted-foreground">暂无该业务的记录。</p>
   }
 
   return (
     <div className="flex flex-col gap-3">
-      <CopyId label="Trace ID" value={data.trace_id} />
+      <CopyId label="流水号" value={data.trace_id} />
       <ol className="relative flex flex-col">
         {data.events.map((event, i) => {
           const meta = describeEvent(event.event_type)

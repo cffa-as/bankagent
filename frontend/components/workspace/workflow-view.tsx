@@ -6,7 +6,7 @@ import { formatDateTime, formatMoney, shortId } from '@/lib/vaultline/format'
 import { describeWorkflowStatus, TONE } from '@/lib/vaultline/status'
 import type { Workflow, WorkflowNode } from '@/lib/vaultline/types'
 import type { WorkflowsState } from '@/lib/vaultline/use-workflows'
-import { Callout, CopyId, RawData, RiskBadge, SectionLabel, Spinner, StatusPill } from './primitives'
+import { Callout, CopyId, RiskBadge, SectionLabel, Spinner, StatusPill } from './primitives'
 
 const NODE_META: Record<string, { label: string; icon: typeof Lock; mode: string }> = {
   budget_lock: { label: '预算锁定', icon: Lock, mode: '需 MFA' },
@@ -87,9 +87,9 @@ function NodeCard({ node, nodes, currency, onOpenAction }: { node: WorkflowNode;
 
 export function WorkflowDag({ workflow, onOpenAction }: { workflow: Workflow; onOpenAction: (id: string) => void }) {
   const groups = layers(workflow.nodes)
-  if (groups.length === 0) return <p className="text-[13px] text-muted-foreground">服务端未返回节点。</p>
+  if (groups.length === 0) return <p className="text-[13px] text-muted-foreground">暂无步骤。</p>
   return (
-    <ol className="flex flex-col gap-4" aria-label="工作流节点与依赖">
+    <ol className="flex flex-col gap-4" aria-label="计划步骤">
       {groups.map((group, i) => (
         <li key={i} className="relative flex gap-4">
           <div className="flex w-6 shrink-0 flex-col items-center" aria-hidden>
@@ -131,13 +131,13 @@ export function WorkflowView({
     <div className="flex flex-col gap-6 px-5 py-6 sm:px-8">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-[20px] font-semibold tracking-tight">工作流</h2>
-          <p className="text-[13px] text-muted-foreground">跨场景编排。创建不等于执行，每个节点由服务端逐一推进。</p>
+          <h2 className="text-[20px] font-semibold tracking-tight">资金计划</h2>
+          <p className="text-[13px] text-muted-foreground">按计划分步办理。创建计划不会立即动用资金，每一步执行前都需你确认。</p>
         </div>
         <button
           type="button"
           onClick={() => void list.mutate()}
-          aria-label="刷新工作流列表"
+          aria-label="刷新计划列表"
           className="inline-flex size-10 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
         >
           <RefreshCw className={cn('size-4', list.isValidating && 'animate-spin')} aria-hidden />
@@ -145,20 +145,20 @@ export function WorkflowView({
       </div>
 
       {list.error && (
-        <Callout tone="fail" title="无法读取工作流">
-          <p>银行服务端暂不可用或拒绝了请求。</p>
+        <Callout tone="fail" title="暂时无法读取资金计划">
+          <p>服务暂时不可用，请稍后重试。</p>
         </Callout>
       )}
 
       {!list.error && !list.isLoading && items.length === 0 && (
         <div className="flex flex-col gap-1 rounded-lg border border-border bg-card px-5 py-6">
-          <p className="text-[15px] font-medium">还没有工作流</p>
+          <p className="text-[15px] font-medium">还没有资金计划</p>
           <p className="text-pretty text-[14px] leading-relaxed text-muted-foreground">在流动性预检中选择一个方案，或在对话中描述跨场景需求。</p>
         </div>
       )}
 
       {items.length > 0 && (
-        <ul className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card" aria-label="工作流列表">
+        <ul className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card" aria-label="资金计划列表">
           {items.map((w) => {
             const s = describeWorkflowStatus(w.status)
             const active = w.workflow_id === selectedId
@@ -171,7 +171,7 @@ export function WorkflowView({
                   className={cn('flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-muted', active && 'bg-ice')}
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-[14px] font-medium">{w.title ?? '未命名工作流'}</p>
+                    <p className="truncate text-[14px] font-medium">{w.title ?? '未命名计划'}</p>
                     <p className="font-mono text-[12px] text-muted-foreground">
                       {shortId(w.workflow_id)} · {w.nodes.length} 个节点 · {formatDateTime(w.created_at)}
                     </p>
@@ -189,11 +189,11 @@ export function WorkflowView({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 id="ws-workflow-title" className="text-[16px] font-semibold">
-                {workflow.title ?? '工作流详情'}
+                {workflow.title ?? '计划详情'}
               </h3>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <StatusPill tone={status.tone} label={status.label} />
-                <CopyId label="Workflow" value={workflow.workflow_id} />
+                <CopyId label="计划编号" value={workflow.workflow_id} />
               </div>
             </div>
             {!terminal && (
@@ -205,7 +205,7 @@ export function WorkflowView({
                   className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-red-ink transition-colors hover:bg-red-soft disabled:opacity-50"
                 >
                   {pending === 'cancel' && <Spinner className="size-3.5" />}
-                  取消工作流
+                  取消计划
                 </button>
                 <button
                   type="button"
@@ -228,13 +228,12 @@ export function WorkflowView({
 
           <SectionLabel>节点与依赖</SectionLabel>
           <WorkflowDag workflow={workflow} onOpenAction={onOpenAction} />
-          {workflow.trace_id && workflow.trace_id !== 'tr_workflow' && <CopyId label="Trace ID" value={workflow.trace_id} />}
-          <RawData value={workflow} />
+          {workflow.trace_id && workflow.trace_id !== 'tr_workflow' && <CopyId label="流水号" value={workflow.trace_id} />}
         </section>
       )}
       {detail.isLoading && selectedId && !workflow && (
         <p role="status" className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          <Spinner /> 正在读取工作流…
+          <Spinner /> 正在读取计划…
         </p>
       )}
     </div>

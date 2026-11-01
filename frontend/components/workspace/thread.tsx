@@ -1,14 +1,15 @@
 'use client'
 
-import { ChartLine, ChevronRight, GitBranch, RotateCcw } from 'lucide-react'
+import { CalendarClock, ChartLine, ChevronRight, RotateCcw } from 'lucide-react'
+import { VaultlineSeal } from '@/components/vaultline/seal'
 import { cn } from '@/lib/utils'
-import { describeKind, formatMoney, shortId } from '@/lib/vaultline/format'
-import { describeStatus, describeWorkflowStatus, TONE, VERDICT } from '@/lib/vaultline/status'
-import type { BankAction, LiveActivityEvent, MessageResult } from '@/lib/vaultline/types'
+import { describeKind, formatMoney } from '@/lib/vaultline/format'
+import { describeRisk, describeStatus, describeWorkflowStatus, VERDICT } from '@/lib/vaultline/status'
+import type { BankAction, MessageResult } from '@/lib/vaultline/types'
 import type { ThreadItem, WorkspaceSession } from '@/lib/vaultline/use-workspace-session'
 import { actionAmount, actionCurrency, actionTarget } from './action-snapshot'
-import { AgentActivity } from './agent-activity'
-import { Callout, CopyId, RawData, RiskBadge, StatusPill } from './primitives'
+import { AgentStatus } from './agent-activity'
+import { Callout, StatusPill } from './primitives'
 import { QueryResultView } from './query-results'
 
 interface ThreadProps {
@@ -18,46 +19,47 @@ interface ThreadProps {
   onOpenWorkflow: (workflowId: string) => void
 }
 
-function ActionSummary({ action, active, onInspect }: { action: BankAction; active: boolean; onInspect: () => void }) {
+function ActionCard({ action, active, onInspect }: { action: BankAction; active: boolean; onInspect: () => void }) {
   const status = describeStatus(action.status)
+  const risk = describeRisk(action.risk_level)
   const amount = actionAmount(action)
   const target = actionTarget(action)
   const needsUser = status.tone === 'confirm' || status.tone === 'mfa'
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-3 rounded-lg border bg-card px-4 py-3 sm:flex-row sm:items-center',
-        active ? 'border-cobalt/50' : 'border-border',
-      )}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <RiskBadge level={action.risk_level} />
+    <div className={cn('overflow-hidden rounded-xl border bg-card', active ? 'border-cobalt/40' : 'border-border')}>
+      <div className="flex items-start justify-between gap-3 px-4 pt-4">
+        <div className="min-w-0">
+          <p className="text-[13px] text-muted-foreground">{describeKind(action.kind)}</p>
+          {target && <p className="mt-0.5 truncate text-[15px] font-medium">{target}</p>}
+        </div>
         <StatusPill tone={status.tone} label={status.label} />
       </div>
-      <div className="flex min-w-0 flex-1 items-baseline gap-3">
-        {amount !== null && <span className="font-mono text-[17px] font-medium">{formatMoney(amount, actionCurrency(action))}</span>}
-        <span className="min-w-0 truncate text-[13px] text-muted-foreground">
-          {describeKind(action.kind)}
-          {target && <span className="text-foreground"> · {target}</span>}
-        </span>
+      {amount !== null && (
+        <p className="px-4 pt-3 font-mono text-[26px] font-medium leading-none tracking-tight">
+          {formatMoney(amount, actionCurrency(action))}
+        </p>
+      )}
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border bg-background/60 px-4 py-2.5">
+        <p className="min-w-0 truncate text-[12.5px] text-muted-foreground">
+          {needsUser ? (status.tone === 'mfa' ? '需要完成安全验证后才会执行' : '需要你核对并确认后才会执行') : risk.label}
+        </p>
+        <button
+          type="button"
+          onClick={onInspect}
+          className={cn(
+            'inline-flex h-9 shrink-0 items-center gap-1 rounded-lg px-3 text-[13px] font-medium transition-colors',
+            needsUser ? 'bg-cobalt text-primary-foreground hover:bg-cobalt-ink' : 'text-cobalt-ink hover:bg-ice',
+          )}
+        >
+          {needsUser ? '去处理' : '查看详情'}
+          <ChevronRight className="size-3.5" aria-hidden />
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={onInspect}
-        aria-label={`查看处理 Action ${shortId(action.action_id)}`}
-        className={cn(
-          'inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-md px-3 text-[13px] font-medium transition-colors',
-          needsUser ? 'bg-navy text-rail-foreground hover:bg-navy/90' : 'border border-border hover:border-line-strong',
-        )}
-      >
-        查看处理
-        <ChevronRight className="size-3.5" aria-hidden />
-      </button>
     </div>
   )
 }
 
-function SummaryRow({
+function LinkRow({
   icon: Icon,
   title,
   meta,
@@ -74,80 +76,81 @@ function SummaryRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-12 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:border-line-strong"
+      className="flex min-h-14 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-cobalt/40"
     >
-      <Icon className="size-4 shrink-0 text-steel" aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-[14px] font-medium">{title}</span>
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-ice text-cobalt-ink">
+        <Icon className="size-4" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] font-medium">{title}</span>
+        <span className="block truncate text-[12.5px] text-muted-foreground">{meta}</span>
+      </span>
       {badge}
-      <span className="hidden shrink-0 text-[13px] text-muted-foreground sm:inline">{meta}</span>
       <ChevronRight className="size-4 shrink-0 text-steel" aria-hidden />
     </button>
   )
 }
 
+function AssistantShell({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="vl-enter flex gap-3">
+      <VaultlineSeal className="mt-0.5 size-7 shrink-0" />
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <p className="sr-only">Vaultline 助理</p>
+        {children}
+      </div>
+    </li>
+  )
+}
+
 function AssistantMessage({
   result,
-  activity,
   session,
   onInspectAction,
   onOpenLiquidity,
   onOpenWorkflow,
-}: { result: MessageResult; activity: LiveActivityEvent[] } & ThreadProps) {
+}: { result: MessageResult } & ThreadProps) {
   const live = result.action ? (session.actions[result.action.action_id] ?? result.action) : null
   const rejected = result.reply_type === 'rejected'
-  const spine = rejected ? 'bg-red' : live ? TONE[describeStatus(live.status).tone].dot : result.query ? 'bg-teal' : 'bg-line-strong'
   const verdict = result.liquidity?.verdict ? VERDICT[result.liquidity.verdict] : null
   const workflowStatus = result.workflow ? describeWorkflowStatus(result.workflow.status) : null
 
   return (
-    <li className="vl-enter flex gap-4">
-      <span className={cn('w-0.5 shrink-0 self-stretch rounded-full', spine)} aria-hidden />
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <p className="sr-only">Vaultline 助理</p>
-        {activity.length > 0 && <AgentActivity events={activity} running={false} />}
-        {result.reply_text && <p className="whitespace-pre-wrap text-pretty text-[15px] leading-relaxed">{result.reply_text}</p>}
+    <AssistantShell>
+      {result.reply_text && <p className="whitespace-pre-wrap text-pretty pt-0.5 text-[15px] leading-relaxed">{result.reply_text}</p>}
 
-        {rejected && (
-          <Callout tone="fail" title="服务端已拒绝此请求">
-            <p>{result.rejection?.message ?? '请求不符合银行策略，未创建任何动作。'}</p>
-            {result.rejection?.code && <p className="mt-1 font-mono text-[12px]">{result.rejection.code}</p>}
-          </Callout>
-        )}
+      {rejected && (
+        <Callout tone="fail" title="这项业务暂时无法办理">
+          <p>{result.rejection?.message ?? '请求不符合银行业务规则，未产生任何操作。'}</p>
+        </Callout>
+      )}
 
-        {result.query && <QueryResultView query={result.query} traceId={result.trace_id} />}
+      {result.query && <QueryResultView query={result.query} traceId={result.trace_id} />}
 
-        {live && (
-          <ActionSummary action={live} active={session.activeActionId === live.action_id} onInspect={() => onInspectAction(live.action_id)} />
-        )}
+      {live && (
+        <ActionCard action={live} active={session.activeActionId === live.action_id} onInspect={() => onInspectAction(live.action_id)} />
+      )}
 
-        {result.liquidity && (
-          <SummaryRow
-            icon={ChartLine}
-            title="流动性预检报告"
-            meta="打开报告"
-            badge={verdict ? <StatusPill tone={verdict.tone} label={verdict.label} /> : undefined}
-            onClick={onOpenLiquidity}
-          />
-        )}
+      {result.liquidity && (
+        <LinkRow
+          icon={ChartLine}
+          title="未来现金流测算"
+          meta="查看余额走势与可选方案"
+          badge={verdict ? <StatusPill tone={verdict.tone} label={verdict.label} /> : undefined}
+          onClick={onOpenLiquidity}
+        />
+      )}
 
-        {result.workflow && workflowStatus && (
-          <SummaryRow
-            icon={GitBranch}
-            title={result.workflow.title ?? '工作流'}
-            meta={`${result.workflow.nodes.length} 个节点 · 尚未执行`}
-            badge={<StatusPill tone={workflowStatus.tone} label={workflowStatus.label} />}
-            onClick={() => onOpenWorkflow(result.workflow?.workflow_id as string)}
-          />
-        )}
-
-        {!result.query && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {result.trace_id && <CopyId label="Trace" value={result.trace_id} className="text-[12px]" />}
-            <RawData value={result.raw} />
-          </div>
-        )}
-      </div>
-    </li>
+      {result.workflow && workflowStatus && (
+        <LinkRow
+          icon={CalendarClock}
+          title={result.workflow.title ?? '资金计划'}
+          meta={`共 ${result.workflow.nodes.length} 步 · 尚未开始执行`}
+          badge={<StatusPill tone={workflowStatus.tone} label={workflowStatus.label} />}
+          onClick={() => onOpenWorkflow(result.workflow?.workflow_id as string)}
+        />
+      )}
+    </AssistantShell>
   )
 }
 
@@ -155,7 +158,7 @@ function Item({ item, ...props }: { item: ThreadItem } & ThreadProps) {
   if (item.role === 'user') {
     return (
       <li className="vl-enter flex justify-end">
-        <p className="max-w-[80%] whitespace-pre-wrap rounded-xl rounded-br-sm bg-navy px-3.5 py-2 text-[15px] leading-relaxed text-rail-foreground">
+        <p className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-navy px-4 py-2.5 text-[15px] leading-relaxed text-rail-foreground">
           {item.text}
         </p>
       </li>
@@ -163,45 +166,39 @@ function Item({ item, ...props }: { item: ThreadItem } & ThreadProps) {
   }
   if (item.role === 'notice') {
     return (
-      <li className="vl-enter flex flex-col gap-2">
+      <AssistantShell>
         <Callout tone={item.state.tone} title={item.state.title}>
           <p>{item.state.body}</p>
-          {(item.code || item.traceId) && (
-            <p className="mt-1 font-mono text-[12px] text-muted-foreground">
-              {item.code}
-              {item.code && item.traceId && ' · '}
-              {item.traceId && `trace ${shortId(item.traceId)}`}
-            </p>
-          )}
+          {item.code && <p className="mt-1 font-mono text-[12px] text-muted-foreground">错误码 {item.code}</p>}
         </Callout>
         {item.retry && (
           <button
             type="button"
             onClick={() => props.session.retry(item.id)}
             disabled={props.session.sending}
-            className="inline-flex h-10 items-center gap-1.5 self-start text-[13px] font-medium text-cobalt-ink hover:underline disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-1.5 self-start rounded-lg border border-border bg-card px-3 text-[13px] font-medium transition-colors hover:border-line-strong disabled:opacity-50"
           >
             <RotateCcw className="size-3.5" aria-hidden />
-            重试同一请求
+            重新发送
           </button>
         )}
-      </li>
+      </AssistantShell>
     )
   }
-  return <AssistantMessage result={item.result} activity={item.activity} {...props} />
+  return <AssistantMessage result={item.result} {...props} />
 }
 
 export function Thread(props: ThreadProps) {
   const { session } = props
   return (
-    <ol className="flex flex-col gap-7" aria-label="对话记录" aria-live="polite" aria-relevant="additions">
+    <ol className="flex flex-col gap-6" aria-label="对话记录" aria-live="polite" aria-relevant="additions">
       {session.thread.map((item) => (
         <Item key={item.id} item={item} {...props} />
       ))}
       {session.sending && (
-        <li>
-          <AgentActivity events={session.activity} running />
-        </li>
+        <AssistantShell>
+          <AgentStatus events={session.activity} />
+        </AssistantShell>
       )}
     </ol>
   )

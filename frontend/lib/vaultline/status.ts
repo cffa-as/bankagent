@@ -26,7 +26,7 @@ export const ACTION_STATUS: Record<KnownActionStatus, StatusMeta> = {
   executing: { label: '执行中', tone: 'live', polling: true, terminal: false },
   processing: { label: '银行处理中', tone: 'live', polling: true, terminal: false },
   reconciliation_required: { label: '等待对账', tone: 'held', polling: true, terminal: false },
-  succeeded: { label: '服务端已返回回执', tone: 'done', polling: false, terminal: true },
+  succeeded: { label: '办理成功', tone: 'done', polling: false, terminal: true },
   failed: { label: '未完成', tone: 'fail', polling: false, terminal: true },
   cancelled: { label: '已取消', tone: 'void', polling: false, terminal: true },
   expired: { label: '已过期', tone: 'void', polling: false, terminal: true },

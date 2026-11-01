@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { formatBps, formatDateTime, formatField, formatMoney, labelField } from '@/lib/vaultline/format'
 import { asArray, asNumber, asObject, asText, pickMoney } from '@/lib/vaultline/normalize'
 import type { JsonObject, QueryResult } from '@/lib/vaultline/types'
-import { CopyId, FieldList, RawData, RiskBadge, SectionLabel, StatusPill } from './primitives'
+import { CopyId, FieldList, SectionLabel, StatusPill } from './primitives'
 
 /** Every renderer reads server values only. Absent fields render “未返回”, never a guess. */
 
@@ -108,7 +108,6 @@ function Balance({ data, traceId }: { data: unknown; traceId: string | null }) {
       />
       <div className="flex flex-col gap-1">
         <CopyId label="账户" value={text(source, 'account_id', 'account_number', 'masked_account')} />
-        <CopyId label="Trace ID" value={traceId} />
       </div>
     </div>
   )
@@ -116,7 +115,7 @@ function Balance({ data, traceId }: { data: unknown; traceId: string | null }) {
 
 function Transactions({ data }: { data: unknown }) {
   const rows = listOf(data, 'transactions', 'items')
-  if (rows.length === 0) return <p className="text-[13px] text-muted-foreground">服务端未返回交易记录。</p>
+  if (rows.length === 0) return <p className="text-[13px] text-muted-foreground">暂无交易记录。</p>
   return (
     <Table caption="交易明细" head={['方向', '描述', '类别', '时间', '金额']}>
       {rows.map((row, i) => {
@@ -211,7 +210,7 @@ function BillSummary({ data }: { data: unknown }) {
               <li key={text(a, 'transaction_id', 'id') ?? i} className="flex items-start justify-between gap-4 border-b border-border py-2 last:border-b-0">
                 <div className="min-w-0">
                   <p className="text-[14px]">{text(a, 'description', 'merchant', 'label') ?? '未返回描述'}</p>
-                  <p className="text-[13px] leading-relaxed text-amber-ink">{text(a, 'reason', 'anomaly_reason') ?? '服务端未说明原因'}</p>
+                  <p className="text-[13px] leading-relaxed text-amber-ink">{text(a, 'reason', 'anomaly_reason') ?? '未说明原因'}</p>
                 </div>
                 <span className="shrink-0 font-mono text-[13px]">{formatMoney(money(a, 'amount'), currency)}</span>
               </li>
@@ -225,7 +224,7 @@ function BillSummary({ data }: { data: unknown }) {
 
 function Products({ data }: { data: unknown }) {
   const rows = listOf(data, 'products', 'items')
-  if (rows.length === 0) return <p className="text-[13px] text-muted-foreground">服务端未返回产品。</p>
+  if (rows.length === 0) return <p className="text-[13px] text-muted-foreground">暂无产品。</p>
   return (
     <div className="flex flex-col gap-2">
       <Table caption="理财产品比较" head={['产品', '风险等级', '起购金额', '期限', '业绩比较基准']}>
@@ -257,7 +256,7 @@ function Products({ data }: { data: unknown }) {
 
 function Cards({ data }: { data: unknown }) {
   const rows = listOf(data, 'cards', 'items')
-  if (rows.length === 0) return <p className="text-[13px] text-muted-foreground">服务端未返回卡片。</p>
+  if (rows.length === 0) return <p className="text-[13px] text-muted-foreground">暂无卡片。</p>
   return (
     <ul className="flex flex-col">
       {rows.map((card, i) => {
@@ -297,7 +296,7 @@ function Subscriptions({ data }: { data: unknown }) {
       .map((reminder) => [text(reminder, 'subscription_id'), asNumber(reminder.days_until)] as const)
       .filter((entry): entry is readonly [string, number] => entry[0] !== null && entry[1] !== null),
   )
-  if (rows.length === 0) return <p className="text-[13px] text-muted-foreground">服务端未返回订阅。</p>
+  if (rows.length === 0) return <p className="text-[13px] text-muted-foreground">暂无订阅。</p>
   return (
     <Table caption="订阅与续费" head={['商户', '周期', '下次扣费', '提醒', '金额']}>
       {rows.map((s, i) => {
@@ -393,11 +392,9 @@ export function QueryResultView({ query, traceId }: { query: QueryResult; traceI
     <section aria-label={TITLES[kind] ?? '查询结果'} className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <h3 className="text-[14px] font-medium">{TITLES[kind] ?? '查询结果'}</h3>
-        <RiskBadge level="green" />
+        
       </div>
       {body}
-      {kind !== 'balance' && traceId && <CopyId label="Trace ID" value={traceId} />}
-      <RawData value={query.data} />
     </section>
   )
 }
