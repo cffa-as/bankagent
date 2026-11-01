@@ -65,7 +65,7 @@ export const IntroScene = ({durationInFrames}: {durationInFrames: number}) => {
             <Mark size={110} />
           </div>
           <Reveal at={0.2}>
-            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 96, fontWeight: 900, letterSpacing: '0.02em'}}>钱的事，一句话说清楚。</div>
+            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 96, fontWeight: 900, letterSpacing: '0.02em'}}>一句话，办好每一笔银行业务。</div>
           </Reveal>
           <Reveal at={2.4}>
             <div style={{color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 34, fontWeight: 500, letterSpacing: '0.12em'}}>
@@ -161,15 +161,15 @@ export const ProblemScene = ({durationInFrames}: {durationInFrames: number}) => 
 }
 
 const COVERAGE = [
-  {group: '智能转账', items: '即时转账 · 预约转账 · AA 收款', chapters: '02–05', tone: COLORS.amber},
-  {group: '账单分析', items: '支出结构 · 异常交易识别', chapters: '01', tone: COLORS.teal},
-  {group: '理财操作', items: '产品比较 · 申购 · 赎回', chapters: '06', tone: COLORS.red},
-  {group: '卡片管理', items: '状态与额度 · 挂失', chapters: '07', tone: COLORS.red},
-  {group: '订阅代扣', items: '续费提醒 · 一句话取消', chapters: '08', tone: COLORS.amber},
-  {group: '跨场景联动', items: '生日资金计划 DAG · 现金流推演', chapters: '09–10', tone: COLORS.cobalt},
-  {group: '运行控制', items: '停止 · 转人工 · 撤销', chapters: '11', tone: COLORS.cobalt},
-  {group: '安全异常', items: 'MFA 失败 · 提示注入拦截', chapters: '12', tone: COLORS.red},
-  {group: '审计留痕', items: '发起 · 确认 · 验证 · 回执', chapters: '13', tone: COLORS.teal},
+  {group: '异常交易洞察', items: '确定性规则 · 高风险即时标出', chapters: '01', tone: COLORS.teal, highlight: true},
+  {group: '现金流推演', items: '四种情景 · 30 天余额 · 备选方案', chapters: '02', tone: COLORS.cobalt, highlight: true},
+  {group: '智能转账', items: '即时 · 预约 · AA 收款', chapters: '03–06', tone: COLORS.amber},
+  {group: '理财操作', items: '产品比较 · 申购 · 赎回', chapters: '07', tone: COLORS.red},
+  {group: '卡片与订阅', items: '挂失 · 续费提醒 · 一句话取消', chapters: '08–09', tone: COLORS.amber},
+  {group: '资金计划', items: '多步依赖 · 逐节点授权', chapters: '10–11', tone: COLORS.cobalt, highlight: true},
+  {group: '运行控制', items: '停止 · 转人工 · 撤销', chapters: '12', tone: COLORS.cobalt},
+  {group: '安全防护', items: 'MFA 失败 · 提示注入拦截', chapters: '13', tone: COLORS.red, highlight: true},
+  {group: '审计留痕', items: '发起 · 确认 · 验证 · 回执', chapters: '14', tone: COLORS.teal},
 ]
 
 export const CoverageScene = ({durationInFrames}: {durationInFrames: number}) => {
@@ -180,8 +180,8 @@ export const CoverageScene = ({durationInFrames}: {durationInFrames: number}) =>
       <Fade durationInFrames={durationInFrames}>
         <AbsoluteFill style={{alignItems: 'center', flexDirection: 'column', gap: 56, justifyContent: 'center'}}>
           <div style={{alignItems: 'center', display: 'flex', flexDirection: 'column', gap: 16, opacity: heading, transform: `translateY(${(1 - heading) * 18}px)`}}>
-            <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 600, letterSpacing: '0.24em'}}>赛题场景覆盖</div>
-            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 62, fontWeight: 900, letterSpacing: '0.03em'}}>六大场景，全部真实运行</div>
+            <div style={{color: COLORS.steel, fontFamily: FONTS.sans, fontSize: 24, fontWeight: 600, letterSpacing: '0.24em'}}>能力全景 · 赛题场景全覆盖</div>
+            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 62, fontWeight: 900, letterSpacing: '0.03em'}}>九项能力，全部真实运行</div>
           </div>
           <div style={{display: 'grid', gap: 22, gridTemplateColumns: 'repeat(3, 500px)'}}>
             {COVERAGE.map((entry, index) => {
@@ -193,8 +193,9 @@ export const CoverageScene = ({durationInFrames}: {durationInFrames: number}) =>
                   style={{
                     alignItems: 'center',
                     background: COLORS.panel,
-                    border: `1px solid ${COLORS.line}`,
+                    border: `1px solid ${entry.highlight ? `${entry.tone}aa` : COLORS.line}`,
                     borderRadius: 20,
+                    boxShadow: entry.highlight ? `0 0 0 4px ${entry.tone}1f` : 'none',
                     display: 'flex',
                     gap: 22,
                     opacity: p,
@@ -221,7 +222,12 @@ export const CoverageScene = ({durationInFrames}: {durationInFrames: number}) =>
                   </span>
                   <div style={{display: 'flex', flex: 1, flexDirection: 'column', gap: 8}}>
                     <div style={{alignItems: 'baseline', display: 'flex', justifyContent: 'space-between'}}>
-                      <span style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 32, fontWeight: 800}}>{entry.group}</span>
+                      <span style={{alignItems: 'center', color: COLORS.white, display: 'flex', fontFamily: FONTS.sans, fontSize: 32, fontWeight: 800, gap: 12}}>
+                        {entry.group}
+                        {entry.highlight && (
+                          <span style={{background: `${entry.tone}2e`, borderRadius: 999, color: COLORS.white, fontSize: 16, fontWeight: 700, letterSpacing: '0.08em', padding: '3px 10px'}}>亮点</span>
+                        )}
+                      </span>
                       <span style={{color: COLORS.steel, fontFamily: FONTS.mono, fontSize: 18, fontWeight: 600, letterSpacing: '0.08em'}}>{entry.chapters}</span>
                     </div>
                     <span style={{color: COLORS.platinum, fontFamily: FONTS.sans, fontSize: 22}}>{entry.items}</span>
@@ -308,12 +314,12 @@ export const OutroScene = ({durationInFrames}: {durationInFrames: number}) => {
             <Lockup size={84} />
           </div>
           <Reveal at={1.6}>
-            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 64, fontWeight: 800, letterSpacing: '0.04em'}}>钱的事，一句话说清楚。</div>
+            <div style={{color: COLORS.white, fontFamily: FONTS.sans, fontSize: 64, fontWeight: 800, letterSpacing: '0.04em'}}>一句话，办好每一笔银行业务。</div>
           </Reveal>
           <Reveal at={3}>
             <div style={{alignItems: 'center', display: 'flex', gap: 14}}>
               <Check size={26} color={COLORS.teal} />
-              <Shimmer text="智能银行助理 · 每一笔资金操作都由你确认" size={28} color={COLORS.steel} highlight={COLORS.white} />
+              <Shimmer text="听得懂需求 · 看得见过程 · 守得住资金" size={28} color={COLORS.steel} highlight={COLORS.white} />
             </div>
           </Reveal>
         </AbsoluteFill>

@@ -51,6 +51,7 @@ const SceneBody = ({scene, durationInFrames}: {scene: FilmScene; durationInFrame
           chapter={scene.chapter}
           title={scene.title}
           tier={scene.tier}
+          highlight={scene.highlight ?? false}
           speed={scene.speed ?? 1}
           camera={scene.camera}
           notes={scene.notes}

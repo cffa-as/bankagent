@@ -319,12 +319,12 @@ function Cards({ data }: { data: unknown }) {
         return (
           <li key={text(card, 'card_id', 'id') ?? i} className="flex flex-col gap-2 border-b border-border py-3 first:pt-0 last:border-b-0">
             <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[14px] font-medium">{text(card, 'name', 'product_name', 'type') ?? '卡片'}</p>
-                <p className="font-mono text-[13px] text-muted-foreground">
-                  {text(card, 'masked_number') ?? (text(card, 'last4') ? `•••• ${text(card, 'last4')}` : '未返回')}
-                </p>
-              </div>
+              <p className="flex min-w-0 items-baseline gap-2">
+                <span className="text-[14px] font-medium">{text(card, 'name', 'product_name', 'type') ?? '银行卡'}</span>
+                <span className="font-mono text-[13px] text-muted-foreground">
+                  {text(card, 'masked_number') ?? (text(card, 'last4') ? `•••• ${text(card, 'last4')}` : '卡号未返回')}
+                </span>
+              </p>
               <StatusPill tone={statusMeta.tone} label={statusMeta.label} />
             </div>
             <FieldList

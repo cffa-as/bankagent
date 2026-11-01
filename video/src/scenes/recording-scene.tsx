@@ -160,6 +160,7 @@ export const RecordingScene = ({
   chapter,
   title,
   tier,
+  highlight,
   speed,
   camera,
   notes,
@@ -169,6 +170,7 @@ export const RecordingScene = ({
   chapter: string
   title: string
   tier: {label: string; tone: Tone}
+  highlight: boolean
   speed: number
   camera: CameraKey[]
   notes: Note[]
@@ -314,6 +316,22 @@ export const RecordingScene = ({
             <span style={{background: TONE[tier.tone], borderRadius: 99, height: 8, width: 8}} />
             {tier.label}
           </span>
+          {highlight && (
+            <span
+              style={{
+                background: COLORS.cobalt,
+                borderRadius: 999,
+                color: COLORS.white,
+                fontFamily: FONTS.sans,
+                fontSize: 16,
+                fontWeight: 800,
+                letterSpacing: '0.1em',
+                padding: '5px 12px',
+              }}
+            >
+              核心亮点
+            </span>
+          )}
           </div>
           <ChapterRail chapter={chapter} />
         </div>

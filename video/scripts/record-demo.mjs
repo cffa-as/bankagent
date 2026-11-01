@@ -1,7 +1,9 @@
-import {copyFile, mkdir, readFile, rm, writeFile} from 'node:fs/promises'
+import {execFile} from 'node:child_process'
+import {mkdir, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import path from 'node:path'
 import {fileURLToPath} from 'node:url'
+import {promisify} from 'node:util'
 import {chromium} from 'playwright'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -13,10 +15,17 @@ const channel = process.env.PLAYWRIGHT_CHANNEL || undefined
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1].split(',') : null
 
 const viewport = {width: 1536, height: 864}
-const videoSize = viewport
+// Pages render at 2x and clips are encoded at 2560x1440, so text stays sharp
+// when the film zooms into a panel. Playwright's built-in recorder caps out
+// around 1 Mbps VP8, which smears small type.
+const DEVICE_SCALE = 2
+const OUTPUT_SIZE = '2560:1440'
+const remotionBin = path.join(root, 'node_modules', '.bin', 'remotion')
+const run = promisify(execFile)
 
 const sceneMs = {
   'birthday-create': 18_000,
+  cashflow: 29_000,
   overview: 32_000,
   'transfer-confirm': 20_000,
   audit: 15_000,
@@ -133,6 +142,61 @@ async function waitForText(page, text, timeout = 20_000) {
   await page.getByText(text, {exact: false}).filter({visible: true}).last().waitFor({timeout})
 }
 
+async function startScreencast(context, page, framesDir) {
+  const cdp = await context.newCDPSession(page)
+  const frames = []
+  const writes = []
+  cdp.on('Page.screencastFrame', (frame) => {
+    const file = path.join(framesDir, `${String(frames.length).padStart(6, '0')}.jpg`)
+    frames.push({file, at: frame.metadata.timestamp})
+    writes.push(writeFile(file, Buffer.from(frame.data, 'base64')))
+    cdp.send('Page.screencastFrameAck', {sessionId: frame.sessionId}).catch(() => {})
+  })
+  await cdp.send('Page.startScreencast', {format: 'jpeg', quality: 90, everyNthFrame: 1})
+  return {
+    frames,
+    async stop() {
+      await cdp.send('Page.stopScreencast').catch(() => {})
+      await Promise.all(writes)
+      return Date.now() / 1000
+    },
+  }
+}
+
+// Screencast frames arrive only when the page repaints, so each frame is held
+// until the next one and the result is resampled to a constant 30 fps.
+async function encodeFrames(frames, endedAt, framesDir, target) {
+  if (frames.length === 0) throw new Error('Screencast produced no frames')
+  const lines = ['ffconcat version 1.0']
+  frames.forEach((frame, index) => {
+    const next = frames[index + 1]?.at ?? endedAt
+    lines.push(`file '${frame.file}'`, `duration ${Math.max(0.001, next - frame.at).toFixed(4)}`)
+  })
+  lines.push(`file '${frames[frames.length - 1].file}'`)
+  const list = path.join(framesDir, 'frames.ffconcat')
+  await writeFile(list, `${lines.join('\n')}\n`)
+  await run(remotionBin, [
+    'ffmpeg', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', list,
+    '-vf', `scale=${OUTPUT_SIZE}:flags=lanczos`, '-fps_mode', 'cfr', '-r', '30', '-pix_fmt', 'yuv420p',
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-movflags', '+faststart', target,
+  ], {maxBuffer: 16 * 1024 * 1024})
+}
+
+// Scrolls the element into view with wheel steps, so the camera sees a smooth
+// glide instead of a jump cut.
+async function wheelTo(page, locator, {offset = 96, step = 60} = {}) {
+  const target = locator.first()
+  for (let i = 0; i < 60; i += 1) {
+    const box = await target.boundingBox()
+    if (!box) return
+    const delta = box.y - offset
+    if (Math.abs(delta) < step) break
+    await page.mouse.wheel(0, Math.sign(delta) * step)
+    await page.waitForTimeout(28)
+  }
+  await page.waitForTimeout(350)
+}
+
 async function holdUntil(page, startedAt, minimumMs) {
   const remaining = minimumMs - (Date.now() - startedAt)
   if (remaining > 0) await page.waitForTimeout(remaining)
@@ -141,19 +205,19 @@ async function holdUntil(page, startedAt, minimumMs) {
 async function recordClip(id, run) {
   if (only && !only.includes(id)) return
   const context = await browser.newContext({
-    deviceScaleFactor: 1,
+    deviceScaleFactor: DEVICE_SCALE,
     locale: 'zh-CN',
-    recordVideo: {dir: tempDir, size: videoSize},
     timezoneId: 'Asia/Shanghai',
     viewport,
   })
   const page = await context.newPage()
-  const video = page.video()
-  const videoStartedAt = Date.now()
+  const framesDir = path.join(tempDir, id)
+  await mkdir(framesDir, {recursive: true})
 
   try {
     await page.goto(appUrl, {waitUntil: 'networkidle'})
     await installOverlay(page)
+    const screencast = await startScreencast(context, page, framesDir)
     await page.mouse.move(1180, 700, {steps: 6})
     await page.waitForTimeout(600)
 
@@ -188,12 +252,14 @@ async function recordClip(id, run) {
     await run(page, mark, spot)
     await holdUntil(page, markedAt, sceneMs[id])
 
+    const endedAt = await screencast.stop()
     await page.close()
     await context.close()
 
-    const source = await video.path()
-    const target = path.join(recordingsDir, `${id}.webm`)
-    await copyFile(source, target)
+    const target = path.join(recordingsDir, `${id}.mp4`)
+    await encodeFrames(screencast.frames, endedAt, framesDir, target)
+    await rm(framesDir, {recursive: true, force: true})
+    const videoStartedAt = screencast.frames[0].at * 1000
     const trimBeforeSeconds = Number(((markedAt - videoStartedAt) / 1000).toFixed(3))
     const spots = capturedSpots
       .map(({startedAt: at, hold, ...rest}) => ({
@@ -202,9 +268,12 @@ async function recordClip(id, run) {
         ...rest,
       }))
       .filter((item) => item.until > 0)
-    timeline.clips[id] = {src: `recordings/${id}.webm`, trimBeforeSeconds, spots}
+    timeline.clips[id] = {src: `recordings/${id}.mp4`, trimBeforeSeconds, spots}
     await writeFile(timelinePath, `${JSON.stringify(timeline, null, 2)}\n`)
     console.log(`recorded ${id}: trim=${trimBeforeSeconds}s total=${((Date.now() - startedAt) / 1000).toFixed(1)}s`)
+  } catch (error) {
+    if (!page.isClosed()) await page.screenshot({path: path.join(tmpdir(), `vaultline-fail-${id}.png`)}).catch(() => {})
+    throw error
   } finally {
     if (!page.isClosed()) await page.close().catch(() => {})
     await context.close().catch(() => {})
@@ -232,7 +301,7 @@ async function advancePlan(page) {
   const closeReport = page.getByRole('button', {name: /关闭报告/})
   const pendingRow = page.locator('li').filter({hasText: '待授权'}).getByRole('button', {name: '查看动作'})
   const otp = page.locator('input[autocomplete="one-time-code"]').filter({visible: true})
-  const confirm = page.getByRole('button', {name: /^确���/}).filter({visible: true})
+  const confirm = page.getByRole('button', {name: /^确认/}).filter({visible: true})
   await closeReport.or(otp).or(confirm).first().waitFor({timeout: 8_000}).catch(() => {})
   await page.waitForTimeout(400)
 
@@ -289,6 +358,26 @@ try {
     }
   })
 
+  await recordClip('cashflow', async (page, mark, spot) => {
+    await typeAndSend(page, '如果预留 2000 元，会影响未来 30 天的必要支出吗？', 50)
+    const drawer = page.locator('dialog[aria-labelledby="ws-liquidity-title"]')
+    await drawer.locator('#ws-liquidity-title').waitFor({timeout: 25_000})
+    await page.waitForTimeout(900)
+    // Wheel scrolling follows the pointer, so park it on the drawer's edge,
+    // clear of the chart's hover tooltip.
+    await page.mouse.move(1528, 560, {steps: 18})
+    await spot(drawer.getByText('测算结论').locator('..'), {hold: 3_200, tone: 'amber', pad: 4})
+    const chart = drawer.locator('section').filter({hasText: '情景曲线'})
+    await wheelTo(page, chart, {offset: 80})
+    await spot(chart, {hold: 5_600, tone: 'cobalt', pad: 6})
+    const events = drawer.locator('section').filter({hasText: '关键现金流事件'})
+    await wheelTo(page, events, {offset: 90})
+    await spot(events, {hold: 3_600, tone: 'cobalt', pad: 6})
+    const alternatives = drawer.locator('section').filter({hasText: '可选方案'})
+    await wheelTo(page, alternatives, {offset: 80})
+    await spot(alternatives, {hold: 4_600, tone: 'green', pad: 6})
+  })
+
   await recordClip('overview', async (page, mark, spot) => {
     for (const name of ['余额与收支', '转账汇款', '账单分析']) {
       await glide(page, page.getByRole('button', {name: new RegExp(name)}).first(), 20)
@@ -297,7 +386,7 @@ try {
     await typeAndSend(page, '分析本月消费和异常交易', 60)
     // The quick-action card also reads “账单分析”, so wait for the result panel itself.
     const panel = page.getByRole('region', {name: '异常交易'}).last()
-    await panel.waitFor({timeout: 25_000})
+    await panel.waitFor({timeout: 45_000})
     await page.waitForTimeout(700)
     await panel.scrollIntoViewIfNeeded()
     await page.mouse.move(1180, 760, {steps: 12})
