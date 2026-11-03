@@ -15,7 +15,7 @@
     "typecheck": "node scripts/check-runtime.mjs && tsc --noEmit"
   },
   "dependencies": {
-    "@vercel/analytics": "1.6.1",
+    "@vercel/analytics": "2.0.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.64.0",
     "next": "16.4.3",
