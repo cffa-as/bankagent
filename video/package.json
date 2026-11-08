@@ -17,7 +17,7 @@
     "typecheck": "node scripts/check-runtime.mjs && tsc --noEmit"
   },
   "dependencies": {
-    "@remotion/cli": "4.0.539",
+    "@remotion/cli": "4.0.541",
     "@remotion/media": "4.0.539",
     "@remotion/media-utils": "4.0.539",
     "playwright": "1.64.1",
